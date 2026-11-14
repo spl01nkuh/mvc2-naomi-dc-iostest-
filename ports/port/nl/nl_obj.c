@@ -44,6 +44,24 @@ static OVTX ov[MAX_VTX];
 static RD_VTX sv[MAX_VTX];          /* for those in front of the near plane */
 static int obj_log;
 
+#ifdef HOST_NATIVE64
+/* The native implementation's records have explicit C types and do not fit
+ * the original SDK work record formats passed to nlInitDrawModel. */
+void nl_native_reset_draw_work(void) {
+    memset(ov, 0, sizeof ov);
+    memset(sv, 0, sizeof sv);
+    near_w = 1e-3f;
+    obj_log = 0;
+}
+
+void nl_native_reset_light(void) {
+    light.x = 1.0f;
+    light.y = 0.0f;
+    light.z = 0.0f;
+    global_ambience = 0.3f;
+}
+#endif
+
 static uint32_t word(const uint8_t* p) {
     uint32_t w;
     memcpy(&w, p, 4);

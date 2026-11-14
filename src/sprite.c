@@ -24,10 +24,22 @@ typedef struct SPR_TILE {
 	Uint8	x, y;		/* 002: its place in the cell, in tiles */
 } SPR_TILE;
 
+#ifdef HOST_NATIVE64
+#include "host_memory.h"
+/* Pixel and unpack buffers keep their original byte offsets. The texture
+   list contains native pointers and must not overlay the 16-byte SH-4
+   descriptor slots in that byte storage. */
+static NLthd native_sys_tex_list[0x301] ;
+#define SYS_TEX		( ( void * )HOST_NATIVE64_RAM_AT( 0x0ce60000 ) )
+#define SYS_TEX_LIST	native_sys_tex_list
+#define FONT_TEX	( ( void * )HOST_NATIVE64_RAM_AT( 0x0cc00000 ) )
+#define SPR_BUFF	( ( Uint8 * )HOST_NATIVE64_RAM_AT( 0x0ce60000 ) )
+#else
 #define SYS_TEX		( ( void * )0x0CE60000 )	/* the system texture */
 #define SYS_TEX_LIST	( ( NLthd * )0x0CE60C00 )	/* its list */
 #define FONT_TEX	( ( void * )0x0CC00000 )
 #define SPR_BUFF	( ( Uint8 * )0x0CE60000 )	/* where the cells are unpacked */
+#endif
 
 static Sint32 spr_frame_cnt;	/* a frame count */
 static Sint32 spr_list_type;	/* the sprites' list type */

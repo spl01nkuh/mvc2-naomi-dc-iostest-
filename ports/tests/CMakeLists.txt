@@ -146,6 +146,21 @@ mvc2_core_test(native64_player_loading LEGACY_WARNINGS test_native64_player_load
     "${GAME}/src/am_load.c" "${GAME}/src/pl_data_tbl.c" "${GAME}/src/pl_char.c"
     "${GAME}/src/sprite.c" "${GAME}/src/work.c")
 target_link_libraries(test_native64_player_loading PRIVATE mvc2_native_game_memory)
+mvc2_core_test(native64_sprite LEGACY_WARNINGS test_native64_sprite.c
+    "${GAME}/src/sprite.c" "${GAME}/src/pl_char.c" "${GAME}/src/pl_data_tbl.c"
+    "${GAME}/src/spr_pos_tbl.c" "${GAME}/src/work.c" "${GAME}/src/lib/libnaomi/nlmath.c"
+    "${PORT}/nl/nl_sprite.c" "${PORT}/nl/nl_tex.c" "${PORT}/nl/nl_sys.c" "${PORT}/naomi/naomi_board.c")
+target_include_directories(test_native64_sprite PRIVATE "${PORT}/nl" "${PORT}/sys" "${PORT}/snd")
+target_compile_definitions(test_native64_sprite PRIVATE _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
+target_link_libraries(test_native64_sprite PRIVATE mvc2_native_game_tables mvc2_native_game_memory mvc2_native_renderer)
+mvc2_core_test(native64_sdk LEGACY_WARNINGS "${PORT}/native64/tests/test_sdk_native.c"
+    "${PORT}/native64/sdk_native.c" "${PORT}/nl/nl_obj.c" "${PORT}/nl/nl_work.c"
+    "${PORT}/nl/nl_xmtr.c" "${PORT}/nl/nl_tex.c" "${PORT}/nl/nl_sys.c"
+    "${GAME}/src/lib/libnaomi/nlproj.c" "${PORT}/naomi/naomi_board.c")
+target_include_directories(test_native64_sdk PRIVATE "${GAME}/src/lib/libnaomi"
+    "${PORT}/render" "${PORT}/nl" "${PORT}/sys" "${PORT}/snd")
+target_compile_definitions(test_native64_sdk PRIVATE _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
+target_link_libraries(test_native64_sdk PRIVATE mvc2_native_renderer)
 add_library(mvc2_native_game_tables STATIC "${PORT}/native64/game_tables.c")
 target_include_directories(mvc2_native_game_tables PRIVATE "${GAME}/include")
 target_compile_definitions(mvc2_native_game_tables PRIVATE HOST_NATIVE64=1)
