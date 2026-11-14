@@ -38,6 +38,11 @@ typedef struct { Uint8 buff[WORK_SIZE]; } WORK_BUFF;	/* one work of the pool */
 #define LIST_END	1
 #define LIST_BEHIND	2	/* after base */
 #define LIST_BEFORE	3	/* before base */
+#if defined( HOST_NATIVE64 ) && defined( PRIO_MAX )
+/* Darwin's libc headers also name the process-priority limit PRIO_MAX. In
+   game translation units this name denotes the draw-priority count. */
+#undef PRIO_MAX
+#endif
 #define PRIO_MAX	16	/* draw priorities */
 #define PRIO_W_MAX	96	/* works drawn at each priority */
 extern void work_init( void );
