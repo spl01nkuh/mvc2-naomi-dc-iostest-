@@ -18,7 +18,9 @@ be connected to gameplay or packaged for the user.
 - The masks in `InputState` match `HOST_INPUT.player` in `naomi_input.h`: LP/HP/
   A1/LK/HK/A2 are JVS B1 through B6. `input/` supplies the tested native analog
   helper and independent source collection. Coin events are separate from
-  player masks; drain a queued count as one `HOST_INPUT.coin` event per frame.
+  player masks: `InputState.insertCoin()` queues a tap and `takeCoin()` consumes
+  one `HOST_INPUT.coin` event per frame. An arcade host supplies its own Insert
+  Coin button alongside the editable player controls.
 - `NativeFrameStore` starts empty. The runtime can publish genuine frames from
   `rd_end_frame` with `NativeCanvasFrame(width:height:argb:)`, which explicitly
   converts numeric ARGB words to RGBA bytes. `clear()` removes the stopped

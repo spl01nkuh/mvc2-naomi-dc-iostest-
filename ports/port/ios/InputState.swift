@@ -6,6 +6,7 @@ import Foundation
 final class InputState: ObservableObject {
     private let lock = NSLock()
     private var sources: [String: UInt16] = [:]
+    private var pendingCoins: UInt32 = 0
 
     var buttons: UInt16 {
         lock.lock()
@@ -29,6 +30,26 @@ final class InputState: ObservableObject {
     func releaseAll() {
         lock.lock()
         sources.removeAll()
+        pendingCoins = 0
         lock.unlock()
+    }
+
+    /// The arcade credit backend expects a frame event, not a player mask.
+    @discardableResult
+    func insertCoin() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard pendingCoins < UInt32.max else { return false }
+        pendingCoins += 1
+        return true
+    }
+
+    /// Call once per simulated game frame when filling HOST_INPUT.coin.
+    func takeCoin() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard pendingCoins > 0 else { return false }
+        pendingCoins -= 1
+        return true
     }
 }

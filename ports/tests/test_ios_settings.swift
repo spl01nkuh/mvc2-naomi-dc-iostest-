@@ -17,6 +17,7 @@ struct IOSSettingsTests {
         try persistence()
         try heldSources()
         try concurrentSources()
+        try coinEvents()
         try frames()
         #if MVC2_TEST_NATIVE_BRIDGE
         try nativeStick()
@@ -116,6 +117,16 @@ struct IOSSettingsTests {
         try check(cleared == nil && nextGeneration == generation + 1, "Stopping a session must remove its old game frame")
         let independent = NativeFrameStore()
         try check(independent.snapshot().0 == nil && independent.snapshot().1 == 0, "A different session must not inherit a frame")
+    }
+
+    static func coinEvents() throws {
+        let input = InputState()
+        try check(input.insertCoin() && input.insertCoin(), "Independent coin taps must both queue")
+        try check(input.buttons == 0, "Inserting a coin must not invent a player switch bit")
+        try check(input.takeCoin() && input.takeCoin() && !input.takeCoin(), "Each native frame must consume at most one queued coin")
+        input.insertCoin()
+        input.releaseAll()
+        try check(!input.takeCoin(), "Interruptions must not replay a queued coin after resuming")
     }
 
     #if MVC2_TEST_NATIVE_BRIDGE
