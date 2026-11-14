@@ -28,6 +28,14 @@ add_executable(test_native64_memory test_native64_memory.c)
 target_link_libraries(test_native64_memory PRIVATE mvc2_native_memory)
 target_compile_options(test_native64_memory PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 add_test(NAME native64_memory COMMAND test_native64_memory)
+add_library(mvc2_native_game_memory STATIC "${PORT}/native64/game_memory.c")
+target_include_directories(mvc2_native_game_memory PUBLIC "${PORT}/native64" "${PORT}/include")
+target_compile_options(mvc2_native_game_memory PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(mvc2_native_game_memory PUBLIC mvc2_native_memory)
+add_executable(test_native64_game_memory test_native64_game_memory.c)
+target_link_libraries(test_native64_game_memory PRIVATE mvc2_native_game_memory)
+target_compile_options(test_native64_game_memory PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+add_test(NAME native64_game_memory COMMAND test_native64_game_memory)
 add_library(mvc2_native_model STATIC "${PORT}/native64/model.c")
 target_include_directories(mvc2_native_model PUBLIC "${PORT}/native64" "${PORT}/nl" "${PORT}/render" "${PORT}/include")
 target_compile_options(mvc2_native_model PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -73,7 +81,7 @@ add_test(NAME native64_render COMMAND test_native64_render)
 # native record ABI. Dead stripping removes unrelated SDK routines; no dummy
 # implementations are supplied. The full port still requires its 32-bit ABI.
 function(mvc2_core_test name)
-    cmake_parse_arguments(CORE "DREAMCAST" "" "" ${ARGN})
+    cmake_parse_arguments(CORE "DREAMCAST;LEGACY_WARNINGS" "" "" ${ARGN})
     add_executable(test_${name} ${CORE_UNPARSED_ARGUMENTS})
     target_compile_definitions(test_${name} PRIVATE HOST_NATIVE64=1)
     if(CORE_DREAMCAST)
@@ -82,8 +90,17 @@ function(mvc2_core_test name)
         target_compile_definitions(test_${name} PRIVATE BUILD_DATE=20000225)
     endif()
     target_include_directories(test_${name} PRIVATE "${GAME}/include" "${PORT}/include")
-    target_compile_options(test_${name} PRIVATE -UNDEBUG -Wall -Wextra -Werror
+    target_compile_options(test_${name} PRIVATE -UNDEBUG
         -include "${PORT}/include/port_prefix.h" -ffunction-sections -fdata-sections)
+    if(CORE_LEGACY_WARNINGS)
+        # Large original character/system units retain SHC-era diagnostics.
+        # Pointer truncation/conversion remains a hard error in this path.
+        target_compile_options(test_${name} PRIVATE -Werror=pointer-to-int-cast
+            -Werror=int-to-pointer-cast -Werror=int-conversion
+            -fno-strict-aliasing -ffp-contract=off)
+    else()
+        target_compile_options(test_${name} PRIVATE -Wall -Wextra -Werror)
+    endif()
     target_link_libraries(test_${name} PRIVATE m)
     if(APPLE)
         target_link_options(test_${name} PRIVATE "LINKER:-dead_strip")
@@ -92,6 +109,25 @@ function(mvc2_core_test name)
     endif()
     add_test(NAME ${name} COMMAND test_${name})
 endfunction()
+mvc2_core_test(native64_load_queue "${PORT}/native64/tests/test_load_queue.c")
+target_compile_options(test_native64_load_queue PRIVATE -Wno-unused-variable)
+mvc2_core_test(native64_sys_trans "${PORT}/native64/tests/test_sys_trans.c")
+mvc2_core_test(native64_system_pad LEGACY_WARNINGS "${PORT}/native64/tests/test_system_pad.c"
+    "${GAME}/src/work.c" "${GAME}/src/lib/libnaomi/nlmath.c" "${PORT}/dc/dc_shinobi.c")
+target_include_directories(test_native64_system_pad PRIVATE "${PORT}/snd")
+mvc2_core_test(native64_throw_callback LEGACY_WARNINGS "${PORT}/native64/tests/test_throw_callback.c"
+    "${GAME}/src/pl_act.c" "${GAME}/src/s_pl00.c" "${GAME}/src/hit.c" "${GAME}/src/work.c")
+mvc2_core_test(native64_player_loading LEGACY_WARNINGS test_native64_player_loading.c
+    "${GAME}/src/am_load.c" "${GAME}/src/pl_data_tbl.c" "${GAME}/src/pl_char.c"
+    "${GAME}/src/sprite.c" "${GAME}/src/work.c")
+target_link_libraries(test_native64_player_loading PRIVATE mvc2_native_game_memory)
+add_library(mvc2_native_game_tables STATIC "${PORT}/native64/game_tables.c")
+target_include_directories(mvc2_native_game_tables PRIVATE "${GAME}/include")
+target_compile_definitions(mvc2_native_game_tables PRIVATE HOST_NATIVE64=1)
+target_compile_options(mvc2_native_game_tables PRIVATE -Wall -Wextra -Werror
+    -include "${PORT}/include/port_prefix.h")
+add_test(NAME native64_game_tables COMMAND "${Python3_EXECUTABLE}"
+    "${PORT}/native64/tests/test_game_tables.py")
 mvc2_core_test(native64_game_records "${PORT}/native64/tests/test_game_records.c" "${GAME}/src/obj_uv.c")
 mvc2_core_test(native64_work_pool "${PORT}/native64/tests/test_work_pool.c"
     "${GAME}/src/hit_work.c" "${GAME}/src/work.c")

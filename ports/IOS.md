@@ -27,6 +27,12 @@ it is not a CPU emulator wrapper around the arcade or Dreamcast game.
   Tests execute the original work-pool, model traversal and CPU-command routines
   for both arcade and Dreamcast layouts. With that flag disabled, preprocessing
   every game module remains identical to the upstream revision.
+- Arcade loading queues keep ROM offsets separate from native buffer pointers.
+  Player data and sprite/picture buffers share ordinary native RAM storage.
+  The original player setup, animation decompression and palette routines are
+  exercised together for all eight work slots. Throw checks return full native
+  player pointers, and the game's message formatter uses the platform varargs ABI.
+  Sprite counts are compiled from the reconstructed assembly tables.
 - Owned main RAM resolves serialized addresses without requiring a low process
   mapping. A separate model decoder creates native object-pointer and texture
   tables from immutable 32-bit records; its texture test uses the existing
@@ -81,10 +87,11 @@ colors pass on macOS. All nine Metal presets, filter strength and presentation
 geometry passed the hosted Apple Metal rendering checks. Those hosted checks
 do not establish device frame rate or full-game compatibility.
 
-The added native memory/model and original engine-routine suites also pass
-locally. Their Apple and ARM64 results are recorded by the next component
-workflow runs. Synthetic asset fixtures verify decoding and failure handling;
-they do not substitute for real gameplay data.
+The native memory/model, renderer and initial engine-routine suites also pass
+on native ARM64 Linux and macOS. The additional player-loading, throw, message,
+queue and pad-reader suites pass locally and are included in subsequent CI runs.
+Synthetic asset fixtures verify decoding and failure handling; they do not
+substitute for real gameplay data.
 
 Before an IPA is delivered, the actual native game must load imported assets,
 reach character selection, play and finish matches with working rendering,

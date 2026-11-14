@@ -3,6 +3,11 @@
 #include "player.h"
 #include "naomi.h"
 #include "load.h"
+#ifdef HOST_NATIVE64
+/* Serialized RAM addresses are resolved at this explicit boundary. A native
+   pointer must never be reduced to a cartridge offset or masked as one. */
+#include "host_memory.h"
+#endif
 
 /* Shinobi / Kamui */
 extern Sint32 nlsndPackLoadStatus( void ) ;
@@ -19,7 +24,11 @@ extern Sint32 stg_obj_tbl[] ;
 /* the start of a block of data, from the table of offsets at its start */
 #define DATA_ADRS( top, n )	( ( Uint8 * )( top ) + ( top )[n] )
 
+#ifdef HOST_NATIVE64
+#define CHAR_LZ_TBL ( ( Sint32 * )HOST_NATIVE64_RAM_AT( 0x0dd00000 ) )
+#else
 #define CHAR_LZ_TBL	( ( Sint32 * )0x0dd00000 )	/* the characters' packed animation data */
+#endif
 
 typedef CATCH_POS CATCH_TBL[128] ;	/* where it holds each character */
 
@@ -56,7 +65,11 @@ typedef struct SND_REQ {
 	Uint8	kind;		/* 002 */
 	Uint8	unk_03;
 	Uint32	size;		/* 004 */
+#ifdef HOST_NATIVE64
+	Uint8	*src;		/* native source buffer, not a ROM offset */
+#else
 	Uint32	src;		/* 008 */
+#endif
 	Uint32	dst;		/* 00c: the address, or the bank */
 } SND_REQ;
 
@@ -499,12 +512,18 @@ Uint32 file_load2( Sint32 no, void *adrs, Sint32 a )
 /****************************************************************/
 void load_init( void )
 {
+#ifndef HOST_NATIVE64
 	Uint32 *p ;
+#endif
 	Sint32 i ;
 
+#ifdef HOST_NATIVE64
+	memset( &ld_ctrl, 0, offsetof( LOAD_CTRL, speed ) ) ;
+#else
 	p = ( Uint32 * )&ld_ctrl ;
 	*p++ = 0 ;
 	*p = 0 ;
+#endif
 	for( i = 0 ; i < 128 ; i ++ ){
 		dma_req_buf[i].flag = 0 ;
 		snd_req_buf[i].flag = 0 ;
@@ -521,7 +540,11 @@ static void load_start( void )
 
 /*==============================================================*/
 /* queue a read from the ROM */
+#ifdef HOST_NATIVE64
+static DMA_REQ *dma_req( Uint8 kind, Uint32 src, Uint8 *dst, Uint32 size )
+#else
 static DMA_REQ *dma_req( Uint8 kind, Uint32 src, Uint32 dst, Uint32 size )
+#endif
 {
 	DMA_REQ *req ;
 
@@ -541,7 +564,11 @@ static DMA_REQ *dma_req( Uint8 kind, Uint32 src, Uint32 dst, Uint32 size )
 /*==============================================================*/
 /*			Queue a request to the sound memory					*/
 /*==============================================================*/
+#ifdef HOST_NATIVE64
+static void snd_req( Uint8 kind, Uint8 *src, Uint32 dst, Uint32 size )
+#else
 static void snd_req( Uint8 kind, Uint32 src, Uint32 dst, Uint32 size )
+#endif
 {
 	SND_REQ *req ;
 
@@ -553,7 +580,11 @@ static void snd_req( Uint8 kind, Uint32 src, Uint32 dst, Uint32 size )
 	req->kind = kind ;
 	req->unk_03 = 0 ;
 	req->size = size ;
+#ifdef HOST_NATIVE64
+	req->src = src ;
+#else
 	req->src = src & 0x7fffffff ;
+#endif
 	req->dst = dst ;
 }
 
@@ -595,13 +626,21 @@ static void dma_main( void )
 	size = rest / ld_ctrl.speed ;
 	if( size <= 0 ) return ;
 	size *= 0x800 ;
+#ifdef HOST_NATIVE64
+	if( req->size <= ( Uint32 )size ){
+#else
 	if( req->size <= size ){
+#endif
 		size = req->size ;
 		req->size = 0 ;
 		req->flag = 0 ;
 		ld_ctrl.dma_get ++ ;
 		ld_ctrl.dma_get &= 0x7f ;
+#ifdef HOST_NATIVE64
+		if( req->kind == 1 ) snd_req( 1, req->dst0, port_tbl[req->no], 0 ) ;
+#else
 		if( req->kind == 1 ) snd_req( 1, ( Uint32 )req->dst0, port_tbl[req->no], 0 ) ;
+#endif
 		if( ld_ctrl.dma_get == ld_ctrl.dma_put ) ld_ctrl.dma_flag = 0 ;
 	} else req->size -= size ;
 	cache_purge( req->dst, size ) ;
@@ -650,7 +689,11 @@ static void pl_data_req( void )
 	for( i = 0 ; i < 6 ; i ++, pl_w ++ ){
 		file = &stream_tbl[pl_file_tbl[pl_w->load_type]] ;
 		adrs = pl_data_adrs_tbl[i] ;
+#ifdef HOST_NATIVE64
+		dma_req( 0, file->adrs, adrs, file->size ) ;
+#else
 		dma_req( 0, file->adrs, ( Uint32 )adrs, file->size ) ;
+#endif
 	}
 }
 
@@ -716,7 +759,12 @@ static void pl_snd_req( void )
 	}
 	for( i = 0 ; i < 6 ; i ++ ){
 		if( same[i] == i ){
+#ifdef HOST_NATIVE64
+			if( ( req = dma_req( 1, stream_tbl[pl_snd_file_tbl[pl_work[i].load_type]].adrs,
+					host_native64_ram_pointer( pl_snd_adrs[i], stream_tbl[pl_snd_file_tbl[pl_work[i].load_type]].size ),
+#else
 			if( ( req = dma_req( 1, stream_tbl[pl_snd_file_tbl[pl_work[i].load_type]].adrs, pl_snd_adrs[i],
+#endif
 					stream_tbl[pl_snd_file_tbl[pl_work[i].load_type]].size ) ) ) req->no = i ;
 		}
 	}
@@ -731,9 +779,17 @@ static void stg_load_req( void )
 	const FILE_DATA *file ;
 
 	file = &stream_tbl[stg_obj_tbl[stage_no]] ;
+#ifdef HOST_NATIVE64
+	dma_req( 2, file->adrs, host_native64_ram_pointer( 0x0d82d000, file->size ), file->size ) ;
+#else
 	dma_req( 2, file->adrs, 0x0d82d000, file->size ) ;
+#endif
 	file = &stream_tbl[stg_file_tbl[stage_no]] ;
+#ifdef HOST_NATIVE64
+	dma_req( 3, file->adrs, host_native64_ram_pointer( 0x0d85d000, file->size ), file->size ) ;
+#else
 	dma_req( 3, file->adrs, 0x0d85d000, file->size ) ;
+#endif
 }
 
 /****************************************************************/

@@ -10,6 +10,38 @@
 
 static unsigned high_address_cases;
 
+static void test_borrowed_storage(void) {
+    const size_t capacity = (size_t)MVC2_NATIVE_RAM_SIZE + 16;
+    unsigned char *storage = malloc(capacity);
+    assert(storage);
+    memset(storage, 0xa5, capacity);
+    assert(!mvc2_memory_borrow_ram(NULL, MVC2_NATIVE_RAM_SIZE));
+    assert(!mvc2_memory_borrow_ram(storage, MVC2_NATIVE_RAM_SIZE - 1));
+    MVC2Memory *memory = mvc2_memory_borrow_ram(storage, capacity);
+    assert(memory);
+    assert(mvc2_memory_ram_pointer(memory, MVC2_NATIVE_RAM_BASE, MVC2_NATIVE_RAM_SIZE) == storage);
+    assert(storage[0] == 0xa5 && storage[MVC2_NATIVE_RAM_SIZE - 1] == 0xa5);
+    assert(mvc2_memory_write_u32(memory, UINT32_C(0xadfffffc), UINT32_C(0x12345678)) == MVC2_MEMORY_OK);
+    assert(storage[MVC2_NATIVE_RAM_SIZE - 4] == 0x78 && storage[MVC2_NATIVE_RAM_SIZE - 1] == 0x12);
+    mvc2_memory_reset(memory);
+    assert(storage[0] == 0 && storage[MVC2_NATIVE_RAM_SIZE - 1] == 0);
+    for (size_t i = MVC2_NATIVE_RAM_SIZE; i < capacity; ++i) assert(storage[i] == 0xa5);
+    int object = 23;
+    assert(mvc2_memory_bind_object(memory, MVC2_NATIVE_RAM_BASE, 4, &object, sizeof object) == MVC2_MEMORY_OK);
+    assert(mvc2_memory_write_u32(memory, MVC2_NATIVE_RAM_BASE, UINT32_C(0x87654321)) == MVC2_MEMORY_OK);
+    mvc2_memory_destroy(memory);
+    /* The wrapper owned only its registry. Both the caller's bytes and its
+     * separately bound object survive destruction and can be reused. */
+    assert(storage[0] == 0x21 && storage[3] == 0x87 && object == 23);
+    storage[0] = 0x42;
+    memory = mvc2_memory_borrow_ram(storage, capacity);
+    assert(memory && storage[0] == 0x42);
+    void *resolved = NULL;
+    assert(mvc2_memory_resolve_object(memory, MVC2_NATIVE_RAM_BASE, 4, &resolved, NULL) == MVC2_MEMORY_NOT_BOUND);
+    mvc2_memory_destroy(memory);
+    free(storage);
+}
+
 static void test_addresses_and_words(void) {
     MVC2Memory *memory = mvc2_memory_create();
     assert(memory);
@@ -244,6 +276,7 @@ static void test_program_load(void) {
 }
 
 int main(void) {
+    test_borrowed_storage();
     test_addresses_and_words();
     test_native_bindings();
     test_program_load();

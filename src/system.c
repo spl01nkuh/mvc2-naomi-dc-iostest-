@@ -15,7 +15,11 @@ extern void syHwInit2( void ) ;
 extern Sint32 nlsndInit( void *Address, Sint32 BoardType ) ;
 extern Uint32 syTmrGenGetCount( void ) ;
 extern void syTmrGenSetCount( Uint32 count ) ;
+#ifdef HOST_NATIVE64
+#include <stdio.h>
+#else
 extern int sprintf( char *s, const char *format, ... ) ;
+#endif
 
 extern void com_sound_load() ;	/* the arcade passes it a 0 it doesn't read */
 extern void sound_init( void ) ;
@@ -62,7 +66,11 @@ static void pad_read( int side )
 		sw_work[side].stick_x = pad_peri[side]->x1 ;
 		sw_work[side].stick_y = pad_peri[side]->y1 ;
 		on = pad_peri[side]->on ;
+#ifdef HOST_NATIVE64
+		kw = &sw_work[side] ;
+#else
 		kw = ( SW_WORK * )( ( Uint32 )sw_work + side * 20 ) ;
+#endif
 		if( sw_work[side].now & KEY_LEVER ) sw = kw->now ;
 		else {
 			sw = 0 ;

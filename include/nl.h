@@ -55,7 +55,11 @@ extern void nlCalcPoint( VEC3 *src, VEC3 *dst ) ;
 extern void nlCalcPoint4( VEC3 *src, VEC4 *dst ) ;
 extern void nlCalcVector( VEC3 *src, VEC3 *dst ) ;
 extern Uint32 nlCommonTextureGetFreeMem( void ) ;
+#ifdef HOST_NATIVE64
+extern Sint32 nlCommonTextureReloadA( Sint32 num, const void *data ) ;
+#else
 extern Sint32 nlCommonTextureReloadA( Sint32 num, Uint32 *data ) ;
+#endif
 extern Float nlCos( int ang ) ;
 extern int nlCreateVertexBuffer( int opSz, int opMdSz, int trSz, int trMdSz ) ;
 extern void nlDispStripCoordMode( Sint32 mode ) ;

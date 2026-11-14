@@ -2,6 +2,12 @@
    files, each work's buffers and palette lines, and where the sides start. A file of data alone,
    linked after flashing. */
 #include "player.h"
+#ifdef HOST_NATIVE64
+#include "host_memory.h"
+#define PL_RAM_ADRS( address ) HOST_NATIVE64_RAM_AT( address )
+#else
+#define PL_RAM_ADRS( address ) address
+#endif
 
 /* the eighth work's buffers: the console's memory ends at 0d000000, and it has the first work's */
 #ifdef TARGET_DC
@@ -133,16 +139,16 @@ const Uint32 unk_0C22A69C[9][8] = {
 #endif
 
 Uint8 * const pl_data_adrs_tbl[8] = {	/* by work: where its player data is loaded */
-	( Uint8 * )0x0c420000, ( Uint8 * )0x0c810000, ( Uint8 * )0x0c570000, ( Uint8 * )0x0c960000,
-	( Uint8 * )0x0c6c0000, ( Uint8 * )0x0cab0000, ( Uint8 * )0x0cc00000, ( Uint8 * )PL7_DATA_ADRS
+	( Uint8 * )PL_RAM_ADRS( 0x0c420000 ), ( Uint8 * )PL_RAM_ADRS( 0x0c810000 ), ( Uint8 * )PL_RAM_ADRS( 0x0c570000 ), ( Uint8 * )PL_RAM_ADRS( 0x0c960000 ),
+	( Uint8 * )PL_RAM_ADRS( 0x0c6c0000 ), ( Uint8 * )PL_RAM_ADRS( 0x0cab0000 ), ( Uint8 * )PL_RAM_ADRS( 0x0cc00000 ), ( Uint8 * )PL_RAM_ADRS( PL7_DATA_ADRS )
 } ;
 Uint8 * const spr_set_buff_tbl[8] = {	/* and its sprite set's buffer */
-	( Uint8 * )0x0c565000, ( Uint8 * )0x0c955000, ( Uint8 * )0x0c6b5000, ( Uint8 * )0x0caa5000,
-	( Uint8 * )0x0c805000, ( Uint8 * )0x0cbf5000, ( Uint8 * )0x0cd45000, ( Uint8 * )PL7_SPR_SET_BUFF
+	( Uint8 * )PL_RAM_ADRS( 0x0c565000 ), ( Uint8 * )PL_RAM_ADRS( 0x0c955000 ), ( Uint8 * )PL_RAM_ADRS( 0x0c6b5000 ), ( Uint8 * )PL_RAM_ADRS( 0x0caa5000 ),
+	( Uint8 * )PL_RAM_ADRS( 0x0c805000 ), ( Uint8 * )PL_RAM_ADRS( 0x0cbf5000 ), ( Uint8 * )PL_RAM_ADRS( 0x0cd45000 ), ( Uint8 * )PL_RAM_ADRS( PL7_SPR_SET_BUFF )
 } ;
 Sint32 * const pic_adrs_tbl[8] = {	/* and its picture file */
-	( Sint32 * )0x0c568000, ( Sint32 * )0x0c958000, ( Sint32 * )0x0c6b8000, ( Sint32 * )0x0caa8000,
-	( Sint32 * )0x0c808000, ( Sint32 * )0x0cbf8000, ( Sint32 * )0x0cd48000, ( Sint32 * )PL7_PIC_ADRS
+	( Sint32 * )PL_RAM_ADRS( 0x0c568000 ), ( Sint32 * )PL_RAM_ADRS( 0x0c958000 ), ( Sint32 * )PL_RAM_ADRS( 0x0c6b8000 ), ( Sint32 * )PL_RAM_ADRS( 0x0caa8000 ),
+	( Sint32 * )PL_RAM_ADRS( 0x0c808000 ), ( Sint32 * )PL_RAM_ADRS( 0x0cbf8000 ), ( Sint32 * )PL_RAM_ADRS( 0x0cd48000 ), ( Sint32 * )PL_RAM_ADRS( PL7_PIC_ADRS )
 } ;
 const Sint8 col_no_tbl[8] = { 0x10, 0x18, 0x20, 0x28, 0x30, 0x38, 0x10, 0x18 } ;	/* by work: the first of its eight palette lines */
 const Float prio_z_tbl[8] = { 15.0f, 17.0f, 19.0f, 21.0f, 23.0f, 25.0f, 27.0f, 29.0f } ;

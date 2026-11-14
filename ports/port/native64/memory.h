@@ -33,6 +33,13 @@ typedef enum MVC2MemoryStatus {
  * serializes access. Reset clears RAM and invalidates all object bindings;
  * neither reset nor destroy frees caller-owned bound objects. */
 MVC2Memory *mvc2_memory_create(void);
+/* Wraps at least 32 MiB of caller-owned writable storage without copying or
+ * clearing its initial contents. Only the first 32 MiB is used. Destroy frees
+ * the wrapper and binding registry, never the borrowed bytes. The caller must
+ * keep that storage alive until destroy and serialize all access through the
+ * wrapper and retained raw views on its owning game thread. Reset and program
+ * loading have the same effect on borrowed storage as on owned RAM. */
+MVC2Memory *mvc2_memory_borrow_ram(void *bytes, size_t capacity);
 void mvc2_memory_destroy(MVC2Memory *memory);
 void mvc2_memory_reset(MVC2Memory *memory);
 

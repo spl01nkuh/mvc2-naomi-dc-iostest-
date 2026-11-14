@@ -547,7 +547,13 @@ void pl_atck_gauge_add( PLAYER_WORK *pl_w )
 /****************************************************************/
 PLAYER_WORK *pl_tbl_catch_ck( PLAYER_WORK *pl_w )
 {
+#ifdef HOST_NATIVE64
+	/* The character table erases return types, but a throw check returns a
+	   PLAYER_WORK pointer. Calling it as int truncates that result on ARM64. */
+	return ( ( PLAYER_WORK *(*)( PLAYER_WORK * ) )pl_w->pl_tbl[TBL_CATCH_CK] )( pl_w ) ;
+#else
 	return ( PLAYER_WORK * )( *( int (**)( PLAYER_WORK * ) )( pl_w->pl_tbl + 9 ) )( pl_w ) ;
+#endif
 }
 
 /****************************************************************/

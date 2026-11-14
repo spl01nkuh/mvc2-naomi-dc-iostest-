@@ -7,6 +7,10 @@
 #define STR2_MAX	16
 
 /* the C library's */
+#ifdef HOST_NATIVE64
+#include <stdarg.h>
+#include <stdio.h>
+#else
 typedef char *va_list ;
 extern int vsprintf( char *s, const char *fmt, va_list ap ) ;
 
@@ -14,6 +18,7 @@ extern int vsprintf( char *s, const char *fmt, va_list ap ) ;
 #define VA_START( ap, last )	( ( ap ) = ( Uint32 )( ( char * )&( last ) + sizeof( last ) ) % 4u \
 	? ( char * )&( last ) + sizeof( last ) + ( 4u - sizeof( last ) % 4u ) \
 	: ( char * )&( last ) + sizeof( last ) )
+#endif
 
 static int trans_cnt ;
 static int str_cnt ;
@@ -44,17 +49,28 @@ void STrPrint( Uint8 x, Uint8 y, Uint8 col, const char *fmt, ... )
 {
 	va_list ap ;
 	MES_WORK *mes ;
+#ifndef HOST_NATIVE64
 	char *s ;
+#endif
 
 	if( str_cnt == STR_MAX ) return ;
+#ifdef HOST_NATIVE64
+	va_start( ap, fmt ) ;
+#else
 	VA_START( ap, fmt ) ;
+#endif
 	mes = &str_buf[str_cnt] ;
 	mes->x = x ;
 	mes->y = y ;
 	mes->type = col ;
+#ifdef HOST_NATIVE64
+	vsnprintf( mes->str, sizeof( mes->str ), fmt, ap ) ;
+	va_end( ap ) ;
+#else
 	s = mes->str ;
 	s += vsprintf( mes->str, fmt, ap ) ;
 	*s = 0 ;
+#endif
 	str_cnt ++ ;
 }
 
@@ -106,17 +122,28 @@ void STrPrint2( Uint8 x, Uint8 y, int col, const char *fmt, ... )
 {
 	va_list ap ;
 	MES_WORK *mes ;
+#ifndef HOST_NATIVE64
 	char *s ;
+#endif
 
 	if( str2_cnt == STR2_MAX ) return ;
+#ifdef HOST_NATIVE64
+	va_start( ap, fmt ) ;
+#else
 	VA_START( ap, fmt ) ;
+#endif
 	mes = &str2_buf[str2_cnt] ;
 	mes->x = x ;
 	mes->y = y ;
 	mes->type = col ;
+#ifdef HOST_NATIVE64
+	vsnprintf( mes->str, sizeof( mes->str ), fmt, ap ) ;
+	va_end( ap ) ;
+#else
 	s = mes->str ;
 	s += vsprintf( mes->str, fmt, ap ) ;
 	*s = 0 ;
+#endif
 	str2_cnt ++ ;
 }
 

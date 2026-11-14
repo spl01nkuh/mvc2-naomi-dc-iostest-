@@ -12,6 +12,7 @@ struct MVC2Memory {
     unsigned char *ram;
     NativeBinding *bindings;
     size_t count, capacity;
+    int owns_ram;
 };
 
 static uint32_t le32(const unsigned char *bytes) {
@@ -27,13 +28,21 @@ MVC2Memory *mvc2_memory_create(void) {
         free(memory);
         return NULL;
     }
+    memory->owns_ram = 1;
+    return memory;
+}
+
+MVC2Memory *mvc2_memory_borrow_ram(void *bytes, size_t capacity) {
+    if (!bytes || capacity < MVC2_NATIVE_RAM_SIZE) return NULL;
+    MVC2Memory *memory = calloc(1, sizeof(*memory));
+    if (memory) memory->ram = bytes;
     return memory;
 }
 
 void mvc2_memory_destroy(MVC2Memory *memory) {
     if (!memory) return;
     free(memory->bindings);
-    free(memory->ram);
+    if (memory->owns_ram) free(memory->ram);
     free(memory);
 }
 
