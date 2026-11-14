@@ -60,6 +60,13 @@ tests native ARM64 on Linux and macOS and compiles the Apple components for
 the iPhone and simulator SDKs. Those checks do not compile or link the full
 game as an ARM64 iOS app.
 
+Local verification so far: input, viewport, all 19 synthetic ROM-import cases,
+and the audit tool's seven tests pass. The ARM64 coroutine test also passes
+when cross-compiled with Zig 0.14.1 for ARM64 Linux/musl and executed with
+Debian's QEMU 7.2.22 user-mode test runner. This verifies that context-switch
+binary under that runner; native Apple execution and SDK compilation still
+await the macOS workflow. The test runner is not a component of the application.
+
 Before an IPA is delivered, the actual native game must load imported assets,
 reach character selection, play and finish matches with working rendering,
 sound and input, and support the requested custom controls, CRT effects and
