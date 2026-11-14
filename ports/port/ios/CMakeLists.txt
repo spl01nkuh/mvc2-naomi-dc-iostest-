@@ -42,17 +42,15 @@ set_target_properties(MVC2Development PROPERTIES
     XCODE_ATTRIBUTE_CLANG_ENABLE_MODULES YES)
 
 # Compile the production Metal presentation code into the app's default library.
-if(CMAKE_OSX_SYSROOT STREQUAL "iphonesimulator")
+if(CMAKE_OSX_SYSROOT MATCHES "iphonesimulator|iPhoneSimulator")
     set(METAL_TARGET air64-apple-ios16.0-simulator)
 else()
     set(METAL_TARGET air64-apple-ios16.0)
 endif()
 add_custom_command(TARGET MVC2Development POST_BUILD
-    COMMAND xcrun --sdk "${CMAKE_OSX_SYSROOT}" metal -std=ios-metal2.3 -target "${METAL_TARGET}"
-        -c "${CMAKE_CURRENT_SOURCE_DIR}/display/Presentation.metal"
-        -o "${CMAKE_CURRENT_BINARY_DIR}/Presentation.air"
-    COMMAND xcrun --sdk "${CMAKE_OSX_SYSROOT}" metallib
+    COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/compile-metal.sh"
+        "${CMAKE_OSX_SYSROOT}" "${METAL_TARGET}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/display/Presentation.metal"
         "${CMAKE_CURRENT_BINARY_DIR}/Presentation.air"
-        -o "$<TARGET_BUNDLE_DIR:MVC2Development>/default.metallib"
     COMMENT "Compile bundled native CRT presentation shaders"
     VERBATIM)
