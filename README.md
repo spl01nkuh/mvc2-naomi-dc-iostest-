@@ -1,5 +1,9 @@
 # Marvel vs. Capcom 2 - NAOMI and Dreamcast program source
 
+Native iOS work in this fork is on the `native-ios-port` branch. See
+[`ports/IOS.md`](ports/IOS.md) for its current status. It is not yet a playable
+iPhone release; an IPA will be provided only after gameplay is verified.
+
 **AI Disclosure**:
 Yes, this used Claude.
 The names in here are Capcom's wherever they could be found, so blame them for `shl1a_06.c` etc.

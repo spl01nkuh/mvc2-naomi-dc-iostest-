@@ -1,0 +1,70 @@
+name: Native iOS components
+
+on:
+  push:
+    branches: [native-ios-port]
+  pull_request:
+    paths:
+      - ports/port/ios/**
+      - ports/port/sys/coro_arm64*
+      - ports/tests/**
+      - .github/workflows/ios-components.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  components:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build portable native components
+        run: |
+          cmake -S ports/tests -B build/ios-components -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/ios-components --parallel 4
+      - name: Test components
+        run: ctest --test-dir build/ios-components --output-on-failure
+      - name: Record remaining ARM64 game blockers
+        run: python3 ports/port/tools/audit_arm64.py --report-only --json build/arm64-audit.json
+      - name: Compile Apple components for iPhone and simulator
+        if: runner.os == 'macOS'
+        run: |
+          for sdk in iphoneos iphonesimulator; do
+            sdk_path="$(xcrun --sdk "$sdk" --show-sdk-path)"
+            if [[ "$sdk" == iphoneos ]]; then target=arm64-apple-ios16.0; else target=arm64-apple-ios16.0-simulator; fi
+            mkdir -p "build/apple-$sdk"
+            xcrun --sdk "$sdk" clang -target "$target" -isysroot "$sdk_path" -std=c17 -Wall -Wextra -Werror \
+              -c ports/port/sys/coro_arm64.c -o "build/apple-$sdk/coro.o"
+            xcrun --sdk "$sdk" clang -target "$target" -isysroot "$sdk_path" \
+              -c ports/port/sys/coro_arm64.S -o "build/apple-$sdk/coro_swap.o"
+            swiftc -swift-version 5 -parse-as-library -emit-module -module-name MVC2IOSComponents \
+              -target "$target" -sdk "$sdk_path" -I ports/port/ios -I ports/port/include \
+              -import-objc-header ports/port/ios/NativeBridge.h ports/port/ios/*.swift \
+              -emit-module-path "build/apple-$sdk/MVC2IOSComponents.swiftmodule"
+          done
+      - name: Test saved settings, input ownership and native frame colors
+        if: runner.os == 'macOS'
+        run: |
+          clang -I ports/port/include -c ports/port/ios/input/input.c -o build/input.o
+          swiftc -swift-version 5 -D MVC2_TEST_NATIVE_BRIDGE -I ports/port/ios -I ports/port/include \
+            -import-objc-header ports/port/ios/NativeBridge.h ports/port/ios/AppSettings.swift \
+            ports/port/ios/InputState.swift ports/port/ios/NativeFrames.swift \
+            ports/tests/test_ios_settings.swift build/input.o -o build/test-ios-settings
+          build/test-ios-settings
+      - name: Test native Metal filter presentation
+        if: runner.os == 'macOS'
+        run: swift ports/tests/test_metal_presentation.swift ports/port/ios/display/Presentation.metal
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: ARM64-audit-${{ matrix.os }}
+          path: build/arm64-audit.json
+          if-no-files-found: warn
