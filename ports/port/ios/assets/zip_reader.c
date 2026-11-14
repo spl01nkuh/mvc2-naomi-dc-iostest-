@@ -1,4 +1,8 @@
 #define _POSIX_C_SOURCE 200809L
+#if defined(__APPLE__)
+/* Darwin hides O_NOFOLLOW when only the strict POSIX feature set is enabled. */
+#define _DARWIN_C_SOURCE 1
+#endif
 #include "zip_reader.h"
 #include <dirent.h>
 #include <errno.h>
