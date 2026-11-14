@@ -1,5 +1,6 @@
 /* pthread conditions work on iOS, where unnamed POSIX semaphores do not. */
 #define _POSIX_C_SOURCE 200809L
+#define _DARWIN_C_SOURCE 1
 #include "rd_posix.h"
 
 #include <limits.h>

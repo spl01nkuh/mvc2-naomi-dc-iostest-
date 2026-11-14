@@ -76,7 +76,11 @@ typedef struct SW_WORK {
 	Uint16	rep_cnt;	/* 012: the frames they have been held */
 } SW_WORK;
 
+#ifdef HOST_NATIVE64
+#include <string.h>
+#else
 extern void *memset( void *s, int c, unsigned long n );
+#endif
 
 /* fabs() on a Float, done by the fabs instruction */
 #define fabs( x )	_builtin_fabsf( x )

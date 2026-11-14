@@ -144,8 +144,8 @@ def source_blockers(root: Path) -> list[dict]:
          "ports/port/sys/coro_arm.c", r"push \{r4-r11, lr\}"),
         ("arm32_division_helpers", "ARM32 AEABI wrappers do not define ARM64 C division/remainder-by-zero behavior.",
          "ports/port/sys/divzero_arm.c", r"__wrap___aeabi_idiv\("),
-        ("serialized_texture_pointer", "The host texture descriptor contains a native pointer but is overlaid on 16-byte game records.",
-         "ports/port/nl/nl_port.h", r"void\* address"),
+        ("serialized_texture_pointer", "The existing texture file loader still overlays native descriptors on serialized 16-byte records; it must use the native decoder.",
+         "src/thd_load.c", r"NLthd \*thd = adrs"),
     ]
     return [{"id": identifier, "issue": issue,
              "evidence": source_location(root, path, pattern)}
