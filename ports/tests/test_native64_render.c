@@ -9,6 +9,8 @@
 #include <string.h>
 #include "model.h"
 #include "host_matrix.h"
+#include "host_memory.h"
+#include "model_store.h"
 
 extern MVC2HostMatrix* nlInitMatrix(MVC2HostMatrix* stack, int count);
 extern void nlMatrixMode(int mode);
@@ -69,6 +71,13 @@ static MVC2NativeModel* fixture(void) {
     for (unsigned i = 0; i < 4; ++i) pixels[i * 2] = 0, pixels[i * 2 + 1] = 0xf8;
     MVC2NativeModel* model = NULL;
     assert(mvc2_native_model_decode(bytes, sizeof bytes, pixels, sizeof pixels, &model) == MVC2_NATIVE_MODEL_OK);
+    void* raw = host_native64_ram_pointer(BASE, sizeof bytes);
+    void* texture = host_native64_ram_pointer(PIXELS, sizeof pixels);
+    memcpy(raw, bytes, sizeof bytes);
+    memcpy(texture, pixels, sizeof pixels);
+    assert(mvc2_model_store_written(raw, sizeof bytes));
+    assert(mvc2_model_store_get(raw) == NULL); /* texture file is not registered yet */
+    assert(mvc2_model_store_written(texture, sizeof pixels));
     return model;
 }
 static void quad(float size, float depth, uint32_t color, int translucent) {
@@ -128,7 +137,7 @@ static void projection(void) {
     nlFastScreenPoint(&point, raster);
     close_to(raster[0], 320 + 800.0f / 3); close_to(raster[1], 400); close_to(raster[2], 1.0f / 3);
 }
-static void render(MVC2NativeModel* model, uint32_t* frame, const char* threads) {
+static void render(MVC2HostObjectFile* model, uint32_t* frame, const char* threads) {
     assert(setenv("MVC2_RDTHREADS", threads, 1) == 0);
     _Alignas(32) MVC2HostMatrix stack[9];
     assert(nlInitMatrix(stack, 8) == stack);
@@ -141,9 +150,9 @@ static void render(MVC2NativeModel* model, uint32_t* frame, const char* threads)
      * the wrong stride on ARM64 and used to read an unrelated pointer. */
     nlMakeModelProjectMatrix();
     assert(nl_projectMatrix[0] == 1 && nl_projectMatrix[11] == -1);
-    int* object = mvc2_native_model_object(model, 0, NULL);
+    int* object = model->obj[0];
     nl_tex_offset = 5;
-    nlObjPutLoadTexture(object, mvc2_native_model_textures(model));
+    nlObjPutLoadTexture(object, model->thd);
     assert(nl_tex[5].loaded);
     for (size_t i = 0; i < (size_t)PITCH * RD_HEIGHT; ++i) frame[i] = 0xdeadbeef;
     rd_quality("exact");
@@ -171,11 +180,34 @@ int main(void) {
     uint32_t* serial = malloc(bytes);
     uint32_t* parallel = malloc(bytes);
     assert(serial && parallel);
-    render(model, serial, "1");
-    render(model, parallel, "4");
+    render(mvc2_native_model_file(model), serial, "1");
+    render(mvc2_native_model_file(model), parallel, "4");
     assert(memcmp(serial, parallel, bytes) == 0);
-    render(model, parallel, "2");
+    void* raw = host_native64_ram_pointer(BASE, MODEL_BYTES);
+    MVC2HostObjectFile* stored = mvc2_model_store_get(raw);
+    assert(stored && stored->cnt == 1);
+    render(stored, parallel, "2");
     assert(memcmp(serial, parallel, bytes) == 0);
+    assert(mvc2_model_store_get(raw) == stored);
+    word((uint8_t*)raw + 4, UINT32_MAX);
+    assert(mvc2_model_store_written(raw, MODEL_BYTES));
+    assert(mvc2_model_store_get(raw) == NULL);
+    render(stored, parallel, "1"); /* a failed refresh retains its previous owner */
+    assert(memcmp(serial, parallel, bytes) == 0);
+    word((uint8_t*)raw + 4, 1);
+    assert(mvc2_model_store_written(raw, MODEL_BYTES));
+    assert(mvc2_model_store_get(raw) == stored);
+    assert(mvc2_model_store_written(host_native64_ram_pointer(PIXELS, 8), 8));
+    assert(mvc2_model_store_get(raw) == stored); /* stable descriptor after texture refresh */
+    assert(mvc2_model_store_written((uint8_t*)raw + 1, 1));
+    assert(mvc2_model_store_get(raw) == NULL); /* overlapping writes invalidate whole files */
+    assert(mvc2_model_store_written(raw, MODEL_BYTES));
+    assert(mvc2_model_store_get(raw) == stored);
+    assert(!mvc2_model_store_written(NULL, 1));
+    assert(!mvc2_model_store_written(host_native64_ram + MVC2_NATIVE_RAM_SIZE, 1));
+    mvc2_model_store_reset();
+    mvc2_model_store_reset();
+    assert(mvc2_model_store_get(raw) == NULL);
     free(serial); free(parallel); mvc2_native_model_free(model);
     puts("Native model rendering: real projection/texture/raster path, depth, blend, pitch and worker restart passed.");
     return 0;

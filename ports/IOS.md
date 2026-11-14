@@ -39,7 +39,10 @@ it is not a CPU emulator wrapper around the arcade or Dreamcast game.
 - Owned main RAM resolves serialized addresses without requiring a low process
   mapping. A separate model decoder creates native object-pointer and texture
   tables from immutable 32-bit records; its texture test uses the existing
-  texture backend. These modules still need integration into the game loaders.
+  texture backend. File and queued stage loads register bounded raw extents;
+  the scene loader resolves models into native descriptors on demand. Refreshes
+  retain a stable file descriptor and preserve the prior owner after failure.
+  Remaining scene and sprite paths still need integration and real-asset checks.
 - Standalone font/sprite files now decode into owned native headers; the system
   texture loader retains the backing data and preserves its prior tables after
   a failed decode. The native board uses ordinary RAM storage and rejects legacy

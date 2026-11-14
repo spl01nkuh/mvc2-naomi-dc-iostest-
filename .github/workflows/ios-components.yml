@@ -50,7 +50,7 @@ jobs:
               -c ports/port/sys/coro_arm64.c -o "build/apple-$sdk/coro.o"
             xcrun --sdk "$sdk" clang -target "$target" -isysroot "$sdk_path" \
               -c ports/port/sys/coro_arm64.S -o "build/apple-$sdk/coro_swap.o"
-            for source in ports/port/native64/memory.c ports/port/native64/game_memory.c ports/port/native64/model.c ports/port/native64/texture_file.c ports/port/native64/system_textures.c; do
+            for source in ports/port/native64/memory.c ports/port/native64/game_memory.c ports/port/native64/model.c ports/port/native64/model_store.c ports/port/native64/texture_file.c ports/port/native64/system_textures.c; do
               object="$(basename "$source" .c)"
               xcrun --sdk "$sdk" clang -target "$target" -isysroot "$sdk_path" -std=c17 \
                 -Wall -Wextra -Werror -I ports/port/nl -I ports/port/render -I ports/port/include \
@@ -62,7 +62,7 @@ jobs:
                 -Wall -Wextra -Werror -ffp-contract=off -DRD_NATIVE_SYSTEM=1 -I ports/port/render \
                 -c "$source" -o "build/apple-$sdk/$object.o"
             done
-            for source in src/obj_uv.c src/em_cmd.c src/hit_work.c src/work.c src/am_load.c src/pl_data_tbl.c src/sys_trans.c src/pl_act.c src/system.c src/thd_load.c src/ef12.c src/shl36_00.c src/shl36_03.c src/pl_sub.c ports/port/naomi/naomi_board.c; do
+            for source in src/obj_uv.c src/em_cmd.c src/hit_work.c src/work.c src/am_load.c src/pl_data_tbl.c src/sys_trans.c src/pl_act.c src/system.c src/thd_load.c src/ef12.c src/shl36_00.c src/shl36_03.c src/pl_sub.c src/tex_load.c ports/port/naomi/naomi_board.c; do
               object="$(basename "$source" .c)"
               xcrun --sdk "$sdk" clang -target "$target" -isysroot "$sdk_path" -std=gnu17 \
                 -DHOST_NATIVE64=1 -DBUILD_DATE=20000225 -Iinclude -Iports/port/include \

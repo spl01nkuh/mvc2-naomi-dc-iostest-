@@ -7,6 +7,7 @@
 /* Serialized RAM addresses are resolved at this explicit boundary. A native
    pointer must never be reduced to a cartridge offset or masked as one. */
 #include "host_memory.h"
+#include "model_store.h"
 #endif
 
 /* Shinobi / Kamui */
@@ -417,6 +418,9 @@ Uint32 file_load( Sint32 no, void *adrs, Sint32 a )
 		if( a ) cache_purge( adrs, file->size ) ;
 		rom_dma_flag = 0 ;
 	}
+	#ifdef HOST_NATIVE64
+	( void )mvc2_model_store_written( adrs, file->size ) ;
+	#endif
 	return file->size ;
 }
 
@@ -468,6 +472,9 @@ Uint32 file_load2( Sint32 no, void *adrs, Sint32 a )
 		if( a ) cache_purge( adrs, file->size ) ;
 		rom_dma_flag = 0 ;
 	}
+	#ifdef HOST_NATIVE64
+	( void )mvc2_model_store_written( adrs, file->size ) ;
+	#endif
 	return file->size ;
 }
 #else
@@ -486,6 +493,9 @@ Uint32 file_load( Sint32 no, void *adrs, Sint32 a )
 	else nlaReadROMDMA( file->adrs & 0x7fffffff, adrs, file->size, 0 ) ;
 	if( a ) cache_purge( adrs, file->size ) ;
 	rom_dma_flag = 0 ;
+	#ifdef HOST_NATIVE64
+	( void )mvc2_model_store_written( adrs, file->size ) ;
+	#endif
 	return file->size ;
 }
 
@@ -501,6 +511,9 @@ Uint32 file_load2( Sint32 no, void *adrs, Sint32 a )
 	else nlaReadROMDMA( file->adrs & 0x7fffffff, adrs, file->size, 0 ) ;
 	if( a ) cache_purge( adrs, file->size ) ;
 	rom_dma_flag = 0 ;
+	#ifdef HOST_NATIVE64
+	( void )mvc2_model_store_written( adrs, file->size ) ;
+	#endif
 	return file->size ;
 }
 
@@ -648,6 +661,9 @@ static void dma_main( void )
 	cache_inv( req->dst, size ) ;
 	req->src += size ;
 	req->dst += size ;
+#ifdef HOST_NATIVE64
+	if( !req->size ) ( void )mvc2_model_store_written( req->dst0, req->src - req->src0 ) ;
+#endif
 	load_size = size ;
 	load_cpu = nlSysMetricsCpuPowerGet() ;
 	load_total += load_size ;

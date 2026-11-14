@@ -26,6 +26,7 @@
 #ifdef HOST_NATIVE64
 #include "../native64/game_memory.h"
 #include "../native64/system_textures.h"
+#include "../native64/model_store.h"
 #endif
 
 typedef int (*INTR_FUNC)(void);
@@ -238,6 +239,7 @@ void board_stop(void) {
     snd_free();
 #ifdef HOST_NATIVE64
     mvc2_system_textures_reset();
+    mvc2_model_store_reset();
     mvc2_game_memory_reset();
 #else
     memset((void*)(uintptr_t)NAOMI_RAM_BASE, 0, NAOMI_RAM_SIZE);
