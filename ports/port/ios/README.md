@@ -1,9 +1,16 @@
 # iOS front-end components
 
-These are library components for the native port, with no application entry
-point or generated game preview. They are not a playable iOS build. The existing
-32-bit runtime still needs a native ARM64 integration before the components can
-be connected to gameplay or packaged for the user.
+These components now have an explicitly requested development host in `app/`.
+It supports real ZIP import, editable controls and persisted settings, and
+clearly states that native gameplay is unavailable. No game preview or fake
+frames are generated. Full native runtime integration remains unfinished.
+
+On macOS with Xcode and CMake 3.29+, run `bash build-development-ipa.sh device`
+from this directory. The unsigned artifact is
+`build/ios-development-device/MVC2-Development-unsigned.ipa` at the repository
+root. Sign it with your sideloading tool before device installation. iOS 16 or
+later is required. Import the supported complete NAOMI `mvsc2.zip` through the
+app's Import ZIP button; Dreamcast disc ZIPs are not supported by this importer.
 
 - `NativeAssetImporter.swift` imports the complete NAOMI `mvsc2.zip` through
   Files, validates it with `assets/`, and returns a private persistent directory.
@@ -13,7 +20,9 @@ be connected to gameplay or packaged for the user.
   drag editing, exact control sizes, remapping, up to 16 custom simultaneous
   button combinations, eight-way stick/hybrid/D-pad input, opacity and tuning.
   `AppSettings` is Codable; the eventual application owns persistence and calls
-  `sanitize()` after loading it. The host must suspend the overlay and clear
+  `sanitize()` after loading it. The development app persists it and suspends
+  the overlay for menus, editing sheets, import and background interruptions.
+  A future gameplay host must also suspend the overlay and clear
   `InputState` for menus, editing sheets, import and background interruptions.
 - The masks in `InputState` match `HOST_INPUT.player` in `naomi_input.h`: LP/HP/
   A1/LK/HK/A2 are JVS B1 through B6. `input/` supplies the tested native analog

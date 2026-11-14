@@ -4,8 +4,11 @@ This fork's `native-ios-port` branch is the iOS development branch. The existing
 PC and 3DS game implementations are the starting point. The older iOS preview
 app is not the game runtime and is not being copied over it.
 
-**Gameplay is not ready on iOS. No IPA is provided by this branch's component
-workflow.** A successful component build does not establish that the game runs.
+**Gameplay is not ready on iOS.** At the user's request, the separate
+`iOS development IPA` workflow packages an unsigned device-test app for ZIP
+import, touch controls and saved display settings. Its screen clearly states
+that gameplay is unavailable. The component workflow does not package an IPA,
+and its successful builds do not establish that the game runs.
 
 The existing port is native game C, with its own rendering and protected M1/NRS
 asset decoding. Its sound backend also interprets the sound chip's ARM7 driver;
@@ -104,7 +107,7 @@ queue and pad-reader suites pass locally and are included in subsequent CI runs.
 Synthetic asset fixtures verify decoding and failure handling; they do not
 substitute for real gameplay data.
 
-Before an IPA is delivered, the actual native game must load imported assets,
+Before an IPA is described as playable, the actual native game must load imported assets,
 reach character selection, play and finish matches with working rendering,
 sound and input, and support the requested custom controls, CRT effects and
 screen adjustments. This needs real game data and device validation. No such
