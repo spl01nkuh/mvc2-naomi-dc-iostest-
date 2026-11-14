@@ -4,7 +4,9 @@
 
 #define DEG_ANG( n )	( ( Sint32 )( ( n ) * 65536.0f / 360.0f + 0.5f ) & 0xffff )
 
+#ifndef HOST_NATIVE64
 extern void *memcpy( void *dst, const void *src, Uint32 n ) ;
+#endif
 
 /* the shapes' file, in words: the count of points that move and a second word, the numbers of
    those points, and then every shape's points */

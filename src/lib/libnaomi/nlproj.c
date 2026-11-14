@@ -21,10 +21,15 @@ typedef struct NLVECTOR4 {
 	Float	x, y, z, w;
 } NLVECTOR4;
 
+#ifdef HOST_NATIVE64
+#include "host_matrix.h"
+typedef MVC2HostMatrixStack NLMATRIXENTRY;
+#else
 typedef struct NLMATRIXENTRY {
 	Sint32	unk_0, unk_4;
 	NLMATRIX	*matrix;	/* 08 */
 } NLMATRIXENTRY;
+#endif
 
 /* what the model drawing takes from the projection */
 typedef struct NLOBJPUTPARAM {

@@ -55,7 +55,11 @@ void at02_uv_main( PLAYER_WORK *ew )
 typedef struct { Sint32 obj_flag, turn_x, turn_y, turn_z ; } AT02_LOCAL_W ;
 #define AT02_LW( w )	( ( AT02_LOCAL_W * )&( w )->obj_flag )
 /* a work of the pool; AT02_NEXT_W steps a work pointer on to the work made after it */
+#ifdef HOST_NATIVE64
+typedef WORK_BUFF AT02_WORK_BUFF ;
+#else
 typedef struct { Uint8 buff[0x1d0] ; } AT02_WORK_BUFF ;
+#endif
 #ifdef HOST_PORT
 #define AT02_NEXT_W( w )	( ( w ) = ( PLAYER_WORK * )( ( AT02_WORK_BUFF * )( w ) + 1 ) )
 #else

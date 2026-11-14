@@ -95,6 +95,11 @@ int em_rate_ck( PLAYER_WORK *pl_w, int no, int kind )
 		if( kind != 2 ) return 0 ;
 		tbl = em_rate_tbl2[no - 29] ;
 		break ;
+#ifdef HOST_NATIVE64
+	default :
+		/* A malformed selector must not use an uninitialized native pointer. */
+		return 0 ;
+#endif
 	}
 	return ( Rnd() & 31 ) < tbl[cpu_level_work.level] ;
 }
@@ -131,15 +136,35 @@ void em_cmd_sel( PLAYER_WORK *pl_w, int no, int kind )
 	base = rec = pp[kind] ;
 	if( kind == 2 ){
 		rec += no - 2 ;
+#ifdef HOST_NATIVE64
+		list = CPU_ADRS( base, rec->sel ) ;
+#else
 		list = ( Uint8 * )rec->sel ;
+#endif
 	} else {
 		tbl = ( Sint32 * )CPU_ADRS( base, rec->sel ) ;
+#ifdef HOST_NATIVE64
+		list = CPU_ADRS( base, tbl[pl_w->cpu_lv] ) ;
+#else
 		list = ( Uint8 * )tbl[pl_w->cpu_lv] ;
+#endif
 	}
+#ifndef HOST_NATIVE64
 	list += ( int )base ;	/* the list's offset, made an address */
+#endif
 	sel = list[Rnd() & 31] ;
 	cmd = ( Sint32 * )CPU_ADRS( base, rec->cmd ) ;
+#ifdef HOST_NATIVE64
+	/* These members are distinct objects, not a C array of CPU_SCRIPT. */
+	{
+		CPU_SCRIPT *scripts[3] = {
+			&pl_w->cpu_norm_sc, &pl_w->cpu_range_sc, &pl_w->cpu_event_sc
+		} ;
+		cw = scripts[kind] ;
+	}
+#else
 	cw = &pl_w->cpu_norm_sc + kind ;
+#endif
 	cw->adrs = CPU_ADRS( base, cmd[sel] ) ;
 	cw->ofs = 0 ;
 	cw->no = sel ;

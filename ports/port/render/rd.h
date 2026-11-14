@@ -76,5 +76,8 @@ void rd_quality(const char* words);
 
 /* rd_soft.c: the frame into ARGB */
 void rd_end_frame(uint32_t* frame, int pitch);
+/* On the owning frame thread, after the last frame: joins software workers
+ * and releases their pools. A later frame can start a fresh session. */
+void rd_soft_shutdown(void);
 
 #endif

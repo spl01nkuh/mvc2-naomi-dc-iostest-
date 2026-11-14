@@ -57,7 +57,9 @@ extern void pl_pic_set( PLAYER_WORK *pl_w, Uint8 no );
 extern void snap_flash_set( VEC3 *pos, Sint16 dir, int a, int b );
 extern void sp_ef_set( VEC3 *pos, int dir );
 extern void slide_dust_set( PLAYER_WORK *pl_w );
+#ifndef HOST_NATIVE64
 extern void *memcpy( void *dst, const void *src, Uint32 n );
+#endif
 
 /* speeds in 1/256 dots, by character */
 extern Sint16 jump_spd_tbl[];	/* a jump's speed and fall, up and sideways, by direction */

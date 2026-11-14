@@ -629,18 +629,53 @@ typedef struct PLAYER_WORK {
 
 /* the drawing and animation part of a work, tile_top to cpu_ex_adrs, which an effect copies whole
    from its master */
+#ifdef HOST_NATIVE64
+#include <stddef.h>
+#include <string.h>
+/* These spans contain native pointers. Their boundaries follow the native
+   members, rather than the original serialized byte offsets. */
+typedef struct CHAR_PART {
+	Uint8 bytes[offsetof( PLAYER_WORK, atck_flag ) - offsetof( PLAYER_WORK, tile_top )];
+} CHAR_PART;
+static inline void host_native64_char_part_copy( PLAYER_WORK *dst, const PLAYER_WORK *src )
+{
+	memmove( &dst->tile_top, &src->tile_top, sizeof( CHAR_PART ) );
+}
+#define CHAR_PART_COPY( d, s ) host_native64_char_part_copy( ( d ), ( s ) )
+#else
 typedef struct CHAR_PART {
 	Sint32	l[( 0x19c - 0xdc ) / 4];
 } CHAR_PART;
 #define CHAR_PART_COPY( d, s )	( *( CHAR_PART * )&( d )->tile_top = *( CHAR_PART * )&( s )->tile_top )
+#endif
 
 /* the animation's state, cg_prm to cg_rival (before cg_adrs), copied as one record */
+#ifdef HOST_NATIVE64
+typedef struct CHAR_ANIM {
+	Uint8 bytes[offsetof( PLAYER_WORK, cg_adrs ) - offsetof( PLAYER_WORK, cg_prm )];
+} CHAR_ANIM;
+static inline void host_native64_char_anim_copy( PLAYER_WORK *dst, const PLAYER_WORK *src )
+{
+	memmove( &dst->cg_prm, &src->cg_prm, sizeof( CHAR_ANIM ) );
+}
+#define CHAR_ANIM_COPY( d, s ) host_native64_char_anim_copy( ( d ), ( s ) )
+#else
 typedef struct CHAR_ANIM {
 	Sint32	l[5];
 } CHAR_ANIM;
 #define CHAR_ANIM_COPY( d, s )	( *( CHAR_ANIM * )&( d )->cg_prm = *( CHAR_ANIM * )&( s )->cg_prm )
+#endif
 
 /* the body's four sizes, size_top to size_back, set as one word (0x20202424: 0x24 0x24 0x20 0x20) */
+#ifdef HOST_NATIVE64
+static inline Uint32 host_native64_body_size_set( PLAYER_WORK *dst, Uint32 word )
+{
+	memcpy( &dst->size_top, &word, sizeof( word ) );
+	return word;
+}
+#define BODY_SIZE_SET( w, l ) host_native64_body_size_set( ( w ), ( l ) )
+#else
 #define BODY_SIZE_SET( w, l )	( *( Uint32 * )&( w )->size_top = ( l ) )
+#endif
 
 #endif

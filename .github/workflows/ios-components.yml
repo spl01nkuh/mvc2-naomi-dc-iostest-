@@ -7,6 +7,10 @@ on:
     paths:
       - ports/port/ios/**
       - ports/port/sys/coro_arm64*
+      - ports/port/native64/**
+      - ports/port/tools/**
+      - include/**
+      - src/**
       - ports/tests/**
       - .github/workflows/ios-components.yml
   workflow_dispatch:
@@ -26,6 +30,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Build portable native components
         run: |
           cmake -S ports/tests -B build/ios-components -DCMAKE_BUILD_TYPE=Release
@@ -45,6 +50,26 @@ jobs:
               -c ports/port/sys/coro_arm64.c -o "build/apple-$sdk/coro.o"
             xcrun --sdk "$sdk" clang -target "$target" -isysroot "$sdk_path" \
               -c ports/port/sys/coro_arm64.S -o "build/apple-$sdk/coro_swap.o"
+            for source in ports/port/native64/memory.c ports/port/native64/model.c; do
+              object="$(basename "$source" .c)"
+              xcrun --sdk "$sdk" clang -target "$target" -isysroot "$sdk_path" -std=c17 \
+                -Wall -Wextra -Werror -I ports/port/nl -I ports/port/render -I ports/port/include \
+                -c "$source" -o "build/apple-$sdk/native_$object.o"
+            done
+            for source in ports/port/render/rd.c ports/port/render/rd_soft.c ports/port/render/rd_posix.c; do
+              object="$(basename "$source" .c)"
+              xcrun --sdk "$sdk" clang -target "$target" -isysroot "$sdk_path" -std=c17 \
+                -Wall -Wextra -Werror -ffp-contract=off -DRD_NATIVE_SYSTEM=1 -I ports/port/render \
+                -c "$source" -o "build/apple-$sdk/$object.o"
+            done
+            for source in src/obj_uv.c src/em_cmd.c src/hit_work.c src/work.c; do
+              object="$(basename "$source" .c)"
+              xcrun --sdk "$sdk" clang -target "$target" -isysroot "$sdk_path" -std=gnu17 \
+                -DHOST_NATIVE64=1 -DBUILD_DATE=20000225 -Iinclude \
+                -include ports/port/include/port_prefix.h \
+                -Werror=pointer-to-int-cast -Werror=int-to-pointer-cast \
+                -c "$source" -o "build/apple-$sdk/$object.o"
+            done
             swiftc -swift-version 5 -parse-as-library -emit-module -module-name MVC2IOSComponents \
               -target "$target" -sdk "$sdk_path" -I ports/port/ios -I ports/port/include \
               -import-objc-header ports/port/ios/NativeBridge.h ports/port/ios/*.swift \

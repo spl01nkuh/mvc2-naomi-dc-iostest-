@@ -9,14 +9,7 @@
 #include <stdint.h>
 
 #include "rd.h"
-
-/* a texture header, as the game's data holds them */
-typedef struct {
-    int16_t width, height;
-    int32_t type;
-    void* address;
-    int32_t globl_index;
-} NLthd;
+#include "host_assets.h"
 
 typedef struct {
     RD_TEXTURE tex;

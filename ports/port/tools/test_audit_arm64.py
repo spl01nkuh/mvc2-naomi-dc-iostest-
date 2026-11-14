@@ -83,6 +83,15 @@ class CompilerEvidenceTests(unittest.TestCase):
                 self.assertGreater(layout["texture_header_size"], 16)
                 self.assertGreater(layout["effect_prefix_size"], layout["effect_slot_size"])
                 self.assertGreater(layout["character_part_field_span"], layout["character_part_copy_size"])
+            native = report["layouts"][program]["experimental_native_records"]
+            self.assertTrue(native["available"], native.get("error"))
+            self.assertEqual(native["layout"]["word_size"], 4)
+            self.assertGreaterEqual(native["layout"]["effect_slot_size"],
+                                    native["layout"]["player_work_size"])
+            self.assertEqual(native["layout"]["character_part_copy_size"],
+                             native["layout"]["character_part_field_span"])
+            self.assertEqual(native["layout"]["animation_copy_size"],
+                             native["layout"]["animation_field_span"])
             reference = report["layouts"][program]["reference_32_bit"]
             if reference["available"]:
                 self.assertEqual(reference["layout"]["pointer_size"], 4)

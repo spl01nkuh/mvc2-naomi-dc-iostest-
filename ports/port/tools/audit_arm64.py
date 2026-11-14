@@ -209,6 +209,8 @@ def audit(compiler: list[str], root: Path, flags32: list[str]) -> dict:
         layouts[program] = {
             "current_host_headers": compile_probe(compiler, root, [], False, program),
             "hypothetical_fixed_words": compile_probe(compiler, root, [], True, program),
+            "experimental_native_records": compile_probe(
+                compiler, root, ["-DHOST_NATIVE64=1"], False, program),
             "reference_32_bit": compile_probe(compiler, root, flags32, True, program),
         }
         reference = layouts[program]["reference_32_bit"]
@@ -220,7 +222,7 @@ def audit(compiler: list[str], root: Path, flags32: list[str]) -> dict:
         "status": "arm64_gameplay_not_ready",
         "compiler": version.stdout.splitlines()[0] if version.stdout else " ".join(compiler),
         "scope": "header layouts and source inventory only; no game or IPA built; no ROM data read",
-        "layout_scope": "Native host measurements, not an Apple ARM64 compilation. The fixed-word probe only isolates pointer/alignment effects.",
+        "layout_scope": "Native host measurements, not an Apple ARM64 compilation. The fixed-word probe only isolates pointer/alignment effects; HOST_NATIVE64 measures the experimental record adaptations, not a complete game.",
         "layouts": layouts,
         "source_blockers": source_blockers(root),
         "pointer_inventory": pointer_inventory(root),

@@ -406,6 +406,7 @@ struct WORKER {
     FRAG* frags;
     int nfrags, maxfrags;
     RD_SEM* go;
+    RD_THREAD* thread;
 };
 
 static WORKER workers[MAX_WORKERS];
@@ -421,6 +422,7 @@ static int first_row(const WORKER* w, int y) {
 }
 
 static int next_row(const WORKER* w, int y) {
+    (void)w;
     return (y + 1) % BAND != 0 ? y + 1 : y + 1 + (nworkers - 1) * BAND;
 }
 
@@ -954,6 +956,7 @@ static int worker_main(void* arg) {
     WORKER* w = arg;
     for (;;) {
         rd_sem_wait(w->go);
+        if (phase < 0) break;
         work(w);
         rd_sem_post(done);
     }
@@ -977,14 +980,17 @@ static void start_workers(void) {
         rd_quality(q);
     }
     n = n < 1 ? 1 : n > MAX_WORKERS ? MAX_WORKERS : n;
-    done = SDL_CreateSemaphore(0);
+    done = rd_sem_create(0);
     nworkers = 1;
     workers[0].index = 0;
     for (i = 1; i < n && done != NULL; i++) {
         WORKER* w = &workers[i];
         w->index = i;
-        w->go = SDL_CreateSemaphore(0);
-        if (w->go == NULL || SDL_CreateThread(worker_main, "render", w) == NULL) {
+        w->go = rd_sem_create(0);
+        w->thread = w->go ? rd_thread_create(worker_main, "render", w) : NULL;
+        if (w->thread == NULL) {
+            rd_sem_destroy(w->go);
+            w->go = NULL;
             break;
         }
         nworkers++;
@@ -1004,7 +1010,7 @@ static void run_phase(int p) {
 }
 
 static double now_ms(void) {
-    return SDL_GetPerformanceCounter() * 1000.0 / SDL_GetPerformanceFrequency();
+    return rd_counter() * 1000.0 / rd_frequency();
 }
 
 /* MVC2_RDTIME: the frame times on stderr */
@@ -1029,6 +1035,7 @@ static void report_time(double ms) {
 void rd_end_frame(uint32_t* frame, int pitch) {
     double start = now_ms();
     int list, i;
+    if (frame == NULL || pitch < RD_WIDTH) return;
     if (nworkers == 0) {
         make_tables();
         start_workers();
@@ -1067,4 +1074,23 @@ void rd_end_frame(uint32_t* frame, int pitch) {
         dbg_log = NULL;
     }
     report_time(now_ms() - start);
+}
+
+void rd_soft_shutdown(void) {
+    int i;
+    phase = -1;
+    for (i = 1; i < nworkers; ++i) rd_sem_post(workers[i].go);
+    for (i = 1; i < nworkers; ++i) {
+        rd_thread_join(workers[i].thread);
+        rd_sem_destroy(workers[i].go);
+    }
+    rd_sem_destroy(done);
+    done = NULL;
+    for (i = 0; i < nworkers; ++i) free(workers[i].frags);
+    memset(workers, 0, sizeof(workers));
+    nworkers = 0;
+    free(setups);
+    setups = NULL;
+    maxsetups = 0;
+    out_frame = NULL;
 }

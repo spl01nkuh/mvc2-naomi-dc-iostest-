@@ -18,10 +18,24 @@ it is not a CPU emulator wrapper around the arcade or Dreamcast game.
   the previous set after a failed import. It contains no game data. The imported
   directory is intended for the existing `naomi_rom_open` / `naomi_init` path;
   the existing M1 decoder remains responsible for protected assets.
-- A same-thread ARM64 coroutine implementation is being added for Darwin and
-  Linux. This preserves the game/host handoff without moving UIKit or renderer
-  callbacks onto a second thread. It is a platform component, not a replacement
-  for the remaining native game port.
+- A same-thread ARM64 coroutine implementation supports Darwin and Linux and
+  passes native ARM64 context-switch tests on both systems. This preserves the
+  game/host handoff without moving UIKit or renderer callbacks onto a second
+  thread.
+- Experimental `HOST_NATIVE64` engine records use fixed-width words, aligned
+  full-size work slots, field-boundary copies and native CPU-script pointers.
+  Tests execute the original work-pool, model traversal and CPU-command routines
+  for both arcade and Dreamcast layouts. With that flag disabled, preprocessing
+  every game module remains identical to the upstream revision.
+- Owned main RAM resolves serialized addresses without requiring a low process
+  mapping. A separate model decoder creates native object-pointer and texture
+  tables from immutable 32-bit records; its texture test uses the existing
+  texture backend. These modules still need integration into the game loaders.
+- The existing software renderer has a POSIX worker backend for iOS without
+  SDL, including worker shutdown and restart. Generated-model tests run through
+  the real projection, texture and model libraries into rendered ARGB pixels,
+  checking depth, blending and identical output with one, two and four workers.
+  A native matrix-stack stride mismatch in the projection library is corrected.
 - An ARM64 audit records the game's serialized data and native layout
   differences. The existing 32-bit build guard remains in place.
 - Editable multitouch controls, custom simultaneous buttons, saved options,
@@ -60,12 +74,17 @@ tests native ARM64 on Linux and macOS and compiles the Apple components for
 the iPhone and simulator SDKs. Those checks do not compile or link the full
 game as an ARM64 iOS app.
 
-Local verification so far: input, viewport, all 19 synthetic ROM-import cases,
-and the audit tool's seven tests pass. The ARM64 coroutine test also passes
-when cross-compiled with Zig 0.14.1 for ARM64 Linux/musl and executed with
-Debian's QEMU 7.2.22 user-mode test runner. This verifies that context-switch
-binary under that runner; native Apple execution and SDK compilation still
-await the macOS workflow. The test runner is not a component of the application.
+The component workflow has passed on x86 Linux, native ARM64 Linux and ARM64
+macOS. iPhone and simulator SDK compilation passes for the existing iOS
+components. Saved settings, touch ownership, analog bridging and native frame
+colors pass on macOS. All nine Metal presets, filter strength and presentation
+geometry passed the hosted Apple Metal rendering checks. Those hosted checks
+do not establish device frame rate or full-game compatibility.
+
+The added native memory/model and original engine-routine suites also pass
+locally. Their Apple and ARM64 results are recorded by the next component
+workflow runs. Synthetic asset fixtures verify decoding and failure handling;
+they do not substitute for real gameplay data.
 
 Before an IPA is delivered, the actual native game must load imported assets,
 reach character selection, play and finish matches with working rendering,

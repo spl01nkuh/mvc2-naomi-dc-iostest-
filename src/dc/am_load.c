@@ -10,7 +10,9 @@
 extern Sint32 nlsndPackLoadStatus( void ) ;
 extern Sint32 nlsndPackFreeBG( Sint32 Port ) ;
 extern Sint32 nlsndPackLoad_Open( void *PackAddress, Sint32 Port, Sint32 Size ) ;
+#ifndef HOST_NATIVE64
 extern void *memcpy( void *dst, const void *src, Uint32 n ) ;
+#endif
 
 extern void vib_stop( void ) ;
 extern void net_vsync_wait( void ) ;

@@ -2,6 +2,9 @@
    model (obj_uv_begin and its next, get and put) that the texture scrolls use on two models at
    once, and routines on a model's materials (their count, their headers, their colour). */
 #include "player.h"
+#ifdef HOST_NATIVE64
+#include <string.h>
+#endif
 
 /* a model's vertex: where it stands, its normal and where it reads its texture */
 typedef struct OBJ_VTX {
@@ -195,7 +198,11 @@ void obj_blend_set( int *obj, Sint32 src, Sint32 dst )
 				mat->tsp &= 0x3ffffff ;
 				mat->tsp |= ( src << 29 ) + ( dst << 26 ) ;
 			}
+#ifdef HOST_NATIVE64
+			obj = ( int * )( ( Uint8 * )obj + mat->size ) ;
+#else
 			obj = ( int * )( ( int )obj + mat->size ) ;
+#endif
 			ctrl = *obj ;
 		} while( ctrl ) ;
 	}
@@ -216,7 +223,11 @@ void obj_mat_count( int *obj, Sint32 *num )
 			mat = ( OBJ_MAT * )obj ;
 			obj = ( int * )mat->data ;
 			( *num ) ++ ;
+#ifdef HOST_NATIVE64
+			obj = ( int * )( ( Uint8 * )obj + mat->size ) ;
+#else
 			obj = ( int * )( ( int )obj + mat->size ) ;
+#endif
 			ctrl = *obj ;
 			if( !ctrl ) break ;
 		}
@@ -241,7 +252,11 @@ void obj_mat_save( int *obj, Sint32 *buf )
 			*buf ++ = mat->tsp ;
 			*buf ++ = mat->tcw ;
 			next = ( OBJ_MAT * )next->data ;
+#ifdef HOST_NATIVE64
+			next = ( OBJ_MAT * )( ( Uint8 * )next + mat->size ) ;
+#else
 			next = ( OBJ_MAT * )( ( int )next + mat->size ) ;
+#endif
 			ctrl = next->ctrl ;
 			if( !ctrl ) break ;
 		}
@@ -263,7 +278,11 @@ void obj_mat_load( int *obj, Sint32 *buf )
 			mat->tsp = *buf ++ ;
 			mat->tcw = *buf ++ ;
 			next = ( OBJ_MAT * )next->data ;
+#ifdef HOST_NATIVE64
+			next = ( OBJ_MAT * )( ( Uint8 * )next + mat->size ) ;
+#else
 			next = ( OBJ_MAT * )( ( int )next + mat->size ) ;
+#endif
 			ctrl = next->ctrl ;
 			if( !ctrl ) break ;
 		}
@@ -282,10 +301,18 @@ void obj_argb_set( int *obj, Float a, Float r, Float g, Float b )
 		next = ( OBJ_MAT * )&obj[6] ;
 		for( ;; ){
 			mat = next ;
+#ifdef HOST_NATIVE64
+			/* Copy the representation without type-punning float objects. */
+			memcpy( &mat->col[0], &a, sizeof( a ) ) ;
+			memcpy( &mat->col[1], &r, sizeof( r ) ) ;
+			memcpy( &mat->col[2], &g, sizeof( g ) ) ;
+			memcpy( &mat->col[3], &b, sizeof( b ) ) ;
+#else
 			mat->col[0] = *( Uint32 * )&a ;
 			mat->col[1] = *( Uint32 * )&r ;
 			mat->col[2] = *( Uint32 * )&g ;
 			mat->col[3] = *( Uint32 * )&b ;
+#endif
 			next = OBJ_MAT_NEXT( mat ) ;
 			if( !next->ctrl ) break ;
 		}

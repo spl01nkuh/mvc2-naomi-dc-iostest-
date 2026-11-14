@@ -7,8 +7,16 @@
 
 /* hit_work.c: the works and their lists */
 #define WORK_MAX	256	/* works in the pool */
+#ifdef HOST_NATIVE64
+/* Pointer-bearing native work records outgrow the arcade's 464-byte effect
+   prefix. Every native pool slot owns a complete, correctly aligned record.
+   Effect-local overlays still need their individual native layout audit. */
+#define WORK_SIZE	sizeof( PLAYER_WORK )
+typedef union { PLAYER_WORK player; Uint8 buff[WORK_SIZE]; } WORK_BUFF;
+#else
 #define WORK_SIZE	0x1d0	/* each one's size: an effect's work ends where a player's act_st starts */
 typedef struct { Uint8 buff[WORK_SIZE]; } WORK_BUFF;	/* one work of the pool */
+#endif
 #define LIST_MAX	14	/* lists of works */
 /* the lists, a work's work_kind */
 #define W_PL		0	/* a player: not from the pool */

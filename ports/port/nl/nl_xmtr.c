@@ -5,6 +5,7 @@
 
 #include <math.h>
 #include <string.h>
+#include "host_matrix.h"
 
 typedef float NLMTX[16];
 
@@ -16,12 +17,7 @@ typedef struct {
     float x, y, z, w;
 } NLV4;
 
-typedef struct {
-    short count;
-    short max;
-    NLMTX* base;
-    NLMTX* matrix;  /* XMTRX is written back here */
-} NLMATRIXSTACK;
+typedef MVC2HostMatrixStack NLMATRIXSTACK;
 
 #define VIEW_DEPTH 8
 #define PROJ_DEPTH 8

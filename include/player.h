@@ -28,6 +28,10 @@ typedef struct FADE_COL {
 } FADE_COL;
 
 /* a texture's header, as Kamui's */
+#ifdef HOST_NATIVE64
+#include "host_assets.h"
+typedef MVC2HostObjectFile OBJ_FILE;
+#else
 typedef struct NLthd {
 	Sint16	width, height;
 	Sint32	type;
@@ -41,6 +45,7 @@ typedef struct OBJ_FILE {
 	Sint32	cnt;		/* 004: how many */
 	NLthd	*thd;		/* 008: their textures, ended by one of width 0 */
 } OBJ_FILE;
+#endif
 
 /* a 4x4 matrix, laid out as Kamui's */
 typedef struct MATRIX {
