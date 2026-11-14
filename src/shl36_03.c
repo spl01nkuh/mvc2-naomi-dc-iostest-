@@ -6,7 +6,11 @@
 #include "pl36_def.h"
 
 /* what the effect holds, in work1 */
+#ifdef HOST_NATIVE64
+#define SHL36_03_EM( w )	( ( PLAYER_WORK * )( w )->native_work_ptr[0] )
+#else
 #define SHL36_03_EM( w )	( ( PLAYER_WORK * )( w )->work1 )
+#endif
 
 /* the grab's end: no is 0 when it flew far enough, 1 when it missed, 2 when it let go */
 extern void pls36_02_set( PLAYER_WORK *w, Uint8 no );
@@ -149,7 +153,11 @@ static void shl36_03_catch( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 		ew->routine_1 ++ ;
 		pl_char_set( em_w, Char_Dizzy, 0 ) ;
 		pl_ef_catch_set( ew, em_w ) ;
+#ifdef HOST_NATIVE64
+		ew->native_work_ptr[0] = pl_w->catch_w ;
+#else
 		ew->work1 = ( Sint32 )pl_w->catch_w ;
+#endif
 		time = 90 ;
 		if( pl_w->team_no ) time = 60 ;
 		ew->timer0 = time ;

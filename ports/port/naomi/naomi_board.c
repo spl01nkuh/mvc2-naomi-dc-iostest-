@@ -23,6 +23,10 @@
 #include "coro.h"
 #include "nl_port.h"
 #include "snd.h"
+#ifdef HOST_NATIVE64
+#include "../native64/game_memory.h"
+#include "../native64/system_textures.h"
+#endif
 
 typedef int (*INTR_FUNC)(void);
 
@@ -34,6 +38,8 @@ static int render_done;
 static unsigned frames;
 static void (*stop_fn)(void);
 static void (*frame_fn)(void);
+static unsigned frame_polls, polls_frame;
+static int imask;
 
 void host_log(const char* fmt, ...) {
     va_list ap;
@@ -92,7 +98,9 @@ void host_stub_report(void) {
 
 /* first thing in main(), before SDL or a GPU driver takes the addresses */
 int naomi_map_ram(void) {
-#ifdef _WIN32
+#if defined(HOST_NATIVE64)
+    return mvc2_game_memory_open() != NULL;
+#elif defined(_WIN32)
     void* p = VirtualAlloc((void*)(uintptr_t)NAOMI_RAM_BASE, NAOMI_RAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     return p == (void*)(uintptr_t)NAOMI_RAM_BASE;
 #elif defined(__3DS__)
@@ -117,7 +125,20 @@ int naomi_map_ram(void) {
 }
 
 /* as the boot ROM loads it, from the cartridge header's table */
+#ifdef HOST_NATIVE64
+static int read_program_segment(void* context, uint32_t offset, void* output, size_t length) {
+    (void)context;
+    return length <= UINT32_MAX && naomi_rom_read(offset, output, (uint32_t)length);
+}
+#endif
 static int load_program(void) {
+#ifdef HOST_NATIVE64
+    MVC2Memory* memory = mvc2_game_memory_open();
+    if (!memory) return 0;
+    MVC2MemoryStatus result = mvc2_memory_load_program(memory, read_program_segment, NULL, naomi_rom_size());
+    if (result != MVC2_MEMORY_OK) host_log("program data: %s", mvc2_memory_status_string(result));
+    return result == MVC2_MEMORY_OK;
+#else
     static uint8_t hdr[0x500];
     int i;
     if (!naomi_rom_read(0, hdr, sizeof hdr) || memcmp(hdr, "NAOMI", 5) != 0) {
@@ -138,15 +159,18 @@ static int load_program(void) {
         }
     }
     return 1;
+#endif
 }
 
 /* the data stays where it loaded; its words that point at the C's routines or data are moved */
 static void init_data(void) {
+#ifndef HOST_NATIVE64
     const HOST_RELOC* r;
     for (r = program->reloc; r->at != NULL; r++) {
         uint32_t v = (uint32_t)(uintptr_t)r->to;
         memcpy(r->at, &v, 4);
     }
+#endif
 }
 
 static void game_entry(void* arg) {
@@ -158,11 +182,31 @@ static void game_entry(void* arg) {
     }
 }
 
+#ifdef HOST_NATIVE64
+static int native_program_valid(const HOST_PROGRAM* prog) {
+    return prog && prog->main && (!prog->reloc || !prog->reloc[0].at);
+}
+int board_start(const HOST_PROGRAM* prog) {
+    if (!native_program_valid(prog) || game_coro) {
+        host_log("native start requires linked C tables, no serialized relocations and a stopped board");
+        return 0;
+    }
+    if (!naomi_map_ram()) return 0;
+    memset(intr, 0, sizeof intr);
+    frames = 0;
+    render_done = 0;
+    frame_polls = polls_frame = 0;
+    imask = 0;
+#else
 void board_start(const HOST_PROGRAM* prog) {
+#endif
     program = prog;
     init_data();
     host_coro = coro_self();
     game_coro = coro_create(game_entry, NULL, 1 << 20);
+#ifdef HOST_NATIVE64
+    return 1;
+#endif
 }
 
 void board_at_stop(void (*fn)(void)) {
@@ -176,7 +220,13 @@ void board_at_frame(void (*fn)(void)) {
 /* between frames: the game, waiting in nlWaitVSync, is dropped there */
 void board_stop(void) {
     if (stop_fn != NULL) {
+#ifdef HOST_NATIVE64
+        void (*callback)(void) = stop_fn;
+        stop_fn = NULL;
+        callback();
+#else
         stop_fn();
+#endif
     }
     frame_fn = NULL;
     if (game_coro != NULL) {
@@ -186,18 +236,36 @@ void board_stop(void) {
     naomi_rom_close();
     nl_tex_free_all();
     snd_free();
+#ifdef HOST_NATIVE64
+    mvc2_system_textures_reset();
+    mvc2_game_memory_reset();
+#else
     memset((void*)(uintptr_t)NAOMI_RAM_BASE, 0, NAOMI_RAM_SIZE);
+#endif
 }
 
 int naomi_init(const HOST_PROGRAM* prog, const char* rom_path) {
+#ifdef HOST_NATIVE64
+    if (!native_program_valid(prog) || game_coro) return 0;
+#endif
     if (!naomi_rom_open(rom_path) || !load_program()) {
+#ifdef HOST_NATIVE64
+        naomi_rom_close();
+#endif
         return 0;
     }
+#ifdef HOST_NATIVE64
+    return board_start(prog);
+#else
     board_start(prog);
     return 1;
+#endif
 }
 
 void naomi_run_frame(void) {
+#ifdef HOST_NATIVE64
+    if (!game_coro) return;
+#endif
     frames++;
     render_done = 0;
     nla_frame_input();
@@ -241,8 +309,6 @@ void nlSetIntrFunction(int no, INTR_FUNC f) {
 
 /* Shinobi's timer, in microseconds: it follows the frames and moves on a little each read, so a run
    is the same every time */
-static unsigned frame_polls, polls_frame;
-
 uint32_t syTmrGetCount(void) {
     host_poll();
     if (polls_frame != frames) {
@@ -264,8 +330,6 @@ uint32_t syTmrCountToMicro(uint32_t count) {
 }
 
 /* SHC's interrupt mask built-ins */
-static int imask;
-
 int host_get_imask(void) {
     return imask;
 }

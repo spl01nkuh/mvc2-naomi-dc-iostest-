@@ -33,10 +33,18 @@ it is not a CPU emulator wrapper around the arcade or Dreamcast game.
   exercised together for all eight work slots. Throw checks return full native
   player pointers, and the game's message formatter uses the platform varargs ABI.
   Sprite counts are compiled from the reconstructed assembly tables.
+- The combo and Thanos effects keep native references outside their original
+  integer work overlays. Team, round, partner and system resets use native field
+  boundaries while retaining entry and load metadata.
 - Owned main RAM resolves serialized addresses without requiring a low process
   mapping. A separate model decoder creates native object-pointer and texture
   tables from immutable 32-bit records; its texture test uses the existing
   texture backend. These modules still need integration into the game loaders.
+- Standalone font/sprite files now decode into owned native headers; the system
+  texture loader retains the backing data and preserves its prior tables after
+  a failed decode. The native board uses ordinary RAM storage and rejects legacy
+  four-byte relocation lists. An ARM64 board fixture exercises the real coroutine,
+  JVS input, rendered frames and stop/restart path. It does not run MVC2's main.
 - The existing software renderer has a POSIX worker backend for iOS without
   SDL, including worker shutdown and restart. Generated-model tests run through
   the real projection, texture and model libraries into rendered ARGB pixels,
@@ -58,12 +66,12 @@ addresses, callback words and fixed buffers in 32-bit RAM records. In particular
 slots. An iPhone's native function pointers cannot be stored in those slots.
 Changing `Sint32` or deleting the CMake guard does not solve this.
 
-The native adaptation must separate serialized 32-bit records from host records,
-resolve callbacks through typed native tables, replace fixed RAM aliases and
-GNU linker-dependent data generation, and provide the Darwin frame/lifecycle
-integration. It must then connect real rendered frames, input and audio to the
-iOS interface. Existing game rendering, texture handling, protected assets and
-sound code can be reused after those boundaries are addressed.
+The native path uses callback tables from the reconstructed C source and rejects
+the old serialized relocation lists. Remaining model references and scratch-buffer
+aliases still need conversion, and the full game needs a build without GNU linker
+data generation. It must then connect the game, rendered frames, input and audio
+to the iOS lifecycle and interface. Existing rendering, protected asset decoding
+and sound code provide the starting point for that integration.
 
 ## Component validation
 

@@ -215,7 +215,7 @@ static void attract_init( void )
 #endif
 	Palette_Init() ;
 	Texture_Init() ;
-	memset( &sys_work.game_timer, 0, SYS_HALF ) ;
+	memset( &sys_work.game_timer, 0, SYS_GAME_CLEAR_SIZE ) ;
 	memset( &vs_sys_work, 0, sizeof( vs_sys_work ) ) ;
 	work_init() ;
 	total_vol_init() ;
@@ -562,7 +562,7 @@ static void attract_coin_init( void )
 	Sys->timer0 = 1800 ;
 	Sys->home_mode = HOME_ARCADE ;
 #endif
-	memset( &sys_work.game_timer, 0, SYS_HALF ) ;
+	memset( &sys_work.game_timer, 0, SYS_GAME_CLEAR_SIZE ) ;
 	memset( &vs_sys_work, 0, sizeof( vs_sys_work ) ) ;
 	Palette_Init() ;
 	Texture_Init() ;

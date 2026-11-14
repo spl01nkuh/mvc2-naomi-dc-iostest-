@@ -21,7 +21,11 @@ typedef struct SHL36_00_LOCAL_W {
 #define SHL36_00_LW( w )	( ( SHL36_00_LOCAL_W * )&( w )->obj_flag )
 
 /* a part's head is kept in work3; the head's own work3 says the coil is ending */
+#ifdef HOST_NATIVE64
+#define SHL36_00_HEAD( w )	( ( PLAYER_WORK * )( w )->native_work_ptr[2] )
+#else
 #define SHL36_00_HEAD( w )	( ( PLAYER_WORK * )( w )->work3 )
+#endif
 
 static SHL36_00_OFS shl36_00_ofs[5] = {
 	{ 0, 0 },
@@ -61,7 +65,11 @@ static PLAYER_WORK *shl36_00_part_set( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 			w->be_flag = 1 ;
 			w->work_func = shl36_00_main ;
 			w->master_w = pl_w ;
+#ifdef HOST_NATIVE64
+			w->native_work_ptr[2] = ew ;
+#else
 			w->work3 = ( Sint32 )ew ;
+#endif
 			w->pl_type = pl_w->pl_type ;
 			w->ef_no = 0x3600 ;
 			w->type = 1 ;

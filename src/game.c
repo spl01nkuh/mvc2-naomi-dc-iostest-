@@ -59,7 +59,7 @@ static void game_init( void )
 #endif
 	Sys->task_step ++ ;
 	Sys->entry_stop = 1 ;
-	memset( &sys_work.game_timer, 0, SYS_HALF ) ;
+	memset( &sys_work.game_timer, 0, SYS_GAME_CLEAR_SIZE ) ;
 	memset( &vs_sys_work, 0, sizeof( vs_sys_work ) ) ;
 	Sys->new_side = Sys->entry_side ;
 	Sys->cpu_level_max = 0 ;

@@ -58,11 +58,15 @@ static void test_native_slots(void)
         assert((uintptr_t)allocated[index] % _Alignof(PLAYER_WORK) == 0);
         assert(allocated[index]->master_w == NULL);
         assert(allocated[index]->cpu_ex_sc.adrs == NULL);
+        for (size_t slot = 0; slot < 3; ++slot)
+            assert(allocated[index]->native_work_ptr[slot] == NULL);
         assert(allocated[index]->act_st == 0);
         /* Touch fields beyond the old 464-byte limit. Each neighbor must keep
            its own values through the final record, with sanitizers enabled. */
         allocated[index]->act_st = (Uint8)(index + 1);
         allocated[index]->cpu_ex_sc.adrs = (Uint8 *)&work_buff[index];
+        for (size_t slot = 0; slot < 3; ++slot)
+            allocated[index]->native_work_ptr[slot] = &work_buff[(index + slot) % WORK_MAX];
     }
     assert(free_top == NULL && free_end == NULL && free_cnt == 0);
     assert(work_rest_cnt == -10);
@@ -70,6 +74,8 @@ static void test_native_slots(void)
     for (index = 0; index < WORK_MAX; ++index) {
         assert(allocated[index]->act_st == (Uint8)(index + 1));
         assert(allocated[index]->cpu_ex_sc.adrs == (Uint8 *)&work_buff[index]);
+        for (size_t slot = 0; slot < 3; ++slot)
+            assert(allocated[index]->native_work_ptr[slot] == &work_buff[(index + slot) % WORK_MAX]);
     }
     expect_list(W_EF, allocated, WORK_MAX);
     work_list_kill(W_EF);
@@ -80,6 +86,8 @@ static void test_native_slots(void)
         PLAYER_WORK *work = work_get2(NULL, W_SYS, LIST_END);
         assert(work == allocated[index]);
         assert(work->act_st == 0 && work->cpu_ex_sc.adrs == NULL);
+        for (size_t slot = 0; slot < 3; ++slot)
+            assert(work->native_work_ptr[slot] == NULL);
     }
     work_list_kill(W_SYS);
 }

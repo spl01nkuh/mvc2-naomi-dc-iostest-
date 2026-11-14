@@ -62,7 +62,13 @@ void naomi_m1_read(uint32_t src, uint8_t* dst, uint32_t size);     /* a packed f
 /* the board (naomi_board.c) */
 int naomi_map_ram(void);
 int naomi_init(const HOST_PROGRAM* program, const char* rom_path);
+#ifdef HOST_NATIVE64
+/* Native C tables must already be linked. Nonempty serialized relocation
+ * lists are rejected; they cannot contain full-width native pointers. */
+int board_start(const HOST_PROGRAM* program);
+#else
 void board_start(const HOST_PROGRAM* program);  /* a program loaded in RAM */
+#endif
 void board_at_stop(void (*fn)(void));
 void board_at_frame(void (*fn)(void));  /* before the game runs */
 void board_stop(void);              /* the game and what it holds let go, RAM cleared */

@@ -125,6 +125,14 @@ typedef struct SYSTEM_WORK {
 	Uint8	unk_b8[0x100 - 0xb8];
 } SYSTEM_WORK;
 #define SYS_HALF	0x80	/* sys_work is cleared in two halves: at power on, and for each game */
+#ifdef HOST_NATIVE64
+#include <stddef.h>
+/* Native tex_buff widens the second region. The settings before game_timer
+   still occupy the original first half and survive each game reset. */
+#define SYS_GAME_CLEAR_SIZE	( sizeof( SYSTEM_WORK ) - offsetof( SYSTEM_WORK, game_timer ) )
+#else
+#define SYS_GAME_CLEAR_SIZE	SYS_HALF
+#endif
 
 /* Sys->home_mode: the mode chosen on the home game's menu (always 0 on the board) */
 #define HOME_ARCADE		0

@@ -612,7 +612,7 @@ void pl_change( PLAYER_WORK *pl_w )
 /****************************************************************/
 void demo_init( void )
 {
-	memset( &sys_work.game_timer, 0, SYS_HALF ) ;
+	memset( &sys_work.game_timer, 0, SYS_GAME_CLEAR_SIZE ) ;
 	Sys->entry_side = 3 ;
 	Sys->play_side = 0 ;
 	Sys->cpu_level_max = 1 ;
@@ -790,7 +790,7 @@ static void demo_move( void )
 		Sys->exit_flag = 0 ;
 		Sys->cpu_level_max = 3 ;
 		work_init() ;
-		memset( &sys_work.game_timer, 0, SYS_HALF ) ;
+		memset( &sys_work.game_timer, 0, SYS_GAME_CLEAR_SIZE ) ;
 		memset( &vs_sys_work, 0, sizeof( VS_SYS_WORK ) ) ;
 		sound_all_off() ;
 		se_all_off() ;

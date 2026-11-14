@@ -7,7 +7,11 @@ extern void obj_col_set( int *obj, int no ) ;
 extern Float obj_scale_max( VEC3 *scale ) ;
 
 extern void scr_2d_matrix_set( void ) ;
+#ifdef HOST_NATIVE64
+#include <stdio.h>
+#else
 extern int sprintf( char *s, const char *fmt, ... ) ;
+#endif
 
 /* one object of a word, in the 2D camera: colour (0 keeps the object's own), the number place it
    shows (or -1 for the fixed object), the scale to draw at, the fixed object, and the x it moves on by */
@@ -37,8 +41,13 @@ typedef struct EF12_NUM_W {
 #define EF12_MARK( w )	( ( w )->size_front )	/* a bit for each player whose low vital has been shown; 0xff for the computer */
 #define EF12_WAIT( w )	( ( w )->size_back )	/* frames left of a delay set by the player's unk_1ee */
 /* what is drawn and the bonus under it: lists of EF12_CHR, kept as addresses */
+#ifdef HOST_NATIVE64
+#define EF12_CHR0( w )	( ( EF12_CHR * )( w )->native_work_ptr[1] )
+#define EF12_CHR1( w )	( ( EF12_CHR * )( w )->native_work_ptr[2] )
+#else
 #define EF12_CHR0( w )	( ( EF12_CHR * )( w )->work2 )
 #define EF12_CHR1( w )	( ( EF12_CHR * )( w )->work3 )
+#endif
 
 /* where each side's work stands */
 static VEC3 ef12_pos_tbl[2][2] = {
@@ -675,8 +684,13 @@ static void ef12_fly( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 /*==============================================================*/
 static void ef12_chr_clr( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 {
+#ifdef HOST_NATIVE64
+	ew->native_work_ptr[1] = 0 ;
+	ew->native_work_ptr[2] = 0 ;
+#else
 	ew->work2 = 0 ;
 	ew->work3 = 0 ;
+#endif
 }
 
 /*==============================================================*/
@@ -725,11 +739,19 @@ static void ef12_bonus_set( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 /*==============================================================*/
 static void ef12_chr_set( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 {
+#ifdef HOST_NATIVE64
+	ew->native_work_ptr[1] = ef12_chr_tbl[EF12_KIND( ew ) & 15] ;
+	if( ef12_se_tbl[EF12_KIND( ew ) & 15] ){
+		if( !Sys->vs_flag && !pl_w->cpu_flag ) ew->native_work_ptr[2] = ef12_bonus_chr ;
+		else ew->native_work_ptr[2] = 0 ;
+	}
+#else
 	ew->work2 = ( Sint32 )ef12_chr_tbl[EF12_KIND( ew ) & 15] ;
 	if( ef12_se_tbl[EF12_KIND( ew ) & 15] ){
 		if( !Sys->vs_flag && !pl_w->cpu_flag ) ew->work3 = ( Sint32 )ef12_bonus_chr ;
 		else ew->work3 = 0 ;
 	}
+#endif
 }
 
 /*==============================================================*/
@@ -759,8 +781,13 @@ static void ef12_hit_digit( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 		*p = buf[i] - '0' ;
 		if( *p < 0 ) *p = 0xff ;
 	}
+#ifdef HOST_NATIVE64
+	ew->native_work_ptr[1] = ef12_hit_chr ;
+	ew->native_work_ptr[2] = 0 ;
+#else
 	ew->work2 = ( Sint32 )ef12_hit_chr ;
 	ew->work3 = 0 ;
+#endif
 }
 
 /****************************************************************/

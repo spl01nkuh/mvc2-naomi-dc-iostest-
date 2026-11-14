@@ -481,6 +481,11 @@ typedef struct PLAYER_WORK {
 	Uint32	play_time;	/* 558: frames the side has played in the arcade */
 	Uint8	pic_buff_no;		/* 55c: on the Dreamcast, which of pic_adrs_tbl's buffers the player's files use */
 	Uint8	unk_55d[0x5a4 - 0x55d];
+#ifdef HOST_NATIVE64
+	/* Some effects used spare 32-bit words for pointers. Keep their integer
+	   overlays intact and store those native references beyond the game record. */
+	void	*native_work_ptr[3];
+#endif
 } PLAYER_WORK;
 
 /* pl_tbl: a character's routines */

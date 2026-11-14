@@ -51,6 +51,22 @@ else()
     target_link_options(test_native64_model PRIVATE "LINKER:--gc-sections")
 endif()
 add_test(NAME native64_model COMMAND test_native64_model)
+add_library(mvc2_native_texture_files STATIC "${PORT}/native64/texture_file.c"
+    "${PORT}/native64/system_textures.c")
+target_include_directories(mvc2_native_texture_files PUBLIC "${PORT}/native64" "${PORT}/include" "${PORT}/nl" "${PORT}/render")
+target_compile_options(mvc2_native_texture_files PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_executable(test_native64_texture_file test_native64_texture_file.c
+    "${PORT}/nl/nl_tex.c" "${PORT}/nl/nl_sprite.c" "${PORT}/nl/nl_strip.c" "${PORT}/naomi/naomi_board.c")
+target_include_directories(test_native64_texture_file PRIVATE "${PORT}/include" "${PORT}/sys" "${PORT}/snd")
+target_compile_definitions(test_native64_texture_file PRIVATE _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
+target_compile_options(test_native64_texture_file PRIVATE -UNDEBUG -ffunction-sections -fdata-sections)
+target_link_libraries(test_native64_texture_file PRIVATE mvc2_native_texture_files m)
+if(APPLE)
+    target_link_options(test_native64_texture_file PRIVATE "LINKER:-dead_strip")
+else()
+    target_link_options(test_native64_texture_file PRIVATE "LINKER:--gc-sections")
+endif()
+add_test(NAME native64_texture_file COMMAND test_native64_texture_file)
 
 # The same CPU renderer used by the existing game, with a Darwin/POSIX worker
 # implementation. No SDL or GPU-window dependency is required for iOS frames.
@@ -110,6 +126,11 @@ function(mvc2_core_test name)
     add_test(NAME ${name} COMMAND test_${name})
 endfunction()
 mvc2_core_test(native64_load_queue "${PORT}/native64/tests/test_load_queue.c")
+mvc2_core_test(native64_effect_words LEGACY_WARNINGS "${PORT}/native64/tests/test_effect_words.c" "${GAME}/src/work.c")
+mvc2_core_test(native64_effect_thanos LEGACY_WARNINGS "${PORT}/native64/tests/test_effect_thanos.c"
+    "${GAME}/src/pl_char.c" "${GAME}/src/hit_work.c" "${GAME}/src/work.c")
+mvc2_core_test(native64_state_clears LEGACY_WARNINGS "${PORT}/native64/tests/test_state_clears.c" "${GAME}/src/work.c")
+mvc2_core_test(native64_state_clears_dc DREAMCAST LEGACY_WARNINGS "${PORT}/native64/tests/test_state_clears.c" "${GAME}/src/work.c")
 target_compile_options(test_native64_load_queue PRIVATE -Wno-unused-variable)
 mvc2_core_test(native64_sys_trans "${PORT}/native64/tests/test_sys_trans.c")
 mvc2_core_test(native64_system_pad LEGACY_WARNINGS "${PORT}/native64/tests/test_system_pad.c"
@@ -164,6 +185,22 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
     target_link_libraries(test_coro PRIVATE Threads::Threads)
     target_compile_options(test_coro PRIVATE -UNDEBUG -Wall -Wextra -Werror)
     add_test(NAME arm64_coroutine COMMAND test_coro)
+    add_executable(test_native64_board test_native64_board.c
+        "${PORT}/naomi/naomi_board.c" "${PORT}/naomi/naomi_rom.c" "${PORT}/naomi/nl_am.c"
+        "${PORT}/nl/nl_tex.c" "${PORT}/snd/snd_nl.c" "${PORT}/snd/aica.c" "${PORT}/snd/arm7.c"
+        "${PORT}/sys/coro_arm64.c" "${PORT}/sys/coro_arm64.S")
+    target_include_directories(test_native64_board PRIVATE "${PORT}/include" "${PORT}/sys"
+        "${PORT}/nl" "${PORT}/snd" "${GAME}/include")
+    target_compile_definitions(test_native64_board PRIVATE HOST_NATIVE64=1 _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
+    target_compile_options(test_native64_board PRIVATE -UNDEBUG
+        "$<$<COMPILE_LANGUAGE:C>:-include;${PORT}/include/port_prefix.h>" -ffunction-sections -fdata-sections)
+    target_link_libraries(test_native64_board PRIVATE mvc2_native_game_memory mvc2_native_renderer mvc2_native_texture_files Threads::Threads)
+    if(APPLE)
+        target_link_options(test_native64_board PRIVATE "LINKER:-dead_strip")
+    else()
+        target_link_options(test_native64_board PRIVATE "LINKER:--gc-sections")
+    endif()
+    add_test(NAME native64_board COMMAND test_native64_board)
 else()
     message(STATUS "ARM64 coroutine execution requires an ARM64 host; not registered on this architecture")
 endif()

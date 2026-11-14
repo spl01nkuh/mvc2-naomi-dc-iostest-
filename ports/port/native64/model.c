@@ -1,4 +1,5 @@
 #include "model.h"
+#include "texture_layout.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -38,44 +39,13 @@ static int offset_for(uint32_t address, uint32_t base, size_t size, size_t* offs
     *offset = (size_t)(address - base);
     return 1;
 }
-static int power_of_two(unsigned n) { return n != 0 && !(n & (n - 1)); }
-
 /* Exact source reads in nl_tex.c, including its padding/mipmap prefixes.
  * These are source byte extents, not the untwiddled allocation sizes. */
 static MVC2NativeModelStatus texture_extent(int32_t type, unsigned w, unsigned h, size_t* bytes) {
-    unsigned kind = (uint32_t)type >> 8 & 255u;
-    unsigned format = (uint32_t)type & 255u;
-    int palette = kind >= 5 && kind <= 8;
-    int mip = kind == 2 || kind == 4 || kind == 6 || kind == 8;
-    size_t pixels = (size_t)w * h, prefix = 1;
-    if ((uint32_t)type > 0xffffu || (!palette && format > 2))
-        return MVC2_NATIVE_MODEL_UNSUPPORTED_TEXTURE;
-    if (kind != 9 && kind != 11 && (!power_of_two(w) || !power_of_two(h)))
-        return MVC2_NATIVE_MODEL_UNSUPPORTED_TEXTURE;
-    if (mip && w != h) return MVC2_NATIVE_MODEL_UNSUPPORTED_TEXTURE;
-    for (unsigned level = 1; level < w; level <<= 1) prefix += (size_t)level * level;
-    switch (kind) {
-    case 1: case 9: case 11: case 13: *bytes = pixels * 2; break;
-    case 2: *bytes = (prefix + pixels) * 2; break;
-    case 5: *bytes = (pixels + 1) / 2; break;
-    case 6: *bytes = (prefix + 2) / 2 + (pixels + 1) / 2; break;
-    case 7: *bytes = pixels; break;
-    case 8: *bytes = prefix + 2 + pixels; break;
-    case 3: case 4: {
-        if ((w == 1 || h == 1) && !(w == 1 && h == 1))
-            return MVC2_NATIVE_MODEL_UNSUPPORTED_TEXTURE;
-        size_t index_prefix = 0;
-        if (kind == 4 && w > 1) {
-            index_prefix = 1;
-            for (unsigned level = 2; level < w; level <<= 1)
-                index_prefix += (size_t)(level / 2) * (level / 2);
-        }
-        *bytes = 2048 + index_prefix + (pixels < 4 ? 1 : pixels / 4);
-        break;
-    }
-    default: return MVC2_NATIVE_MODEL_UNSUPPORTED_TEXTURE;
-    }
-    return MVC2_NATIVE_MODEL_OK;
+    MVC2TextureLayoutStatus status = mvc2_texture_source_extent(type, w, h, bytes, NULL);
+    return status == MVC2_TEXTURE_LAYOUT_OK ? MVC2_NATIVE_MODEL_OK :
+        status == MVC2_TEXTURE_LAYOUT_INVALID ? MVC2_NATIVE_MODEL_TEXTURE :
+        MVC2_NATIVE_MODEL_UNSUPPORTED_TEXTURE;
 }
 
 static MVC2NativeModelStatus primitives(const uint8_t* model, size_t size,

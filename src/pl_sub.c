@@ -37,6 +37,9 @@ extern PLAYER_WORK *shl0b_00_set( PLAYER_WORK *pl_w );
 extern void *pls0c_01_set( PLAYER_WORK *pl_w );
 extern PLAYER_WORK *pls10_03_set( PLAYER_WORK *pl_w, int no );
 extern PLAYER_WORK *pls14_00_set( PLAYER_WORK *pl_w, int no );
+#ifdef HOST_NATIVE64
+extern PLAYER_WORK *pls15_03_set( PLAYER_WORK *pl_w );
+#endif
 extern PLAYER_WORK *pls18_02_set( PLAYER_WORK *pl_w );
 extern PLAYER_WORK *pls19_02_set( PLAYER_WORK *pl_w );
 extern void pls1c_02_set( PLAYER_WORK *pl_w );
@@ -92,6 +95,23 @@ static int renda_get( PLAYER_WORK *pl_w );
 static void team_hyper_flash( PLAYER_WORK *pl_w, VEC3 *ofs );
 static void hyper_stop_set( PLAYER_WORK *pl_w );
 
+#ifdef HOST_NATIVE64
+/* The original byte counts ended at gauge. Its native pointer alignment and
+   the pointers before it change those spans, while the gameplay boundary stays
+   the same. Keep these operations isolated from character-table dispatch. */
+static inline void pl_round_state_clear( PLAYER_WORK *pl_w )
+{
+	memset( &pl_w->act_st, 0,
+		offsetof( PLAYER_WORK, gauge ) - offsetof( PLAYER_WORK, act_st ) ) ;
+}
+
+static inline void pl_partner_state_clear( PLAYER_WORK *pl_w )
+{
+	memset( &pl_w->pl_new_lvbt, 0,
+		offsetof( PLAYER_WORK, gauge ) - offsetof( PLAYER_WORK, pl_new_lvbt ) ) ;
+}
+#endif
+
 /****************************************************************/
 /*			Clear all six player works							*/
 /****************************************************************/
@@ -109,7 +129,11 @@ static void pl_work_clear_1p( void )
 
 	for( i = 0 ; i < 3 ; i ++ ){
 		pl_w = pl_work + i * 2 ;
+#ifdef HOST_NATIVE64
+		memset( pl_w, 0, offsetof( PLAYER_WORK, entry_routine_1 ) ) ;
+#else
 		memset( pl_w, 0, 0x4bc ) ;
+#endif
 		pl_w->pl_no = 0 ;
 		pl_w->work_no = i * 2 ;
 		pl_w->team_no = i ;
@@ -128,7 +152,11 @@ static void pl_work_clear_2p( void )
 
 	for( i = 0 ; i < 3 ; i ++ ){
 		pl_w = pl_work + i * 2 + 1 ;
+#ifdef HOST_NATIVE64
+		memset( pl_w, 0, offsetof( PLAYER_WORK, entry_routine_1 ) ) ;
+#else
 		memset( pl_w, 0, 0x4bc ) ;
+#endif
 		pl_w->pl_no = 1 ;
 		pl_w->work_no = i * 2 + 1 ;
 		pl_w->team_no = i ;
@@ -332,7 +360,11 @@ void pl_work_init( PLAYER_WORK *pl_w )
 #endif
 	Uint8 n ;
 
+#ifdef HOST_NATIVE64
+	pl_round_state_clear( pl_w ) ;
+#else
 	memset( &pl_w->act_st, 0, 0x238 ) ;
+#endif
 	pl_w->atck_no = 0 ;
 	pl_w->hit_flag = 0 ;
 	pl_w->hit_stop = 0 ;
@@ -399,7 +431,11 @@ void pl_change_set( PLAYER_WORK *pl_w, PLAYER_WORK *nw )
 	combo_reset( nw ) ;
 	pl_voice_req( nw, 43 ) ;
 	pl_tlocal_init( nw ) ;
+#ifdef HOST_NATIVE64
+	pl_partner_state_clear( nw ) ;
+#else
 	memset( &nw->pl_new_lvbt, 0, 0xc8 ) ;
+#endif
 	pl_sw_set( pl_w ) ;
 	pl_w->vital_red = pl_w->vital_new ;
 	pl_w->hit_flag = -1 ;
