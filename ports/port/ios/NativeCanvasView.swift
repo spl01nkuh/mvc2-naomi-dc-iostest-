@@ -252,5 +252,6 @@ private final class NativeMetalPresenter: NSObject, MTKViewDelegate {
             source: SIMD4(Float(sourceWidth), Float(sourceHeight), 0, 0),
             output: SIMD4(Float(drawable.width), Float(drawable.height), 0, 0),
             rect: SIMD4(Float(rect.x), Float(rect.y), Float(rect.width), Float(rect.height))
+        )
     }
 }
