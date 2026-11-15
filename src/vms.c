@@ -36,8 +36,10 @@ extern int buFindExecFile( int port, char *name ) ;
 extern int buUnmount( int port ) ;
 extern int buMountDisk( int port, void *work, int size ) ;
 
+#ifndef HOST_NATIVE64
 extern void *memcpy( void *d, const void *s, unsigned long n ) ;
 extern char *strcpy( char *d, const char *s ) ;
+#endif
 extern void play_time_ck( void ) ;
 
 /* the board looks at the cards only when its setting says so; the console always does */

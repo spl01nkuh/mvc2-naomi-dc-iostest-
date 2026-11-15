@@ -37,6 +37,12 @@ jobs:
           xcrun simctl launch "$device_id" com.spl01nkuh.mvc2.native.dev
           sleep 3
           xcrun simctl io "$device_id" screenshot build/ios-development-simulator/launch.png
+          for style in dpad stick; do
+            xcrun simctl terminate "$device_id" com.spl01nkuh.mvc2.native.dev
+            xcrun simctl launch "$device_id" com.spl01nkuh.mvc2.native.dev "--mvc2-controls-preview=$style"
+            sleep 2
+            xcrun simctl io "$device_id" screenshot "build/ios-development-simulator/controls-$style.png"
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: MVC2-Gameplay-unsigned
@@ -47,5 +53,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: MVC2-Gameplay-simulator-launch
-          path: build/ios-development-simulator/launch.png
+          path: |
+            build/ios-development-simulator/launch.png
+            build/ios-development-simulator/controls-*.png
           if-no-files-found: error

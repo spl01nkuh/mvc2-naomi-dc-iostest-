@@ -149,31 +149,39 @@ final class TouchSurface: UIView {
         ctx.setAlpha(editing ? 0.9 : CGFloat(options.touchOpacity))
         for control in options.controls {
             let box = frame(control)
-            let active = contacts.values.contains { c in
-                control.isDirection ? c.control == control.id : box.contains(c.point)
+            if control.isDirection {
+                let directionContacts = contacts.values.filter { $0.control == control.id }
+                var pressed = editing ? 0 : directionContacts.reduce(UInt16(0)) {
+                    $0 | directions($1.point, box)
+                }
+                if pressed & 0x3000 == 0x3000 { pressed &= ~UInt16(0x3000) }
+                if pressed & 0x0c00 == 0x0c00 { pressed &= ~UInt16(0x0c00) }
+                DirectionArtwork.draw(in: ctx, bounds: box, style: options.directionStyle,
+                                      pressed: pressed, contact: directionContacts.first?.point,
+                                      editing: editing)
+                if editing { drawSizeLabel(control, box: box) }
+                continue
             }
-            let path = control.isDirection && options.directionStyle == .dpad ? UIBezierPath(roundedRect: box, cornerRadius: 18) : UIBezierPath(ovalIn: box)
+            let active = contacts.values.contains { c in
+                box.contains(c.point)
+            }
+            let path = UIBezierPath(ovalIn: box)
             (active && !editing ? UIColor.systemCyan.withAlphaComponent(0.6) : UIColor.black.withAlphaComponent(0.5)).setFill()
             path.fill()
             UIColor.white.setStroke(); path.lineWidth = editing ? 2.5 : 1.5; path.stroke()
-            let label = control.isDirection ? (options.directionStyle == .stick ? "●" : "↑\n←    →\n↓") : control.label
+            let label = control.label
             let style = NSMutableParagraphStyle(); style.alignment = .center
-            let fontSize: CGFloat = control.isDirection ? 22 : 13
+            let fontSize: CGFloat = 13
             let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: fontSize * scale), .foregroundColor: UIColor.white, .paragraphStyle: style]
             let textSize = (label as NSString).boundingRect(with: box.size, options: .usesLineFragmentOrigin, attributes: attrs, context: nil).size
             (label as NSString).draw(in: CGRect(x: box.minX, y: box.midY - textSize.height / 2, width: box.width, height: textSize.height), withAttributes: attrs)
-            if control.isDirection && options.directionStyle != .dpad && !editing,
-               let contact = contacts.values.first(where: { $0.control == control.id }) {
-                let dx = contact.point.x - box.midX, dy = contact.point.y - box.midY
-                let distance = max(1, hypot(dx, dy)), limit = box.width * 0.35
-                let thumb = CGPoint(x: box.midX + dx * min(1, limit / distance), y: box.midY + dy * min(1, limit / distance))
-                UIColor.systemCyan.setFill()
-                UIBezierPath(ovalIn: CGRect(x: thumb.x - 15 * scale, y: thumb.y - 15 * scale, width: 30 * scale, height: 30 * scale)).fill()
-            }
-            if editing {
-                let label = "\(Int((control.size * 100).rounded()))%"
-                (label as NSString).draw(at: CGPoint(x: box.minX, y: box.minY - 16), withAttributes: [.font: UIFont.systemFont(ofSize: 11), .foregroundColor: UIColor.systemYellow])
-            }
+            if editing { drawSizeLabel(control, box: box) }
         }
+    }
+
+    private func drawSizeLabel(_ control: TouchControl, box: CGRect) {
+        let label = "\(Int((control.size * 100).rounded()))%"
+        (label as NSString).draw(at: CGPoint(x: box.minX, y: box.minY - 16),
+            withAttributes: [.font: UIFont.systemFont(ofSize: 11), .foregroundColor: UIColor.systemYellow])
     }
 }

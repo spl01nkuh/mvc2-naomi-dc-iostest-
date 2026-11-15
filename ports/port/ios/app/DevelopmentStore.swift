@@ -80,6 +80,15 @@ final class DevelopmentStore: ObservableObject {
         }
 
         restored.sanitize()
+        #if targetEnvironment(simulator)
+        // CI screenshots exercise the actual UIKit artwork without changing
+        // saved preferences or adding a preview route to the device app.
+        let previewPrefix = "--mvc2-controls-preview="
+        if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix(previewPrefix) }),
+           let style = DirectionStyle(rawValue: String(argument.dropFirst(previewPrefix.count))) {
+            restored.directionStyle = style
+        }
+        #endif
         settings = restored
         settingsURL = preferences
         assetsRoot = assets

@@ -7,8 +7,10 @@
 #define _STRICT_UNION_ 1
 #define __DEV_TYPE_DC__ 1
 
+#ifndef __ASSEMBLER__
 int host_get_imask( void ) ;
 void host_set_imask( int mask ) ;
+#endif
 #define _builtin_get_imask()		host_get_imask()
 #define _builtin_set_imask( m )		host_set_imask( m )
 #define _builtin_get_fpscr()		0x00040001
