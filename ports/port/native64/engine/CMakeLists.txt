@@ -34,11 +34,7 @@ target_include_directories(mvc2_native_game_objects PRIVATE
 target_compile_definitions(mvc2_native_game_objects PRIVATE HOST_NATIVE64=1 BUILD_DATE=20000225)
 target_compile_options(mvc2_native_game_objects PRIVATE -std=gnu89 -fwrapv -fno-common
     -fno-strict-aliasing -fsigned-char -ffp-contract=off -fno-delete-null-pointer-checks
-    -include "${MVC2_NATIVE_PORT}/include/port_prefix.h" -O1 -w)
-if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
-    target_compile_options(mvc2_native_game_objects PRIVATE
-        -include "${CMAKE_CURRENT_LIST_DIR}/engine_sections.h")
-endif()
+    -include "${CMAKE_CURRENT_LIST_DIR}/engine_prefix.h" -O1 -w)
 set_source_files_properties("${MVC2_NATIVE_GAME}/src/main.c" PROPERTIES COMPILE_DEFINITIONS main=naomi_main)
 
 set(MVC2_NATIVE_BACKEND_SOURCES
@@ -99,11 +95,7 @@ target_include_directories(mvc2_native_backend_objects PRIVATE
 target_compile_definitions(mvc2_native_backend_objects PRIVATE
     HOST_NATIVE64=1 RD_NATIVE_SYSTEM=1 _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
 target_compile_options(mvc2_native_backend_objects PRIVATE
-    "$<$<COMPILE_LANGUAGE:C>:-std=gnu17;-O2;-fwrapv;-fno-common;-fno-strict-aliasing;-fsigned-char;-ffp-contract=off;-include;${MVC2_NATIVE_PORT}/include/port_prefix.h>")
-if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
-    target_compile_options(mvc2_native_backend_objects PRIVATE
-        -include "${CMAKE_CURRENT_LIST_DIR}/engine_sections.h")
-endif()
+    "$<$<COMPILE_LANGUAGE:C>:-std=gnu17;-O2;-fwrapv;-fno-common;-fno-strict-aliasing;-fsigned-char;-ffp-contract=off;-include;${CMAKE_CURRENT_LIST_DIR}/engine_prefix.h>")
 
 # The checkpoint controller, host ownership/input/audio buffers, allocations,
 # and coroutine implementation must survive restoration of engine globals.
@@ -127,12 +119,12 @@ target_link_libraries(mvc2_native_engine PUBLIC Threads::Threads ZLIB::ZLIB m)
 
 # The inventory consumes every object, including code not reached by main.
 # It reports missing definitions; it never generates stubs or address aliases.
-file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/engine-objects.txt" CONTENT
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/engine-objects-$<CONFIG>.txt" CONTENT
     "$<JOIN:$<TARGET_OBJECTS:mvc2_native_game_objects>,\n>\n$<JOIN:$<TARGET_OBJECTS:mvc2_native_backend_objects>,\n>\n$<JOIN:$<TARGET_OBJECTS:mvc2_native_support_objects>,\n>\n")
 add_custom_target(mvc2_native_inventory
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/inventory.py"
-        --nm "${CMAKE_NM}" --objects "${CMAKE_CURRENT_BINARY_DIR}/engine-objects.txt"
-        --output "${CMAKE_CURRENT_BINARY_DIR}/engine-inventory.json"
+        --nm "${CMAKE_NM}" --objects "${CMAKE_CURRENT_BINARY_DIR}/engine-objects-$<CONFIG>.txt"
+        --output "${CMAKE_CURRENT_BINARY_DIR}/engine-inventory-$<CONFIG>.json"
     DEPENDS mvc2_native_game_objects mvc2_native_backend_objects mvc2_native_support_objects
     VERBATIM)
 
@@ -142,7 +134,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # by mvc2_native_inventory; no x86 substitute coroutine is fabricated.
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/engine-link-check.o"
         COMMAND "${CMAKE_C_COMPILER}" -r -nostdlib
-            "@${CMAKE_CURRENT_BINARY_DIR}/engine-objects.txt"
+            "@${CMAKE_CURRENT_BINARY_DIR}/engine-objects-$<CONFIG>.txt"
             -o "${CMAKE_CURRENT_BINARY_DIR}/engine-link-check.o"
         DEPENDS mvc2_native_game_objects mvc2_native_backend_objects mvc2_native_support_objects
             $<TARGET_OBJECTS:mvc2_native_game_objects>
