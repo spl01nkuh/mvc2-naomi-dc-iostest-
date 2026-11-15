@@ -2394,6 +2394,15 @@ static int maximum_turn( PLAYER_WORK *pl_w, PL0C_LOCAL_W *lw, Uint8 mask )
 		ret = 1 ;
 	}
 	/* low is never set: the arcade's code takes the stack pointer's low bits for it */
+#ifdef HOST_PORT
+#ifdef TARGET_DC
+	/* the board's stack pointer here ends in 0x80 in the attract's demo and 0x84 in a game */
+	low = Sys->task_no == 1 ? 0x80 : 0x84 ;
+#else
+	/* the board's stack pointer here ends in 0x84 */
+	low = 0x84 ;
+#endif
+#endif
 	old = ( mask ^ old ) & 48 ;
 	low = ( 16 - ( low & 15 ) ) & 15 ;
 	pl_w->dir = old | low ;

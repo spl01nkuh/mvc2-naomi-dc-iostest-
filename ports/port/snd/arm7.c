@@ -6,6 +6,10 @@
 #include <string.h>
 
 #include "arm7.h"
+#ifdef ARM7_JIT
+#include "arm7_jit.h"
+#include "naomi_host.h"
+#endif
 
 enum { M_USR = 0x10, M_FIQ = 0x11, M_IRQ = 0x12, M_SVC = 0x13, M_ABT = 0x17, M_UND = 0x1B, M_SYS = 0x1F };
 #define F_N 0x80000000u
@@ -26,6 +30,33 @@ static uint16_t cond_ok[16];        /* for each condition, a bit for each NZCV v
 static int run_left;                /* arm7_stop: the run ends after the instruction */
 static int fiq_run;                 /* arm7_run_fiq: the run ends when the mode leaves FIQ */
 static int event;                   /* the run must look: a stop, or an FIQ it can take */
+#define DEC_N 8192                  /* the decode tables cover the RAM's first 32 KB */
+static uint32_t dec_live[DEC_N / 32];   /* the words with an entry in either table */
+static uint32_t code_gen;           /* counts the entries dropped */
+static uint32_t code_changes;       /* writes from outside to the first 32 KB */
+static int code_track = 1;          /* MVC2_ARMTRACK: every write drops the entries it covers, so a fetch trusts them */
+static void dec_drop(uint32_t i);
+static void dec_clear(void);
+
+#ifdef ARM7_JIT
+static int jit_on;                  /* there is memory to run code from */
+static int jit_wanted, jit_side = 1, jit_tried;    /* wanted: arm7_translate */
+static ARM7_JIT_STATE jit_state = { r, &cpsr, &event, &aica_ram, &aica_ram_mask };
+static int jit2, jit2_ready;         /* arm7_translate2's mode; the translator made */
+static int chk_on, chk_io, chk_n;   /* a block checked: the RAM's bytes before the interpreter's writes, I/O seen */
+typedef struct {
+    uint32_t a;
+    int size;
+    uint8_t old[4], now[4];
+} CHK_WRITE;
+static CHK_WRITE chk_log[64];
+static void chk_save(uint32_t a, int size);
+#define CHK_SAVE(a, size) do { if (chk_on) chk_save(a, size); } while (0)
+#define CHK_IO() (chk_io |= chk_on)
+#else
+#define CHK_SAVE(a, size) ((void)0)
+#define CHK_IO() ((void)0)
+#endif
 
 /* built into arm7_run, so that its state stays in registers */
 #define INLINE static inline __attribute__((always_inline))
@@ -76,6 +107,15 @@ static void exception(uint32_t mode, uint32_t vector, uint32_t ret, uint32_t mas
 
 void arm7_reset(void) {
     int c, f;
+#ifdef ARM7_JIT
+    if (jit_on) {
+        arm7_jit_reset();
+    }
+    if (jit2_ready > 0) {
+        arm7_jit2_reset();
+    }
+#endif
+    dec_clear();
     memset(r, 0, sizeof r);
     memset(bank_r8, 0, sizeof bank_r8);
     memset(bank_r13, 0, sizeof bank_r13);
@@ -122,11 +162,64 @@ uint32_t arm7_pc(void) {
     return r[15];
 }
 
+void arm7_get_regs(ARM7_REGS* s) {
+    memcpy(s->r, r, sizeof r);
+    s->cpsr = cpsr;
+    s->spsr = spsr;
+    memcpy(s->b8, bank_r8, sizeof s->b8);
+    memcpy(s->b13, bank_r13, sizeof s->b13);
+    memcpy(s->b14, bank_r14, sizeof s->b14);
+    memcpy(s->bs, bank_spsr, sizeof s->bs);
+    s->fiq_line = fiq_line;
+}
+
+void arm7_set_regs(const ARM7_REGS* s) {
+    memcpy(r, s->r, sizeof r);
+    cpsr = s->cpsr;
+    spsr = s->spsr;
+    memcpy(bank_r8, s->b8, sizeof s->b8);
+    memcpy(bank_r13, s->b13, sizeof s->b13);
+    memcpy(bank_r14, s->b14, sizeof s->b14);
+    memcpy(bank_spsr, s->bs, sizeof s->bs);
+    fiq_line = s->fiq_line;
+}
+
+int arm7_fiq_line(void) {
+    return fiq_line;
+}
+
+int arm7_fiq_due(void) {
+    return fiq_line && !(cpsr & F_F) && bank_of(cpsr) != 1;
+}
+
+uint32_t arm7_code_changes(void) {
+    return code_changes;
+}
+
 uint64_t arm7_cycles(void) {
     return cycles_run;
 }
 
 /* ---- memory: the RAM directly, the rest through the AICA ---- */
+
+/* a write: the decoded word it covers dropped; over translated code, the blocks are checked again, and a block
+   running stops after it */
+static inline void code_written(uint32_t a) {
+    a &= aica_ram_mask;
+    if (a < DEC_N * 4 && (dec_live[a >> 7] >> (a >> 2 & 31) & 1)) {
+        dec_drop(a >> 2);
+    }
+#ifdef ARM7_JIT
+    if (a - arm7_jit_range[0] < arm7_jit_range[1] && arm7_jit_covers(a & ~3u)) {
+        arm7_jit_check();
+        event = 1;
+    }
+    if (a - arm7_jit2_range[0] < arm7_jit2_range[1] && arm7_jit2_covers(a & ~3u)) {
+        arm7_jit2_check();
+        event = 1;
+    }
+#endif
+}
 
 static inline uint32_t rd32(uint32_t a) {
     uint32_t v;
@@ -134,6 +227,7 @@ static inline uint32_t rd32(uint32_t a) {
         memcpy(&v, aica_ram + (a & aica_ram_mask & ~3u), 4);
         return v;
     }
+    CHK_IO();
     return aica_arm_read32(a & ~3u);
 }
 
@@ -141,6 +235,7 @@ static inline uint32_t rd8(uint32_t a) {
     if ((a & 0xFF800000u) == 0) {
         return aica_ram[a & aica_ram_mask];
     }
+    CHK_IO();
     return aica_arm_read8(a);
 }
 
@@ -150,31 +245,41 @@ static inline uint32_t rd16(uint32_t a) {
         memcpy(&v, aica_ram + (a & aica_ram_mask & ~1u), 2);
         return v;
     }
+    CHK_IO();
     return aica_arm_read16(a & ~1u);
 }
 
 static inline void wr32(uint32_t a, uint32_t v) {
     if ((a & 0xFF800000u) == 0) {
+        CHK_SAVE(a & aica_ram_mask & ~3u, 4);
         memcpy(aica_ram + (a & aica_ram_mask & ~3u), &v, 4);
+        code_written(a);
         return;
     }
+    CHK_IO();
     aica_arm_write32(a & ~3u, v);
 }
 
 static inline void wr16(uint32_t a, uint32_t v) {
     uint16_t h = (uint16_t)v;
     if ((a & 0xFF800000u) == 0) {
+        CHK_SAVE(a & aica_ram_mask & ~1u, 2);
         memcpy(aica_ram + (a & aica_ram_mask & ~1u), &h, 2);
+        code_written(a);
         return;
     }
+    CHK_IO();
     aica_arm_write16(a & ~1u, h);
 }
 
 static inline void wr8(uint32_t a, uint32_t v) {
     if ((a & 0xFF800000u) == 0) {
+        CHK_SAVE(a & aica_ram_mask, 1);
         aica_ram[a & aica_ram_mask] = (uint8_t)v;
+        code_written(a);
         return;
     }
+    CHK_IO();
     aica_arm_write8(a, v & 0xFF);
 }
 
@@ -575,6 +680,41 @@ int arm7_run_fiq(int cycles) {
     return done;
 }
 
+int arm7_fiq_finish(uint32_t at, int used, int cycles, uint32_t r10, uint32_t r11, uint32_t r12, int sp_set,
+                    uint32_t sp) {
+    uint32_t ret = r[15];
+    int done;
+    exception(M_FIQ, 0x1C, ret + 4, F_I | F_F);
+    r[8] = spsr;
+    r[10] = r10;
+    r[11] = r11;
+    r[12] = r12;
+    if (sp_set) {
+        r[13] = sp;
+    }
+    r[14] = ret;
+    r[15] = at;
+    fiq_run = 1;
+    done = arm7_run(cycles - used);
+    fiq_run = 0;
+    return used + done;
+}
+
+void arm7_fiq_return(uint32_t r10, uint32_t r11, uint32_t r12, int sp_set, uint32_t sp) {
+    uint32_t ret = r[15];
+    exception(M_FIQ, 0x1C, ret + 4, F_I | F_F);
+    r[8] = spsr;
+    r[10] = r10;
+    r[11] = r11;
+    r[12] = r12;
+    if (sp_set) {
+        r[13] = sp;
+    }
+    r[14] = ret;
+    set_cpsr(spsr);
+    r[15] = ret;
+}
+
 /* ---- the commonest instructions, decoded once ---- */
 
 /* a kind and its fields for each word of code, kept while the word is the same; K_STEP is the rest */
@@ -589,7 +729,6 @@ typedef struct {
     int32_t v;
     uint8_t rd, rn, rm, cond;
 } DEC;
-#define DEC_N 8192                  /* the RAM's first 32 KB */
 static DEC dec[DEC_N];
 
 static int decode(uint32_t op, int32_t* v) {
@@ -735,218 +874,555 @@ INLINE int step(uint32_t op, uint32_t pc, int* branched) {
     }
 }
 
+#ifdef ARM7_JIT
+/* for the translated code: one instruction, as the interpreter runs it */
+int arm7_jit_step(uint32_t op, uint32_t pc) {
+    int branched = 0, n;
+    JIT_STAT(arm7_jit_stats.steps++);
+    if (op >> 28 != 14 && !(cond_ok[op >> 28] >> (cpsr >> 28) & 1)) {
+        r[15] = pc + 4;
+        return 1;
+    }
+    r[15] = pc + 8;
+    if ((op & 0x0F200000u) == 0x05000000u) {           /* the sound chip's registers, near the call */
+        n = single_transfer(op, &branched);
+    } else if ((op & 0x0FBF0FFFu) == 0x010F0000u ||
+               ((op & 0x0DB0F000u) == 0x0120F000u && ((op & (1u << 25)) || !(op & 0xFF0u)))) {
+        psr_transfer(op);                               /* MRS, MSR */
+        n = 1;
+    } else {
+        n = step(op, pc, &branched);
+    }
+    if (!branched) {
+        r[15] = pc + 4;
+    }
+    return n;
+}
+
+uint32_t arm7_jit_ldr(uint32_t a) {
+    return ldr_word(a);
+}
+
+uint32_t arm7_jit_ldrb(uint32_t a) {
+    return rd8(a);
+}
+
+void arm7_jit_str(uint32_t a, uint32_t v) {
+    wr32(a, v);
+}
+
+void arm7_jit_strb(uint32_t a, uint32_t v) {
+    wr8(a, v);
+}
+#endif
+
+#ifdef ARM7_JIT
+static void chk_save(uint32_t a, int size) {
+    if (chk_n == 64) {
+        chk_io = 1;
+        return;
+    }
+    chk_log[chk_n].a = a;
+    chk_log[chk_n].size = size;
+    memcpy(chk_log[chk_n].old, aica_ram + a, (size_t)size);
+    chk_n++;
+}
+
+typedef struct {
+    uint32_t r[16], cpsr, spsr, b8[2][5], b13[6], b14[6], bs[6];
+} CHK_STATE;
+
+static void chk_get(CHK_STATE* s) {
+    memcpy(s->r, r, sizeof r);
+    s->cpsr = cpsr;
+    s->spsr = spsr;
+    memcpy(s->b8, bank_r8, sizeof s->b8);
+    memcpy(s->b13, bank_r13, sizeof s->b13);
+    memcpy(s->b14, bank_r14, sizeof s->b14);
+    memcpy(s->bs, bank_spsr, sizeof s->bs);
+}
+
+static void chk_set(const CHK_STATE* s) {
+    memcpy(r, s->r, sizeof r);
+    cpsr = s->cpsr;
+    spsr = s->spsr;
+    memcpy(bank_r8, s->b8, sizeof s->b8);
+    memcpy(bank_r13, s->b13, sizeof s->b13);
+    memcpy(bank_r14, s->b14, sizeof s->b14);
+    memcpy(bank_spsr, s->bs, sizeof s->bs);
+}
+
+/* a block run both ways from the same state: the interpreter first, its writes undone, then the block; any
+   difference logged and the interpreter's kept. A run that touches the AICA keeps the interpreter's alone. */
+static int jit2_checked(uint32_t pc, int fiq, int done, int cycles) {
+    static int logged;
+    static CHK_STATE before, after;
+    uint32_t end, p = pc;
+    int d = 0, dj, i, why = 0, at = 0;
+    if (arm7_jit2_run(pc, fiq, done, cycles, &end) < 0) {
+        return -1;
+    }
+    chk_get(&before);
+    chk_on = 1;
+    chk_io = chk_n = 0;
+    for (;;) {
+        uint32_t op;
+        memcpy(&op, aica_ram + p, 4);
+        d += arm7_jit_step(op, p);
+        if (chk_io || event || !arm7_jit2_goes_on(p, r[15])) {
+            break;
+        }
+        p = r[15];
+    }
+    chk_on = 0;
+    if (chk_io || event) {
+        return done + d;
+    }
+    chk_get(&after);
+    for (i = 0; i < chk_n; i++) {
+        memcpy(chk_log[i].now, aica_ram + chk_log[i].a, (size_t)chk_log[i].size);
+    }
+    for (i = chk_n - 1; i >= 0; i--) {
+        memcpy(aica_ram + chk_log[i].a, chk_log[i].old, (size_t)chk_log[i].size);
+    }
+    chk_set(&before);
+    dj = arm7_jit2_run(pc, fiq, done, cycles, NULL);
+    JIT_STAT(arm7_jit_stats.checked++);
+    if (dj - done != d) {
+        why = 'c';
+    }
+    for (i = 0; i < 16 && !why; i++) {
+        if (r[i] != after.r[i]) {
+            why = 'r';
+            at = i;
+        }
+    }
+    if (!why) {
+        CHK_STATE now;
+        chk_get(&now);
+        if (memcmp(&now, &after, sizeof now)) {
+            why = 'p';
+        }
+    }
+    for (i = 0; i < chk_n && !why; i++) {
+        if (memcmp(aica_ram + chk_log[i].a, chk_log[i].now, (size_t)chk_log[i].size)) {
+            why = 'm';
+            at = i;
+        }
+    }
+    if (!why) {
+        return dj;
+    }
+    JIT_STAT(arm7_jit_stats.wrong++);
+    if (logged < 40) {
+        logged++;
+        host_log("sound CPU check: block %04lx-%04lx mode %d wrong (%c%d): cycles %d/%d, r%d %08lx/%08lx, "
+                 "cpsr %08lx/%08lx, write %06lx", (unsigned long)pc, (unsigned long)end, fiq, why, at, dj - done, d,
+                 why == 'r' ? at : 0, (unsigned long)r[why == 'r' ? at : 0],
+                 (unsigned long)after.r[why == 'r' ? at : 0], (unsigned long)cpsr, (unsigned long)after.cpsr,
+                 why == 'm' ? (unsigned long)chk_log[at].a : 0ul);
+    }
+    chk_set(&after);
+    for (i = 0; i < chk_n; i++) {
+        memcpy(aica_ram + chk_log[i].a, chk_log[i].now, (size_t)chk_log[i].size);
+    }
+    return done + d;
+}
+
+static int jit2_go(uint32_t pc, int done, int cycles) {
+    int fiq = (cpsr & 0x1F) == M_FIQ;
+    if (!jit2_ready) {
+        jit2_ready = arm7_jit2_init(&jit_state, jit2) ? 1 : -1;     /* on the thread that runs it */
+        host_log("sound CPU translator (2): %s, %lu KB of tables", jit2_ready > 0 ? "on" : "off",
+                 (unsigned long)arm7_jit2_tables / 1024);
+    }
+    if (jit2_ready < 0) {
+        return -1;
+    }
+    if (jit2 & 16) {
+        return jit2_checked(pc, fiq, done, cycles);
+    }
+    return arm7_jit2_run(pc, fiq, done, cycles, NULL);
+}
+#endif
+
+void arm7_translate2(int mode) {
+#ifdef ARM7_JIT
+    jit2 = mode;
+#else
+    (void)mode;
+#endif
+}
+
+void arm7_track(int on) {
+    code_track = on;
+}
+
+void arm7_translate(int on) {
+#ifdef ARM7_JIT
+    if (jit_wanted && !on) {
+        dec_clear();                /* translated code's stores to the RAM went past code_written */
+    }
+    jit_wanted = on;
+#else
+    (void)on;
+#endif
+}
+
+int arm7_run_interpreted(int cycles) {
+#ifdef ARM7_JIT
+    int done;
+    jit_side = 0;
+    done = arm7_run(cycles);
+    jit_side = 1;
+    return done;
+#else
+    return arm7_run(cycles);
+#endif
+}
+
+void arm7_code_written(uint32_t addr, uint32_t size) {
+    uint32_t i, last = addr + size < DEC_N * 4 ? addr + size : DEC_N * 4;
+    if (addr < DEC_N * 4) {
+        code_changes++;
+    }
+    for (i = addr >> 2; i < (last + 3) >> 2; i++) {
+        if (dec_live[i >> 5] >> (i & 31) & 1) {
+            dec_drop(i);
+        }
+    }
+#ifdef ARM7_JIT
+    uint32_t a = addr > arm7_jit_range[0] ? addr & ~3u : arm7_jit_range[0];
+    uint32_t end = addr + size < arm7_jit_range[0] + arm7_jit_range[1] ? addr + size : arm7_jit_range[0] + arm7_jit_range[1];
+    for (; jit_on && a < end; a += 4) {
+        if (arm7_jit_covers(a)) {
+            arm7_jit_check();
+            break;
+        }
+    }
+    for (a = addr & ~3u; jit2_ready > 0 && a < addr + size && a < ARM7_JIT_WORDS * 4; a += 4) {
+        if (arm7_jit2_covers(a)) {
+            arm7_jit2_check();
+            break;
+        }
+    }
+#endif
+}
+
+/* ---- loops that only look: a slot table read until a byte has a bit, run whole turns at a time ---- */
+
+/*
+ * S_COUNT:  L: ldrb x,[b,#o]; tst x,#m (or movs x,x); beq P (or bne, P after it)
+ *           P: add b,b,#s; subs c,c,#1; bne L  (or add c,c,#1; cmp c,#n; bne L)
+ * S_END:    L: add b,b,#s; cmp b,e; (an eq instruction); beq out; ldrb x,[b,#o]; tst x,#m; beq L
+ * A turn is skipped while the test gives Z; one whose byte is found, or the last, is the interpreter's.
+ */
+enum { S_COUNT, S_UP, S_END };
+typedef struct {
+    uint32_t pc, at[8], word[8];
+    int words, shape, turn;         /* turn: its cycles */
+    const void* plain[2];           /* the first instruction's own code in each arm7_run */
+    uint8_t x, b, c, movs;
+    uint32_t o, s, m, n;
+} FAST;
+#define FAST_N 16
+static FAST fast[FAST_N];
+static int fasts, fast_on;
+static int step_small;              /* K_STEP through one step(), not a copy for each value of bits 20-27; 2: but
+                                       for the driver's commonest few */
+
+static __attribute__((noinline)) int step_one(uint32_t op, uint32_t pc, int* branched) {
+    return step(op, pc, branched);
+}
+
+void arm7_small(int on) {
+    step_small = on;
+}
+
+void arm7_fast(int on) {
+    fast_on = on;
+}
+
+static uint32_t word_at(uint32_t a) {
+    uint32_t v;
+    memcpy(&v, aica_ram + a, 4);
+    return v;
+}
+
+static uint32_t imm_of(uint32_t op) {
+    uint32_t rot = (op >> 7) & 0x1E, imm = op & 0xFF;
+    return rot ? imm >> rot | imm << (32 - rot) : imm;
+}
+
+static uint32_t b_to(uint32_t op, uint32_t a) {
+    return a + 8 + (uint32_t)((int32_t)(op << 8) >> 6);
+}
+
+static void keep(FAST* f, uint32_t a) {
+    f->at[f->words] = a;
+    f->word[f->words++] = word_at(a);
+}
+
+static int is_ldrb(uint32_t op, FAST* f) {   /* ldrb x,[b,#o] */
+    f->x = (op >> 12) & 15;
+    f->b = (op >> 16) & 15;
+    f->o = op & 0xFFF;
+    return (op & 0xFFF00000u) == 0xE5D00000u && f->x != 15 && f->b != 15 && f->x != f->b;
+}
+
+static int is_tst(uint32_t op, FAST* f) {    /* tst x,#m, not rotated */
+    f->m = op & 0xFF;
+    return (op & 0xFFFFFF00u) == (0xE3100000u | (uint32_t)f->x << 16);
+}
+
+static int is_add(uint32_t op, int rd, uint32_t* s) {
+    *s = imm_of(op);
+    return (op & 0xFFFFF000u) == (0xE2800000u | (uint32_t)rd << 16 | (uint32_t)rd << 12);
+}
+
+static int fast_match(uint32_t pc, FAST* f) {
+    uint32_t op, p;
+    f->words = 0;
+    if (pc + 32 > DEC_N * 4) {
+        return 0;
+    }
+    op = word_at(pc);
+    if (is_ldrb(op, f)) {
+        f->movs = word_at(pc + 4) == (0xE1B00000u | (uint32_t)f->x << 12 | f->x);
+        if (!f->movs && !is_tst(word_at(pc + 4), f)) {
+            return 0;
+        }
+        op = word_at(pc + 8);
+        if ((op & 0xFF000000u) == 0x0A000000u) {
+            p = b_to(op, pc + 8);
+            f->turn = 3 + 1 + 3;
+        } else if ((op & 0xFF000000u) == 0x1A000000u) {
+            p = pc + 12;
+            f->turn = 3 + 1 + 1;
+        } else {
+            return 0;
+        }
+        if (p + 16 > DEC_N * 4 || (p & 3) || !is_add(word_at(p), f->b, &f->s)) {
+            return 0;
+        }
+        keep(f, pc);
+        keep(f, pc + 4);
+        keep(f, pc + 8);
+        keep(f, p);
+        op = word_at(p + 4);
+        keep(f, p + 4);
+        f->c = (op >> 12) & 15;
+        if (f->c == 15 || f->c == f->x || f->c == f->b) {
+            return 0;
+        }
+        if (op == (0xE2500001u | (uint32_t)f->c << 16 | (uint32_t)f->c << 12)) {
+            f->shape = S_COUNT;
+            p += 8;
+            f->turn += 1 + 1 + 3;
+        } else if (op == (0xE2800001u | (uint32_t)f->c << 16 | (uint32_t)f->c << 12)
+                   && (word_at(p + 8) & 0xFFFFF000u) == (0xE3500000u | (uint32_t)f->c << 16)) {
+            f->shape = S_UP;
+            f->n = imm_of(word_at(p + 8));
+            keep(f, p + 8);
+            p += 12;
+            f->turn += 1 + 1 + 1 + 3;
+        } else {
+            return 0;
+        }
+        op = word_at(p);
+        keep(f, p);
+        return (op & 0xFF000000u) == 0x1A000000u && b_to(op, p) == pc;
+    }
+    if (is_add(op, (op >> 16) & 15, &f->s)) {
+        f->b = (op >> 16) & 15;
+        op = word_at(pc + 4);
+        f->c = op & 15;             /* e */
+        if (f->b == 15 || (op & 0xFFFFFFF0u) != (0xE1500000u | (uint32_t)f->b << 16) || f->c == 15 || f->c == f->b
+            || word_at(pc + 8) >> 28 != 0 || (word_at(pc + 12) & 0xFF000000u) != 0x0A000000u
+            || !is_ldrb(word_at(pc + 16), f) || f->b != ((word_at(pc) >> 16) & 15) || !is_tst(word_at(pc + 20), f)) {
+            return 0;
+        }
+        op = word_at(pc + 24);
+        if ((op & 0xFF000000u) != 0x0A000000u || b_to(op, pc + 24) != pc || f->x == f->c) {
+            return 0;
+        }
+        for (p = pc; p <= pc + 24; p += 4) {
+            keep(f, p);
+        }
+        f->shape = S_END;
+        f->turn = 1 + 1 + 1 + 1 + 3 + 1 + 3;
+        return 1;
+    }
+    return 0;
+}
+
+static int fast_find(uint32_t pc) {
+    FAST f;
+    int i;
+    for (i = 0; i < fasts; i++) {
+        if (fast[i].pc == pc) {
+            break;
+        }
+    }
+    if (i == FAST_N || !fast_match(pc, &f)) {
+        return -1;
+    }
+    f.pc = pc;
+    f.plain[0] = i < fasts ? fast[i].plain[0] : NULL;     /* the other table's, if it had the loop */
+    f.plain[1] = i < fasts ? fast[i].plain[1] : NULL;
+    fast[i] = f;
+    fasts += i == fasts;
+    return i;
+}
+
+/* turns skipped from L while all of them would start before `cycles`; the state as after them */
+INLINE int fast_run(const FAST* f, int done, int cycles) {
+    const uint8_t* ram = aica_ram;
+    uint32_t b = r[f->b], c = r[f->c], x = r[f->x], a, k = 0;
+    int i;
+    for (i = 0; i < f->words; i++) {
+        if (word_at(f->at[i]) != f->word[i]) {
+            return done;
+        }
+    }
+    for (;;) {
+        if (done + f->turn - 3 >= cycles) {
+            break;
+        }
+        if (f->shape == S_END) {
+            a = b + f->s;
+            if (a == c || ((a + f->o) & 0xFF800000u)) {
+                break;
+            }
+            x = ram[(a + f->o) & aica_ram_mask];
+            if (x & f->m) {
+                break;
+            }
+            b = a;
+        } else {
+            a = b + f->o;
+            if (a & 0xFF800000u) {
+                break;
+            }
+            x = ram[a & aica_ram_mask];
+            if (f->movs ? x : x & f->m) {
+                break;
+            }
+            if (f->shape == S_COUNT ? c == 1 : c + 1 == f->n) {
+                break;
+            }
+            b += f->s;
+            c = f->shape == S_COUNT ? c - 1 : c + 1;
+        }
+        done += f->turn;
+        k++;
+    }
+    if (k) {
+        r[f->b] = b;
+        r[f->x] = x;
+        if (f->shape == S_END) {
+            uint32_t res = b - c;
+            set_nzcv(res, b >= c, ((b ^ c) & (b ^ res)) >> 31);
+            set_nz(x & f->m);
+        } else if (f->shape == S_COUNT) {
+            uint32_t was = c + 1;
+            r[f->c] = c;
+            set_nzcv(c, was >= 1, ((was ^ 1) & (was ^ c)) >> 31);
+        } else {
+            uint32_t res = c - f->n;
+            r[f->c] = c;
+            set_nzcv(res, c >= f->n, ((c ^ f->n) & (c ^ res)) >> 31);
+        }
+    }
+    return done;
+}
+
 /* a case of the dispatch for each value of bits 20-27, so that step is built for each with those bits known */
 #define STEP1(n) case n: done += step((op & 0x000FFFFFu) | (uint32_t)(n) << 20, pc, &branched); break;
 #define STEP4(n) STEP1(n) STEP1(n + 1) STEP1(n + 2) STEP1(n + 3)
 #define STEP16(n) STEP4(n) STEP4(n + 4) STEP4(n + 8) STEP4(n + 12)
 #define STEP64(n) STEP16(n) STEP16(n + 16) STEP16(n + 32) STEP16(n + 48)
+#define STEP_HOT STEP1(0x1A) STEP1(0x00) STEP1(0x92) STEP1(0x8B) STEP1(0x79) STEP1(0x04) STEP1(0x03) \
+    STEP1(0x48)                     /* 91% of the sound driver's outside its FIQ */
+
+#include "arm7_fiq.h"
+
+/* on to the instruction at `to`: straight to its fetch, as nothing here can raise an event */
+#define NEXT(n, to) { done += (n); pc = (to); r[15] = pc; if (direct && done < cycles) goto fetch; continue; }
+
+typedef struct {
+    uint32_t op;
+    const void* go;
+} DEC8;                             /* MVC2_ARMDEC8: the decode table at half the size, the fields from the word */
+static DEC8 dec8[DEC_N];
+static int dec8_on;
+
+static void dec_drop(uint32_t i) {
+    dec_live[i >> 5] &= ~(1u << (i & 31));
+    dec[i].go = NULL;
+    dec8[i].go = NULL;
+    code_gen++;
+}
+
+static void dec_clear(void) {
+    memset(dec, 0, sizeof dec);
+    memset(dec8, 0, sizeof dec8);
+    memset(dec_live, 0, sizeof dec_live);
+    code_gen++;
+}
+
+void arm7_dec8(int on) {
+    dec8_on = on;
+}
+
+static int fast_index(uint32_t pc) {
+    int i;
+    for (i = 0; i < fasts - 1 && fast[i].pc != pc; i++) {
+    }
+    return i;
+}
+
+#define RUN arm7_run16
+#define TABLE dec
+#define DEC_T DEC
+#define WIDE 1
+#define RD e->rd
+#define RN e->rn
+#define RM e->rm
+#define COND e->cond
+#define FAST_I e->rm
+#define V_B ((uint32_t)e->v)
+#define V_OFF ((uint32_t)e->v)
+#define V_IMM ((uint32_t)e->v)
+#include "arm7_run.h"
+#undef RUN
+#undef TABLE
+#undef DEC_T
+#undef WIDE
+#undef RD
+#undef RN
+#undef RM
+#undef COND
+#undef FAST_I
+#undef V_B
+#undef V_OFF
+#undef V_IMM
+
+#define RUN arm7_run8
+#define TABLE dec8
+#define DEC_T DEC8
+#define WIDE 0
+#define RD ((op >> 12) & 15)
+#define RN ((op >> 16) & 15)
+#define RM (op & 15)
+#define COND (op >> 28)
+#define FAST_I fast_index(pc)
+#define V_B ((uint32_t)((int32_t)(op << 8) >> 6))
+#define V_OFF (op & (1u << 23) ? op & 0xFFFu : 0u - (op & 0xFFFu))
+#define V_IMM imm_of(op)
+#include "arm7_run.h"
 
 /* runs about `cycles`, or until arm7_stop; the FIQ is taken between instructions */
 int arm7_run(int cycles) {
-    static const void* const go[K_COUNT] = {
-        &&k_step, &&k_b, &&k_bl, &&k_addi, &&k_subi, &&k_subsi, &&k_cmpi, &&k_tsti, &&k_tsti_c0, &&k_movi, &&k_movr,
-        &&k_movsr, &&k_ldrb, &&k_ldr, &&k_ldr_pc, &&k_strb, &&k_str, &&k_push_pc, &&k_pop_pc,
-        &&k_andi, &&k_orri, &&k_bici, &&k_add_pc, &&k_addr, &&k_cmpr, &&k_psr
-    };
-    const uint8_t* ram = aica_ram;
-    uint32_t code_mask = aica_ram_mask & ~3u;
-    int done = 0;
-    run_left = 1;
-    event = fiq_line && !(cpsr & F_F);
-    while (done < cycles) {
-        uint32_t pc, op;
-        const DEC* e;
-        int branched = 0;
-        if (event) {
-            if (!run_left) {
-                break;
-            }
-            event = 0;
-            if (fiq_line && !(cpsr & F_F)) {
-                exception(M_FIQ, 0x1C, r[15] + 4, F_I | F_F);
-                done += 3;
-            }
-        }
-        pc = r[15];
-        if (pc < DEC_N * 4) {
-            DEC* d = &dec[pc >> 2];
-            memcpy(&op, ram + pc, 4);
-            if (d->op != op) {
-                int32_t v = 0;
-                d->op = op;
-                d->go = go[decode(op, &v)];
-                d->v = v;
-                d->rd = (op >> 12) & 15;
-                d->rn = (op >> 16) & 15;
-                d->rm = op & 15;
-                d->cond = op >> 28;
-            }
-            e = d;
-            if (e->cond != 14 && !(cond_ok[e->cond] >> (cpsr >> 28) & 1)) {
-                r[15] = pc + 4;
-                done++;
-                continue;
-            }
-            goto *e->go;
-        }
-        if ((pc & 0xFF800000u) == 0) {
-            memcpy(&op, ram + (pc & code_mask), 4);
-        } else {
-            op = aica_arm_read32(pc & ~3u);
-        }
-        if ((op & 0xF0000000u) != 0xE0000000u && !(cond_ok[op >> 28] >> (cpsr >> 28) & 1)) {
-            r[15] = pc + 4;
-            done++;
-            continue;
-        }
-    k_step:
-        r[15] = pc + 8;             /* as the instruction reads it */
-        switch ((op >> 20) & 0xFF) {
-        STEP64(0) STEP64(64) STEP64(128) STEP64(192)
-        }
-        /* no write to the PC: on to the next instruction */
-        if (!branched) {
-            r[15] = pc + 4;
-        }
-        continue;
-    k_b:
-        r[15] = pc + 8 + (uint32_t)e->v;
-        done += 3;
-        continue;
-    k_bl:
-        r[14] = pc + 4;
-        r[15] = pc + 8 + (uint32_t)e->v;
-        done += 3;
-        continue;
-    k_addi:
-        r[e->rd] = r[e->rn] + (uint32_t)e->v;
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    k_subi:
-        r[e->rd] = r[e->rn] - (uint32_t)e->v;
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    k_subsi: {
-        uint32_t a = r[e->rn], b = (uint32_t)e->v, res = a - b;
-        r[e->rd] = res;
-        set_nzcv(res, a >= b, ((a ^ b) & (a ^ res)) >> 31);
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    }
-    k_cmpi: {
-        uint32_t a = r[e->rn], b = (uint32_t)e->v, res = a - b;
-        set_nzcv(res, a >= b, ((a ^ b) & (a ^ res)) >> 31);
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    }
-    k_tsti:
-        set_nz(r[e->rn] & (uint32_t)e->v);
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    k_tsti_c0:                      /* a rotated immediate: the carry is its top bit */
-        set_nz(r[e->rn] & (uint32_t)e->v);
-        cpsr &= ~F_C;
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    k_andi:
-        r[e->rd] = r[e->rn] & (uint32_t)e->v;
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    k_orri:
-        r[e->rd] = r[e->rn] | (uint32_t)e->v;
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    k_bici:
-        r[e->rd] = r[e->rn] & ~(uint32_t)e->v;
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    k_add_pc:
-        r[e->rd] = pc + 8 + (uint32_t)e->v;
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    k_addr:
-        r[e->rd] = r[e->rn] + r[e->rm];
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    k_cmpr: {
-        uint32_t a = r[e->rn], b = r[e->rm], res = a - b;
-        set_nzcv(res, a >= b, ((a ^ b) & (a ^ res)) >> 31);
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    }
-    k_psr:                          /* MRS and MSR */
-        r[15] = pc + 8;
-        psr_transfer(e->op);
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    k_movi:
-        r[e->rd] = (uint32_t)e->v;
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    k_movr:
-        r[e->rd] = r[e->rm];
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    k_movsr:
-        r[e->rd] = r[e->rm];
-        set_nz(r[e->rd]);
-        r[15] = pc + 4;
-        done += 1;
-        continue;
-    k_ldrb:
-        r[e->rd] = rd8(r[e->rn] + (uint32_t)e->v);
-        r[15] = pc + 4;
-        done += 3;
-        continue;
-    k_ldr:
-        r[e->rd] = ldr_word(r[e->rn] + (uint32_t)e->v);
-        r[15] = pc + 4;
-        done += 3;
-        continue;
-    k_ldr_pc:
-        r[e->rd] = ldr_word(pc + 8 + (uint32_t)e->v);
-        r[15] = pc + 4;
-        done += 3;
-        continue;
-    k_strb:
-        wr8(r[e->rn] + (uint32_t)e->v, r[e->rd]);
-        r[15] = pc + 4;
-        done += 2;
-        continue;
-    k_str:
-        wr32(r[e->rn] + (uint32_t)e->v, r[e->rd]);
-        r[15] = pc + 4;
-        done += 2;
-        continue;
-    k_push_pc:
-        wr32(r[e->rn] - 4, pc + 12);
-        r[e->rn] -= 4;
-        r[15] = pc + 4;
-        done += 3;
-        continue;
-    k_pop_pc: {
-        uint32_t a = r[e->rn];
-        r[e->rn] = a + 4;
-        r[15] = rd32(a) & ~3u;
-        done += 5;
-        continue;
-    }
-    }
-    cycles_run += (uint64_t)done;
-    return done;
+    return dec8_on ? arm7_run8(cycles) : arm7_run16(cycles);
 }

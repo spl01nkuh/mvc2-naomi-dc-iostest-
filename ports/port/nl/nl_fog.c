@@ -32,7 +32,7 @@ int nlFogDensityF(float fdensity) {
     exp = (u.i >> 23) - 127;
     mant = (uint8_t)((int16_t)(u.i >> 16) | 0x80);
     if (exp < 0) {
-        mant >>= -exp;
+        mant = -exp & 31 ? mant >> (-exp & 31) : 0;     /* the SH-4's shad: by the low five bits, 32 when 0 */
         exp = 0;
     }
     density = mant << 8 | (exp & 0xff);

@@ -1,4 +1,4 @@
-/* The training menu's window and cursor on the pause's list, shown while training_work.unk_1c is 2,
+/* The training menu's window and cursor on the pause's list, shown while training_work.menu_disp is 2,
    and the routine that draws a work's part list (work2) for disp_pause. */
 #include "player.h"
 #include "nl.h"
@@ -70,13 +70,13 @@ void pause_cursor_set( void )
 
 void pause_win_move( PLAYER_WORK *w )
 {
-	if( training_work.unk_1c != 2 ) work_free( w ) ;
+	if( training_work.menu_disp != 2 ) work_free( w ) ;
 }
 
 /* it follows the line and glows */
 void pause_cursor_move( PLAYER_WORK *w )
 {
-	if( training_work.unk_1c != 2 ){
+	if( training_work.menu_disp != 2 ){
 		work_free( w ) ;
 		return ;
 	}

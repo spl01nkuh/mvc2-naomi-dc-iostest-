@@ -7,6 +7,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* mapped at its arcade address: the game keeps buffers there */
 #define NAOMI_RAM_BASE  0x0C000000u
@@ -48,7 +49,8 @@ void naomi_rom_close(void);
 /* a front end's own reads of the ROM's 64 KB blocks, from the image naomi_rom_make_image writes */
 typedef struct {
     int (*open)(const char* dir);       /* 1: it reads the ROM in dir (else the files are read as usual) */
-    int (*read)(uint32_t block, void* dst);     /* a block the cache lacks, now: 1 when read */
+    int (*read)(uint32_t block, uint32_t last, void* dst);  /* a block the cache lacks, now: 1 when read; the
+                                                               request it is in runs to last */
     void (*missed)(uint32_t block, uint32_t last);  /* after one: the request it was in runs to last */
     void (*close)(void);
 } NAOMI_ROM_READER;
@@ -57,6 +59,13 @@ int naomi_rom_make_image(const char* dir, const char* path, void (*progress)(uin
 const char* naomi_rom_image_name(void);
 int naomi_rom_cached(uint32_t block);
 void naomi_rom_put(uint32_t block, const void* data);   /* a block read ahead, into the cache */
+/* the set's files from its zip (naomi_zip.c) */
+typedef struct NAOMI_ZIP NAOMI_ZIP;
+NAOMI_ZIP* naomi_zip_open(const char* path);    /* NULL if no zip */
+int naomi_zip_has(const NAOMI_ZIP* zip, const char* name, uint32_t size);
+int naomi_zip_read(NAOMI_ZIP* zip, const char* name, uint8_t* dst, uint32_t size,
+                   void (*step)(uint32_t done));   /* 1 when read, CRC checked; step is called as it goes */
+void naomi_zip_close(NAOMI_ZIP* zip);
 void naomi_m1_read(uint32_t src, uint8_t* dst, uint32_t size);     /* a packed file (naomi_m1.c) */
 
 /* the board (naomi_board.c) */
@@ -77,6 +86,7 @@ void host_poll(void);               /* from the game's busy waits: the interrupt
 void host_stub(const char* name);   /* a library routine the port lacks: says so once */
 void host_stub_report(void);
 unsigned host_frame(void);
+extern uint32_t host_fills;         /* counts the port's writes into the game's memory: ROM and disc reads */
 void host_log(const char* fmt, ...);
 void host_divzero_install(void);    /* a division by zero gives 0, as SHC's code did */
 struct tm;
@@ -88,10 +98,42 @@ int dc_init(const HOST_PROGRAM* program, const char* disc_path);
 int dc_gd_open(const char* disc_path);
 const char* dc_disc_check(const char* disc_path);  /* a file missing or the wrong size, or NULL */
 long dc_gd_read_file(const char* name, void* buf, long max);  /* a whole file; its size, or -1 */
+const char* dc_gd_path(const char* name);   /* a file's path on the host */
+
+/* the 3DS's read-ahead of one file (ctr_stream.c) */
+int ctr_stream_open(const char* path, uint32_t most);
+void ctr_stream_drop(void);
+void ctr_stream_close(void);
+int ctr_stream_queue(uint32_t off, uint32_t len);
+int ctr_stream_put(uint32_t off, uint32_t len, const void* bytes);
+int ctr_stream_find(uint32_t off, uint32_t n);
+const uint8_t* ctr_stream_take(int i, uint32_t* off);
+void ctr_stream_free(int i);
+uint32_t ctr_stream_times(float* mean, float* most);   /* the reads since the last call; mean and most in ms */
+int ctr_rom_dma(uint32_t offset, void* dst, uint32_t size);   /* the game's DMA from the ROM, 1 when read (ctr_rom.c) */
+int ctr_rom_packed(uint32_t offset, void* dst, uint32_t size); /* and its packed reads, 1 when given */
+/* and its disc reader, one read at a time (MVC2_GD_ASYNC) */
+int ctr_read_start(FILE* f, long off, void* to, size_t want);
+int ctr_read_busy(void);
+size_t ctr_read_end(float* ms);
+int ctr_ahead_start(const char* path, size_t most);
+int ctr_ahead_has(const char* path);
+int ctr_ahead_idle(void);
+FILE* ctr_ahead_file(const char* path, long* size);
+int ctr_ahead_take(size_t off, void* to, size_t want, float* ms);
+void ctr_ahead_drop(int all);
+void ctr_close_later(FILE* f);
+int ctr_small_start(const char* path, size_t most);
+FILE* ctr_small_open(const char* path, long* size);
+int ctr_small_take(const char* path, size_t off, void* to, size_t want);
+void ctr_small_drop(void);
 
 /* port/sys/restart.c */
 void host_keep_start(void);         /* first thing, before any of them runs */
+void host_keep_program(const HOST_PROGRAM* program);   /* before it first runs */
 void host_restart(void);            /* with the board stopped */
+extern void (*host_restart_hook)(int after);   /* the front end's settings in the layers taken before it (0), given back after (1) */
+void* host_keep_block(size_t size); /* memory kept through restarts (the sound's RAM), or NULL */
 
 /* the front end (main_sdl.c, main_3ds.c) */
 void host_present(void);
@@ -103,5 +145,10 @@ void config_set(const char* key, const char* value); /* and saves mvc2.cfg */
 int start_game(void);
 int switch_game(void);              /* to the other one, when its data was found */
 const char* game_title(void);
+/* memory the caller can do without: NULL when there is none. On the 3DS any other allocation that fails stops
+   the program with host_out_of_memory. */
+void* host_try_malloc(size_t bytes);
+void* host_try_calloc(size_t n, size_t size);
+void host_out_of_memory(const char* what, size_t bytes);   /* says so, and the program ends */
 
 #endif

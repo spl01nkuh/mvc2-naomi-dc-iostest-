@@ -14,6 +14,7 @@
 #include "naomi_host.h"
 #include "prof.h"
 #include "snd.h"
+#include "snd_drv.h"
 
 #define NLSND_RAM 0xA0800000u
 #define NLSND_G2_BASE 0x5F800000u
@@ -95,6 +96,10 @@ uint8_t* snd_sh4_ptr(uint32_t sh4_addr) {
     return aica_sh4_ptr(sh4_addr);
 }
 
+void snd_sh4_written(uint32_t sh4_addr, uint32_t size) {
+    arm7_code_written(sh4_addr & 0x00FFFFFFu & aica_ram_mask, size);
+}
+
 static uint32_t mb(uint32_t off) {
     uint32_t v;
     memcpy(&v, aica_ram + off, 4);
@@ -103,6 +108,7 @@ static uint32_t mb(uint32_t off) {
 
 static void mb_set(uint32_t off, uint32_t v) {
     memcpy(aica_ram + off, &v, 4);
+    arm7_code_written(off, 4);
 }
 
 static uint32_t word_at(uint32_t off) {
@@ -143,9 +149,22 @@ static int seq_put(uint32_t request) {
     return 0;
 }
 
+#ifdef __3DS__
+/* a game's request the full ring loses, logged */
+static void seq_game(uint32_t request) {
+    static unsigned long lost;
+    if (seq_put(request) != 0 && (++lost <= 16 || lost % 256 == 0)) {
+        host_log("sound: the driver's requests full, %08lX lost (frame %u, %lu so far)", (unsigned long)request,
+                 host_frame(), lost);
+    }
+}
+#else
+#define seq_game(request) seq_put(request)
+#endif
+
 static void seq_work(int request, int unused) {
     (void)unused;
-    seq_put((uint32_t)request);
+    seq_game((uint32_t)request);
 }
 
 /* the game never looks at the result, so it can be put in after the frame being made */
@@ -157,11 +176,20 @@ int32_t nlsndSeqRequest(uint32_t request) {
         return 0;
     }
     if (!snd_defer(seq_work, (int)request, 0)) {
-        snd_sync();
-        seq_put(request);
+        SND_CALL();
+        seq_game(request);
     }
     return 0;
 }
+
+#ifdef __3DS__
+/* MVC2_SNDREQ_WAIT=n: that many of the sound CPU's cycles at most for room in the ring; the slow sound path can
+   leave it full for the whole of WAIT_CYCLES, seconds on the game's thread */
+static int req_cycles = WAIT_CYCLES;
+#define REQ_CYCLES req_cycles
+#else
+#define REQ_CYCLES WAIT_CYCLES
+#endif
 
 /* a request the library itself must get through: the ring is waited on while full */
 static int request_now(uint32_t request) {
@@ -169,7 +197,7 @@ static int request_now(uint32_t request) {
     if (!snd_enabled() || !inited) {
         return 0;
     }
-    for (n = 0; n < WAIT_CYCLES; n += 2048) {
+    for (n = 0; n < REQ_CYCLES; n += 2048) {
         if (seq_put(request) == 0) {
             return 0;
         }
@@ -196,7 +224,7 @@ static int block_move(uint32_t from, uint32_t to, uint32_t size) {
 int32_t nlsndInit(const void* driver, int32_t mode) {
     const uint8_t* d = driver;
     uint32_t size, i, v;
-    snd_sync();
+    SND_CALL();
     memcpy(&v, d + 0xC4, 4);
     if (v < SND_DRIVER_MIN) {
         return -1;
@@ -219,11 +247,38 @@ int32_t nlsndInit(const void* driver, int32_t mode) {
     if (getenv("MVC2_ARMRATE")) {
         aica_set_cpu_rate(atoi(getenv("MVC2_ARMRATE")));
     }
+    arm7_translate(getenv("MVC2_ARMJIT") != NULL && atoi(getenv("MVC2_ARMJIT")) != 0);  /* off until its cache upkeep is safe on hardware */
+    arm7_translate2(getenv("MVC2_ARMJIT2") != NULL ? atoi(getenv("MVC2_ARMJIT2")) : 0);
+    arm7_fast(getenv("MVC2_ARMFAST") != NULL && atoi(getenv("MVC2_ARMFAST")) != 0);
+    arm7_small(getenv("MVC2_ARMSMALL") != NULL ? atoi(getenv("MVC2_ARMSMALL")) : 0);   /* 2: the commonest inline */
+    arm7_dec8(getenv("MVC2_ARMDEC8") != NULL && atoi(getenv("MVC2_ARMDEC8")) != 0);
+    arm7_track(getenv("MVC2_ARMTRACK") == NULL || atoi(getenv("MVC2_ARMTRACK")) != 0);
+    arm7_fiq_fast(getenv("MVC2_FIQFAST") == NULL || atoi(getenv("MVC2_FIQFAST")) != 0);
+    snd_drv_set(getenv("MVC2_SNDNATIVE") != NULL ? atoi(getenv("MVC2_SNDNATIVE")) : 0);
+#ifdef __3DS__
+    if (getenv("MVC2_SNDREQ_WAIT") != NULL && atoi(getenv("MVC2_SNDREQ_WAIT")) > 0) {
+        req_cycles = atoi(getenv("MVC2_SNDREQ_WAIT"));
+        host_log("sound: a request waits %d of the sound CPU's cycles at most for room (MVC2_SNDREQ_WAIT)", req_cycles);
+    }
+#endif
+    if (getenv("MVC2_SNDTRACE")) {
+        aica_trace(getenv("MVC2_SNDTRACE"));
+    }
+    aica_set_mix_fast(getenv("MVC2_MIXFAST") == NULL || atoi(getenv("MVC2_MIXFAST")) != 0);
+    aica_set_timer_fast(getenv("MVC2_TIMERFAST") == NULL || atoi(getenv("MVC2_TIMERFAST")) != 0);
+    aica_set_mix_simd(getenv("MVC2_MIXSIMD") != NULL ? atoi(getenv("MVC2_MIXSIMD")) : 0);
+    if (getenv("MVC2_SNDCHUNK")) {
+        aica_set_chunk(atoi(getenv("MVC2_SNDCHUNK")));
+    }
+    if (getenv("MVC2_SNDHALF")) {
+        aica_set_half(atoi(getenv("MVC2_SNDHALF")));
+    }
     if (getenv("MVC2_FILTER")) {
         aica_set_filter(atoi(getenv("MVC2_FILTER")));
     }
     aica_sh4_write32(0x00702800, (uint32_t)mode);
     memcpy(aica_ram, d, size & ~3u);
+    arm7_code_written(0, size);
     mb_set(MB_RAM_MODE, (uint32_t)mode);
     for (i = 0; i < SND_PORTS; i++) {
         mb_set(MB_PORT_ID + i * 4, 0xFFFFFFFFu);
@@ -307,7 +362,7 @@ int32_t nlsndPackLoad(const void* pack, int32_t port) {
     const uint8_t* p = pack;
     int32_t error, after, id, size;
     uint32_t start;
-    snd_sync();
+    SND_CALL();
     if ((error = pack_check(p, port)) != 0) {
         return error;
     }
@@ -324,6 +379,7 @@ int32_t nlsndPackLoad(const void* pack, int32_t port) {
         return SND_ERR_TIMEOUT;
     }
     memcpy(aica_sh4_ptr(start), p, (uint32_t)size & ~3u);
+    snd_sh4_written(start, (uint32_t)size);
     mb_set(MB_LOAD_GO, 1);
     error = wait_for(MB_LOAD_ACK, 1);
     mb_set(MB_LOAD_GO, 0);
@@ -333,7 +389,7 @@ int32_t nlsndPackLoad(const void* pack, int32_t port) {
 /* a load by slices on the board; here it is done at once, and the status finds nothing going on */
 int32_t nlsndPackLoad_Open(const void* pack, int32_t port, int32_t chunk) {
     int32_t error = pack_check(pack, port);
-    snd_sync();
+    SND_CALL();
     (void)chunk;
     if (error != 0) {
         return error;
@@ -360,7 +416,7 @@ int32_t nlsndPackFree(int32_t port) {
     int32_t error, size, behind = 0;
     uint32_t first = 0;
     int i;
-    snd_sync();
+    SND_CALL();
     if ((error = free_check(port)) != 0) {
         return error;
     }
@@ -394,7 +450,7 @@ int32_t nlsndPackFree(int32_t port) {
 
 int32_t nlsndPackFreeBG(int32_t port) {
     int32_t error = free_check(port);
-    snd_sync();
+    SND_CALL();
     if (error != 0) {
         return error;
     }
@@ -458,7 +514,7 @@ int32_t nlsndStreamInit(int16_t mono, int16_t stereo, int16_t mode, int16_t coun
     int32_t unit = 0;
     uint32_t mem = 0, box = MB_STREAM_BOX, start;
     int16_t i, j;
-    snd_sync();
+    SND_CALL();
     if (mode) {
         return -2;
     }
@@ -522,11 +578,12 @@ int32_t nlsndStreamInit(int16_t mono, int16_t stereo, int16_t mode, int16_t coun
 void nlsndStreamSetHdInfo(int16_t s, const void* hd) {
     const uint8_t* h = hd;
     uint16_t freq;
-    snd_sync();
+    SND_CALL();
     if (stream[s].state != 1 || stream[s].playing) {
         return;
     }
     memcpy(aica_ram + stream[s].box + 0x20, h, 64);
+    arm7_code_written(stream[s].box + 0x20, 64);
     memcpy(&freq, h + 0x2A, 2);
     stream[s].freq = freq;
     switch ((int8_t)h[8]) {
@@ -554,7 +611,7 @@ int32_t nlsndStreamGetBitSize(int16_t s) {
 }
 
 uint32_t nlsndStreamGetPlayPos(int16_t s) {
-    snd_sync();
+    SND_CALL();
     if (stream[s].state != 1 || !stream[s].playing) {
         return 0;
     }
@@ -563,7 +620,7 @@ uint32_t nlsndStreamGetPlayPos(int16_t s) {
 
 int16_t nlsndStreamOpen(int16_t type) {
     int16_t i;
-    snd_sync();
+    SND_CALL();
     if (type != 1 && type != 2) {
         return -1;
     }
@@ -577,14 +634,14 @@ int16_t nlsndStreamOpen(int16_t type) {
 }
 
 void nlsndStreamClose(int16_t s) {
-    snd_sync();
+    SND_CALL();
     if (stream[s].state == 1 && !stream[s].playing) {
         stream[s].state = 0;
     }
 }
 
 void nlsndStreamStart(int16_t s) {
-    snd_sync();
+    SND_CALL();
     if (stream[s].state == 1 && !stream[s].playing) {
         nlsndSeqRequest(((uint32_t)(int16_t)s << 12) + 0x1a1);
         stream[s].playing = 1;
@@ -594,7 +651,7 @@ void nlsndStreamStart(int16_t s) {
 /* stops a stream: its channels keyed off at once (as the library writes their registers), then the request */
 void nlsndStreamStop(int16_t s) {
     uint32_t box, chreg, v;
-    snd_sync();
+    SND_CALL();
     if (stream[s].state != 1 || !stream[s].playing) {
         return;
     }
@@ -652,9 +709,10 @@ void nlsndStreamSetHdPan(uint8_t* hd, int16_t c, int32_t pan) {
 
 #define FRAME_US 16683u         /* the board's frame, as the port's timer counts it */
 
-static int16_t frame_buf[2 * 1024];
-static int16_t mix_buf[2 * 1024];   /* the mixer's part of the next frame */
+static int16_t frame_buf[2 * 2048];
+static int16_t mix_buf[2 * 2048];   /* the mixer's part of the next frame */
 static uint32_t frac;
+static uint32_t frame_us = FRAME_US;
 static int prepared;                /* mix_buf holds the next frame's */
 static SND_MIXER mixer;
 static void (*sync_fn)(void);
@@ -666,6 +724,14 @@ void snd_set_mixer(SND_MIXER fn) {
     mixer = fn;
 }
 
+#ifdef __3DS__
+static SND_MIXER late_mixer;
+
+void snd_set_late_mixer(SND_MIXER fn) {
+    late_mixer = fn;
+}
+#endif
+
 void snd_set_sync(void (*fn)(void)) {
     sync_fn = fn;
 }
@@ -673,6 +739,28 @@ void snd_set_sync(void (*fn)(void)) {
 void snd_sync(void) {
     if (sync_fn != NULL) {
         sync_fn();
+    }
+}
+
+static void (*call_begin_fn)(void), (*call_end_fn)(void);
+
+void snd_set_calls(void (*begin)(void), void (*end)(void)) {
+    call_begin_fn = begin;
+    call_end_fn = end;
+}
+
+int snd_call_begin(void) {
+    if (call_begin_fn != NULL) {
+        call_begin_fn();
+    }
+    snd_sync();
+    return 0;
+}
+
+void snd_call_end(int* call) {
+    (void)call;
+    if (call_end_fn != NULL) {
+        call_end_fn();
     }
 }
 
@@ -684,9 +772,13 @@ int snd_defer(SND_WORK work, int a, int b) {
     return defer_fn != NULL && defer_fn(work, a, b);
 }
 
+void snd_set_frame_us(uint32_t us) {
+    frame_us = us < FRAME_US ? FRAME_US : us > 2 * FRAME_US ? 2 * FRAME_US : us;
+}
+
 /* the next frame's samples, without counting them yet */
 static uint32_t next_count(void) {
-    return (frac + AICA_RATE * FRAME_US) / 1000000u;
+    return (frac + AICA_RATE * frame_us) / 1000000u;
 }
 
 void snd_prepare(void) {
@@ -722,12 +814,17 @@ int snd_frame(const int16_t** out) {
         snd_prepare();
     }
     prepared = 0;
-    frac += AICA_RATE * FRAME_US;
+    frac += AICA_RATE * frame_us;
     n = frac / 1000000u;
     frac -= n * 1000000u;
     if (!snd_enabled()) {
         memset(frame_buf, 0, n * 4);
     } else {
+#ifdef __3DS__
+        if (late_mixer != NULL) {
+            late_mixer(mix_buf, (int)n);
+        }
+#endif
         if (inited) {
             static int dbg = -1;
             if (dbg < 0) {
@@ -753,6 +850,51 @@ int snd_frame(const int16_t** out) {
             frame_buf[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
         }
     }
+    *out = frame_buf;
+    return (int)n;
+}
+
+#ifdef __3DS__
+static SND_EXTRA_MIXER extra_mixer;
+static int16_t extra_buf[2 * 2048];
+
+void snd_set_extra_mixer(SND_EXTRA_MIXER fn) {
+    extra_mixer = fn;
+}
+
+/* a frame between the game's with the mixer's part: none when the mixer can't make it */
+static int frame_extra_mixed(const int16_t** out) {
+    uint32_t n = (frac + AICA_RATE * FRAME_US) / 1000000u, i;
+    memset(extra_buf, 0, n * 4);
+    if (!extra_mixer(extra_buf, (int)n)) {
+        return 0;
+    }
+    frac += AICA_RATE * FRAME_US;
+    frac -= n * 1000000u;
+    aica_render(frame_buf, (int)n);
+    for (i = 0; i < n * 2; i++) {
+        int32_t v = frame_buf[i] + extra_buf[i];
+        frame_buf[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+    }
+    *out = frame_buf;
+    return (int)n;
+}
+#endif
+
+int snd_frame_extra(const int16_t** out) {
+    uint32_t n;
+#ifdef __3DS__
+    if (snd_enabled() && inited && mixer != NULL && extra_mixer != NULL) {
+        return frame_extra_mixed(out);
+    }
+#endif
+    if (!snd_enabled() || !inited || mixer != NULL) {
+        return 0;
+    }
+    frac += AICA_RATE * FRAME_US;
+    n = frac / 1000000u;
+    frac -= n * 1000000u;
+    aica_render(frame_buf, (int)n);
     *out = frame_buf;
     return (int)n;
 }

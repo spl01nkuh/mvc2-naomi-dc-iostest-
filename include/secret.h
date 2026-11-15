@@ -37,7 +37,7 @@ extern void dm0f_mode8_title_set( void ) ;
 extern void headline_sub_set( int no ) ;
 extern void disp_adjust_set( void ) ;
 extern void d_point_get( void ) ;
-extern void n_point_get( void ) ;
+extern void v_point_get( void ) ;
 extern int decide_ck( void ) ;
 extern int cancel_ck( void ) ;
 extern int decide_cancel_ck( void ) ;

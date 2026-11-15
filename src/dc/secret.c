@@ -5,6 +5,13 @@
 #include "dm.h"
 #include "secret.h"
 
+/* a character's bit in its word of char_open0/1: the SH-4 shifts by the count's low five bits */
+#ifdef HOST_PORT
+#define OPEN_BIT( c )	( 1 << ( ( c ) & 31 ) )
+#else
+#define OPEN_BIT( c )	( 1 << ( c ) )
+#endif
+
 typedef struct VS_SHOP_W {
 	PLAYER_WORK	*cursor;	/* 00: the cursor, whose work2 is its shadow */
 	PLAYER_WORK	*msg;		/* 04: the message, by its sub_no */
@@ -101,7 +108,7 @@ void secret_factor( void )
 			if( vms_work.file_flag != 1 ){
 				Sys->task_step = Sys->scene_no = Sys->routine_0 = Sys->routine_1 = Sys->routine_2 = Sys->routine_3 = Sys->exit_flag = 0 ;
 				if( vms_work.d_point ) d_point_get() ;
-				if( vms_work.n_point ) n_point_get() ;
+				if( vms_work.v_point ) v_point_get() ;
 				break ;
 			}
 			Sys->routine_3 ++ ;
@@ -116,11 +123,11 @@ void secret_factor( void )
 			Sys->timer0 = 120 ;
 			vms_work.card_task_step[0][0] = vms_work.card_task_step[0][1] = 0 ;
 			vms_work.card_task_step[1][0] = vms_work.card_task_step[1][1] = 0 ;
-			if( vms_work.d_point && vms_work.n_point ) vms_work.vm_msg[0] = 3 ;
+			if( vms_work.d_point && vms_work.v_point ) vms_work.vm_msg[0] = 3 ;
 			else if( vms_work.d_point ){
 				vms_work.vm_msg[0] = 1 ;
 				if( 0 ) vms_work.vm_msg[0] = 1 ;	/* left out of the build */
-			} else if( !vms_work.n_point ) goto none ;
+			} else if( !vms_work.v_point ) goto none ;
 			else vms_work.vm_msg[0] = 2 ;
 			dm0c_vm_msg_set() ;
 			vms_work.vm_msg[1] = 1 ;
@@ -143,7 +150,7 @@ void secret_factor( void )
 				vms_work.vm_msg[1] = 2 ;
 				dm0c_vm_win_set( vms_work.vm_msg[1] ) ;
 				if( vms_work.d_point ) d_point_get() ;
-				if( vms_work.n_point ) n_point_get() ;
+				if( vms_work.v_point ) v_point_get() ;
 			}
 			return ;
 		case 3 :
@@ -292,7 +299,7 @@ void shop_color_select( VS_SHOP_W *shop, int no )
 			open = &Sys->char_open0 ;
 			all = &Sys->char_open_all0 ;
 		}
-		if( ( *open & ( 1 << c ) ) && !( *all & ( 1 << c ) ) ) break ;
+		if( ( *open & OPEN_BIT( c ) ) && !( *all & OPEN_BIT( c ) ) ) break ;
 		if( ++ c >= 59 ) c = 0 ;
 	}
 	if( i != 59 ){
@@ -305,7 +312,7 @@ void shop_color_select( VS_SHOP_W *shop, int no )
 				all ++ ;
 			}
 			if( c >= 24 && c <= 26 ) continue ;
-			if( ( *open & ( 1 << c ) ) && ( *all & ( 1 << c ) ) ) cnt ++ ;
+			if( ( *open & OPEN_BIT( c ) ) && ( *all & OPEN_BIT( c ) ) ) cnt ++ ;
 		}
 		shop->shop_pts[no][0] = ( cnt + 1 ) * 100 ;
 	} else shop->shop_goods[no] = -1 ;
@@ -372,7 +379,7 @@ next :
 		c = tbl[k] ;
 		if( c >= 32 ) pl_flag = &Sys->char_open1 ;
 		else pl_flag = &Sys->char_open0 ;
-		if( !( *pl_flag & ( 1 << c ) ) ) break ;
+		if( !( *pl_flag & OPEN_BIT( c ) ) ) break ;
 		k = ( k + 1 ) & ( n - 1 ) ;
 	}
 	if( i == n ) shop->shop_goods[no] = -1 ;
@@ -399,7 +406,7 @@ next :
 		c = tbl[k] ;
 		if( c >= 32 ) pl_flag = &Sys->char_open1 ;
 		else pl_flag = &Sys->char_open0 ;
-		if( !( *pl_flag & ( 1 << c ) ) ) break ;
+		if( !( *pl_flag & OPEN_BIT( c ) ) ) break ;
 		k = ( k + 1 ) & ( n - 1 ) ;
 	}
 	if( i == n ) shop->shop_goods[no] = -1 ;
@@ -545,12 +552,12 @@ void secret_factor_0( Uint16 sw, Uint16 sw2 )
 						c = shop->shop_goods[shop->cpos] ;
 						if( c >= 32 ) open = &Sys->char_open1 ;
 						else open = &Sys->char_open0 ;
-						*open |= 1 << c ;
+						*open |= OPEN_BIT( c ) ;
 					} else if( shop->flag ){
 						c = shop->shop_goods[shop->cpos] ;
 						if( c >= 32 ) open = &Sys->char_open_all1 ;
 						else open = &Sys->char_open_all0 ;
-						*open |= 1 << c ;
+						*open |= OPEN_BIT( c ) ;
 					} else if( vms_work.stage_ex_cnt < 7 ) vms_work.stage_ex_cnt ++ ;
 					shop->shop_goods[shop->cpos] = -1 ;
 					shop->empty ++ ;

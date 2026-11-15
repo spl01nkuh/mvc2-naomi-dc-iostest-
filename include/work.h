@@ -53,17 +53,17 @@ extern Uint16 kbd_rep;	/* and given again while held */
 
 /* the network's */
 extern Uint8 unk_8C212F0C, unk_8C212F0D, unk_8C212F0E, unk_8C212F0F;	/* cleared when a network screen starts */
-extern Sint16 unk_8C212F10;	/* bit 7 shows the lobby window's mark */
+extern Sint16 win_mark_flag;	/* bit 7 shows the lobby window's mark */
 extern Uint8 unk_8C212F12[2];
 extern Sint16 yesno_ans;	/* the yes/no bar's answer, 0 or 1; -1 takes the bar away */
-extern Sint16 unk_8C212F16;	/* set while the yes/no bar opens or its cursor slides */
+extern Sint16 yesno_slide;	/* set while the yes/no bar opens or its cursor slides */
 extern Sint8 rec_item_no;	/* the record panel's chosen item */
 extern Sint8 net_cursor_no;	/* the network screen's cursor: the answer, the line, the room or the tab it is on */
 extern Uint8 unk_8C212F1A;
-extern Sint8 unk_8C212F1B;	/* bit 7: the lobby window shows the second profile (net_rec[1]) */
+extern Sint8 win_side_flag;	/* bit 7: the lobby window shows the second profile (net_rec[1]) */
 extern Sint8 board_cursor_no[2];	/* each side's character on the record board, 0 to 2 */
 extern Sint8 board_decide[2];	/* and set once it is chosen: the cursor goes */
-extern Sint8 unk_8C212F20;	/* set while a screen waits: the clock's dots light, the record's strip runs; the question's answer, 1 or 2 */
+extern Sint8 net_wait;	/* set while a screen waits: the clock's dots light, the record's strip runs; the question's answer, 1 or 2 */
 extern Sint8 net_info_flag;	/* the console has a provider set up */
 extern Sint16 win_pict_u, win_pict_v;	/* how far the lobby window's picture has scrolled */
 extern SW_WORK *side_sw_adrs[2];	/* each side's buttons, for a network game to write */
@@ -86,7 +86,7 @@ extern Uint8 unk_8C2136FC;	/* this and the four below: a network screen's steps,
 extern Sint8 unk_8C2136FD, unk_8C2136FE;
 extern Uint8 unk_8C2136FF, unk_8C213700;
 extern Uint8 unk_8C213701[4];
-extern Sint8 unk_8C213705;	/* below 0 the line to the server is broken: the lamp shows it */
+extern Sint8 net_line_st;	/* below 0 the line to the server is broken: the lamp shows it */
 extern Uint8 unk_8C213706[0x100];
 extern char net_user_id[0x1c];	/* the ID the password panel shows */
 extern char net_password[0x14];	/* and its password, shown as stars */
@@ -103,11 +103,11 @@ extern Uint8 unk_8C213A2A[0x40];
 extern Uint8 unk_8C213A6A[10];
 extern Uint8 unk_8C213A74[118];
 extern Uint8 unk_8C213AEA[4];
-extern Sint16 unk_8C213AEE;	/* a count the record board shows in its middle; while it is not 0 the faces change */
+extern Sint16 board_cnt;	/* a count the record board shows in its middle; while it is not 0 the faces change */
 extern Sint16 net_win_add;	/* the record board adds these two to net_win_cnt and net_lose_cnt */
 extern Sint16 net_lose_add;
 extern Uint8 unk_8C213AF4[4];
-extern Uint32 unk_8C213AF8, unk_8C213AFC;	/* the entry screen's second and third numbers, kept in the network file */
+extern Uint32 net_entry_num2, net_entry_num3;	/* the entry screen's second and third numbers, kept in the network file */
 extern Uint32 net_entry_num;	/* net_entry_str as a number: the entry screen's first */
 extern Sint32 net_play_time;	/* the time played, in seconds */
 extern Sint8 net_rank;	/* the player's rank, which picks the rank mark's model */
@@ -121,7 +121,7 @@ extern Uint8 unk_8C2141E4;
 extern Sint8 net_area_no;	/* the area the room list's cursor is on */
 extern Uint8 unk_8C2141E6;
 extern Sint8 room_info_cnt;	/* the rooms in room_info */
-extern Sint8 unk_8C2141E8;	/* in the room list, 1 or 2 lights a button's mark while unk_8C2136FF is set */
+extern Sint8 room_btn_no;	/* in the room list, 1 or 2 lights a button's mark while unk_8C2136FF is set */
 extern Sint8 net_room_no;	/* the room the player is in, in room_info */
 extern char net_vs_key[8];	/* the other player's ID, as net_file_key */
 extern char net_vs_handle[0x92];	/* and handle */
@@ -137,15 +137,15 @@ extern Uint8 unk_8C214292;	/* kept in the network file, as is unk_8C214294 */
 extern Uint8 unk_8C214293;
 extern Uint8 unk_8C214294;
 extern Uint8 unk_8C214295[7];
-extern Sint32 unk_8C21429C;	/* while set, the selector closes and the lobby's arrows hide */
+extern Sint32 sel_close_flag;	/* while set, the selector closes and the lobby's arrows hide */
 extern Uint8 unk_8C2142A0[7];
 extern Sint8 net_pad_bit;	/* in a network game, the pads that play: bit 0 port A, bit 1 port B */
 extern Uint8 unk_8C2142A8[0x106];
 extern Uint8 unk_8C2143AE;	/* vms_work's net_cnt_flag, as the network file was loaded */
 extern Uint8 unk_8C2143AF[0x13];
-extern Sint8 unk_8C2143C2;	/* -1 while the selector is up, 0 once it has gone */
+extern Sint8 sel_on;	/* -1 while the selector is up, 0 once it has gone */
 extern Uint8 unk_8C2143C3;
-extern Sint16 unk_8C2143C4;	/* the selector's box chosen, from 1; 0 for none */
+extern Sint16 sel_ans;	/* the selector's box chosen, from 1; 0 for none */
 typedef struct NET_ENTRY {
 	Uint8	key[8];
 	Uint8	handle[18];
@@ -196,11 +196,11 @@ extern char net_entry_str[12];	/* the lobby's entry number, as text */
 extern Sint8 lobby_time_flag;	/* while set, the vertical blank counts lobby_time */
 extern Uint32 lobby_time;	/* frames, shown as a clock on the network screens */
 extern Uint8 unk_8C215290[4];
-extern Uint32 unk_8C215294;
+extern Uint32 board_pt;	/* the points the record board shows under the handle */
 extern Uint8 unk_8C215298[4];
 extern Uint16 log_scroll;	/* the message log is scrolled by hand: up and down move it, and it no longer follows */
 extern Uint8 unk_8C21529E[2];
-extern Sint16 unk_8C2152A0, unk_8C2152A2;	/* the data card's second record, as net_win_cnt and net_lose_cnt */
+extern Sint16 net_win_cnt2, net_lose_cnt2;	/* the data card's second record, as net_win_cnt and net_lose_cnt */
 extern Uint8 unk_8C2152A4[2];
 extern Uint16 button_cfg[2][6];	/* each side's button config */
 extern Uint8 unk_8C2152BE[14];

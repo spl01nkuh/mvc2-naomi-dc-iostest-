@@ -13,7 +13,7 @@ typedef struct KMPASSINFO {
 	Uint32	size;		/* 08: bytes of vertex buffer */
 	Uint32	list_type;	/* 0c: the direct list, 0 to 4 */
 	Float	ratio[5];	/* 10 */
-	Uint32	unk_24[5];
+	Uint32	opb_size[5];	/* 24: each list's object pointer block size */
 } KMPASSINFO;
 
 /* what Kamui2's kmSetSystemConfiguration takes */
@@ -22,7 +22,7 @@ typedef struct KMSYSTEMCONFIGSTRUCT {
 	Uint32	flags;		/* 04 */
 	KMSURFACEDESC	**pSurfaceDesc;	/* 08 */
 	Uint32	nFrameBuffers;	/* 0c */
-	Uint32	unk_10;
+	Uint32	strip_height;	/* 10: the strip buffer's height */
 	Uint32	texture_size;	/* 14 */
 	Uint32	texture_structs;	/* 18: how many textures */
 	Uint32	small_vq_structs;	/* 1c: how many of them small VQ ones */
@@ -37,33 +37,33 @@ typedef struct KMSYSTEMCONFIGSTRUCT {
 
 /* a vertex context: the settings of a strip, and the header words kmProcessVertexRenderState
    makes of them */
-typedef struct KMSTRIPCONTEXT {
+typedef struct KMVERTEXCONTEXT {
 	Uint32	state;		/* 00: which of the settings to process */
-	Uint32	unk_04;
+	Uint32	param_type;	/* 04 */
 	Uint32	list_type;	/* 08: 0 opaque, 2 translucent */
 	Uint32	color_type;	/* 0c: 0 packed, 1 floating */
-	Uint32	unk_10;
+	Uint32	uv_format;	/* 10 */
 	Uint32	depth_mode;	/* 14 */
-	Uint32	unk_18;
-	Uint32	unk_1c;
+	Uint32	culling_mode;	/* 18 */
+	Uint32	reserved0;	/* 1c */
 	Uint32	shading;	/* 20: bit 0 gouraud, bit 1 textured */
-	Uint32	unk_24;
-	Uint32	unk_28;
+	Uint32	select_modifier;	/* 24 */
+	Uint32	zwrite_disable;	/* 28 */
 	Uint32	src_blend;	/* 2c */
 	Uint32	dst_blend;	/* 30 */
-	Uint32	unk_34;
-	Uint32	unk_38;
+	Uint32	src_select;	/* 34 */
+	Uint32	dst_select;	/* 38 */
 	Uint32	fog_mode;	/* 3c */
 	Uint32	specular;	/* 40 */
 	Uint32	use_alpha;	/* 44 */
 	Uint32	ignore_tex_alpha;	/* 48 */
-	Uint32	unk_4c;
-	Uint32	unk_50;
+	Uint32	clamp_uv;	/* 4c */
+	Uint32	flip_uv;	/* 50 */
 	Uint32	filter;		/* 54 */
-	Uint32	unk_58;
+	Uint32	super_sample;	/* 58 */
 	Uint32	mipmap_adjust;	/* 5c: in quarters */
 	Uint32	tex_shading;	/* 60 */
-	Uint32	unk_64;
+	Uint32	color_clamp;	/* 64 */
 	Uint32	palette_bank;	/* 68 */
 	KMSURFACEDESC	*texture;	/* 6c */
 	Float	face_a, face_r, face_g, face_b;		/* 70 */
@@ -71,10 +71,13 @@ typedef struct KMSTRIPCONTEXT {
 	Uint32	pcw;		/* 90: the parameter control word */
 	Uint32	isp;		/* 94 */
 	Uint32	tsp;		/* 98 */
-	Uint32	unk_9c;
-	Uint32	unk_a0;
-	Uint32	unk_a4[7];
-} KMSTRIPCONTEXT;
+	Uint32	tcw;		/* 9c: the texture control word */
+	Uint32	modifier_inst;	/* a0: the modifier volume's instruction */
+	Float	reserved1[4];	/* a4 */
+	Uint32	dcalc_exact;	/* b4 */
+	Uint32	reserved5;	/* b8 */
+	Uint32	user_clip;	/* bc: the user clip mode */
+} KMVERTEXCONTEXT;
 
 /* the screen: its size and mode, in nl_scr */
 typedef struct NLSCREEN {
@@ -89,9 +92,13 @@ extern NLSCREEN nl_scr;
 /* the library's work: its near and far planes, how they scale, and the model work areas with
    their stack (nl_vertex and nl_lit hold each level's place) */
 typedef struct NLSYSWORK {
-	Uint8	unk_00[6];
+	Uint8	palette_changed;	/* 00: nlcmnPalette's, by GBR */
+	Uint8	palette_mode;	/* 01: 3 for 32-bit colours */
+	Sint16	unk_02;
+	Sint16	palettes;	/* 04: how many are loaded */
 	Sint16	vertex_depth;	/* 06 */
-	Uint8	unk_08[20];
+	Sint32	unk_08[4];
+	void	*palette;	/* 18: the loaded palettes */
 	Float	znear;		/* 1c */
 	Float	zfar;		/* 20 */
 	Float	znear_inv;	/* 24 */

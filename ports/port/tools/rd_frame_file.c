@@ -19,18 +19,22 @@ int rd_frame_load(const char* name) {
     if (f == NULL) {
         return 0;
     }
+    rd_begin_frame();
     ok &= fread(magic, 1, 4, f) == 4 && memcmp(magic, "RDF1", 4) == 0;
-    ok &= fread(rd_frame.ntris, sizeof(int), RD_LISTS, f) == RD_LISTS;
-    ok &= fread(&rd_frame.nstates, sizeof(int), 1, f) == 1;
-    for (i = 0; ok && i < RD_LISTS; i++) {
-        ok &= fread(rd_frame.tris[i], sizeof(RD_TRI), (size_t)rd_frame.ntris[i], f) == (size_t)rd_frame.ntris[i];
+    ok &= fread(rd_frame->ntris, sizeof(int), RD_LISTS, f) == RD_LISTS;
+    for (i = 0; i < RD_LISTS; i++) {
+        ok &= rd_frame->ntris[i] >= 0 && rd_frame->ntris[i] <= rd_frame->room[i];
     }
-    ok &= fread(rd_frame.background, sizeof rd_frame.background, 1, f) == 1;
+    ok &= fread(&rd_frame->nstates, sizeof(int), 1, f) == 1;
+    for (i = 0; ok && i < RD_LISTS; i++) {
+        ok &= fread(rd_frame->tris[i], sizeof(RD_TRI), (size_t)rd_frame->ntris[i], f) == (size_t)rd_frame->ntris[i];
+    }
+    ok &= fread(rd_frame->background, sizeof rd_frame->background, 1, f) == 1;
     ok &= fread(&rd_fog, sizeof rd_fog, 1, f) == 1;
     ok &= fread(rd_palette, sizeof rd_palette, 1, f) == 1;
-    texno = malloc(sizeof(int) * (size_t)(rd_frame.nstates + 1));
-    for (i = 0; ok && i < rd_frame.nstates; i++) {
-        ok &= fread(&rd_frame.states[i], sizeof(RD_STATE), 1, f) == 1;
+    texno = malloc(sizeof(int) * (size_t)(rd_frame->nstates + 1));
+    for (i = 0; ok && i < rd_frame->nstates; i++) {
+        ok &= fread(&rd_frame->states[i], sizeof(RD_STATE), 1, f) == 1;
         ok &= fread(&texno[i], sizeof(int), 1, f) == 1;
     }
     ok &= fread(&ntex, sizeof ntex, 1, f) == 1;
@@ -53,8 +57,8 @@ int rd_frame_load(const char* name) {
             }
         }
     }
-    for (i = 0; ok && i < rd_frame.nstates; i++) {
-        rd_frame.states[i].tex = texno[i] >= 0 && texno[i] < ntex ? &tex[texno[i]] : NULL;
+    for (i = 0; ok && i < rd_frame->nstates; i++) {
+        rd_frame->states[i].tex = texno[i] >= 0 && texno[i] < ntex ? &tex[texno[i]] : NULL;
     }
     free(texno);
     fclose(f);

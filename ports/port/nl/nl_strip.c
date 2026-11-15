@@ -4,6 +4,7 @@
  */
 
 #include "nl_port.h"
+#include "prof.h"
 
 typedef struct {
     float x, y, z;
@@ -52,7 +53,7 @@ int nlDispStripLoadTexture(int index, const NLthd* thd) {
 
 void nlDispStripFreeTexture(int index) {
     if (index >= 0 && index < NL_MAX_TEX) {
-        nl_tex[index].loaded = 0;
+        nl_tex_free(&nl_tex[index]);
     }
 }
 
@@ -93,6 +94,7 @@ static void strip(int num, int mode, const uint32_t* vt, int translucent) {
     RD_VTX v[MAX_STRIP];
     const int* fmt = strip_fmt[mode];
     int i;
+    PROF_START(t0);
     if (num > MAX_STRIP || fmt[0] == 0) {
         return;
     }
@@ -104,12 +106,14 @@ static void strip(int num, int mode, const uint32_t* vt, int translucent) {
         v[i].offset = 0;
     }
     rd_strip(&s, v, num);
+    PROF_STOP(PZ_NL_STRIP, t0);
 }
 
 static void strip_tex(int num, const NLVERTEX03* vt, int txtnum, int translucent, int offset) {
     RD_STATE s = { 0 };
     RD_VTX v[MAX_STRIP];
     int i;
+    PROF_START(t0);
     if (num > MAX_STRIP || txtnum < 0 || txtnum >= NL_MAX_TEX || !nl_tex[txtnum].loaded) {
         return;
     }
@@ -122,6 +126,7 @@ static void strip_tex(int num, const NLVERTEX03* vt, int txtnum, int translucent
         v[i].offset = offset ? vt->ofs : 0;
     }
     rd_strip(&s, v, num);
+    PROF_STOP(PZ_NL_STRIP, t0);
 }
 
 void nlDispStrip(int num, const NLVERTEX00* vt) {

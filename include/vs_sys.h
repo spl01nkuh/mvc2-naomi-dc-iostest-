@@ -77,8 +77,8 @@ typedef struct VS_SYS_WORK {
 	Sint8	cpu_time;	/* 086: a second copy of the clock, from 99, that the computer reads */
 	Uint8	time_frame_max;		/* 087: the frames of the clock's second, as set */
 	Sint8	hyper_chain_cnt[2];	/* 088: each side's hyper combos chained in the current one, 1 to 3; picks the damage table */
-	Uint8	unk_8a[2];	/* 08a: a home rule: each side's one character, its work_no */
-	Uint8	unk_8c;		/* 08c: on the Dreamcast: how the fight ended (round_end_set's kind) */
+	Uint8	one_char_no[2];	/* 08a: a home rule: each side's one character, its work_no */
+	Uint8	end_kind;	/* 08c: on the Dreamcast: how the fight ended (round_end_set's kind) */
 	Uint8	unk_8d[0x9a - 0x8d];
 	Uint8	no_ko_cnt[2];	/* 09a: each side's wins in a row with no player knocked out; scores a bonus at the round's end */
 	Sint8	win_cnt[2];	/* 09c: each side's wins in a row against the other player */

@@ -1485,7 +1485,7 @@ static void ctrl_act( PLAYER_WORK *pl_w )
 	} ;
 
 	combo_reset( pl_w ) ;
-	pl_w->unk_228 = 0 ;
+	pl_w->dm_elem_now = 0 ;
 	act_jmp[pl_w->act_st]( pl_w ) ;
 }
 

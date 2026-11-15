@@ -106,13 +106,13 @@ void System_Init( void )
 	switch( syCblCheck() ){
 	case SYE_CBL_VGA :
 		Sys->monitor_31k = 1 ;
-		option_w.unk_18 = 0 ;
+		option_w.adjust_size = 0 ;
 		break ;
 	case SYE_CBL_NTSC :
-		option_w.unk_18 = 1 ;
+		option_w.adjust_size = 1 ;
 		break ;
 	case SYE_CBL_PAL :
-		option_w.unk_18 = 2 ;
+		option_w.adjust_size = 2 ;
 		break ;
 	}
 	Sys->attract_step = 8 ;

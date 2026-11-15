@@ -3,6 +3,12 @@
    their place on the screen, and the sound test. */
 #include "player.h"
 #include "naomi.h"
+#ifdef HOST_NATIVE64
+#include "host_memory.h"
+#define SOUND_RAM_AT( address ) HOST_NATIVE64_RAM_AT( address )
+#else
+#define SOUND_RAM_AT( address ) address
+#endif
 #ifdef TARGET_DC
 #include "adx.h"
 #endif
@@ -55,9 +61,9 @@ extern ADXT adxt ;		/* system.c: the music's player */
 #define STAGE_SONG_TOP	124
 #define STAGE_SONG_END	134
 
-#define EX_SOUND_ADRS	( ( void * )0x0ccde000 )	/* where the attract's pack is read to */
+#define EX_SOUND_ADRS	( ( void * )SOUND_RAM_AT( 0x0ccde000 ) )	/* where the attract's pack is read to */
 #else
-#define EX_SOUND_ADRS	( ( void * )0x0c420000 )
+#define EX_SOUND_ADRS	( ( void * )SOUND_RAM_AT( 0x0c420000 ) )
 #endif
 extern int dbg_flag_ck( int a, int b ) ;
 extern void get_2d_pos( VEC3 *pos, Float *scr ) ;
@@ -403,8 +409,8 @@ void pl_sound_load( void )
 			}
 		}
 		if( snd_w.pack[i] == i ){
-			file_load( pl_snd_file_tbl[pl_work[i].load_type], ( void * )0x0cc00000, 1 ) ;
-			nlsndPackLoad( ( void * )0x0cc00000, port_tbl[snd_w.pack[i]] ) ;
+			file_load( pl_snd_file_tbl[pl_work[i].load_type], ( void * )SOUND_RAM_AT( 0x0cc00000 ), 1 ) ;
+			nlsndPackLoad( ( void * )SOUND_RAM_AT( 0x0cc00000 ), port_tbl[snd_w.pack[i]] ) ;
 			load_log_set( nlsndRemainMem() ) ;
 		}
 	}
@@ -416,15 +422,15 @@ void com_sound_load( void )
 	load_log_set( nlsndRemainMem() ) ;
 #ifdef TARGET_DC
 	/* the songs' pack is not on the disc */
-	file_load3( 0x2aa, ( void * )0x0cc00000, 1 ) ;
+	file_load3( 0x2aa, ( void * )SOUND_RAM_AT( 0x0cc00000 ), 1 ) ;
 #else
-	file_load( 0x340, ( void * )0x0c420000, 1 ) ;
-	nlsndPackLoad( ( void * )0x0c420000, 0 ) ;
+	file_load( 0x340, ( void * )SOUND_RAM_AT( 0x0c420000 ), 1 ) ;
+	nlsndPackLoad( ( void * )SOUND_RAM_AT( 0x0c420000 ), 0 ) ;
 	sound_req( ( 10 << 16 ) + SEQ_SONG ) ;
 	load_log_set( nlsndRemainMem() ) ;
-	file_load( 0x33f, ( void * )0x0cc00000, 1 ) ;
+	file_load( 0x33f, ( void * )SOUND_RAM_AT( 0x0cc00000 ), 1 ) ;
 #endif
-	nlsndPackLoad( ( void * )0x0cc00000, 1 ) ;
+	nlsndPackLoad( ( void * )SOUND_RAM_AT( 0x0cc00000 ), 1 ) ;
 	load_log_set( nlsndRemainMem() ) ;
 }
 
@@ -455,8 +461,8 @@ void staff_sound_load( void )
 {
 	nlsndPackFree( 7 ) ;
 	load_log_set( nlsndRemainMem() ) ;
-	file_load( 122, ( void * )0x0c420000, 1 ) ;
-	nlsndPackLoad( ( void * )0x0c420000, 7 ) ;
+	file_load( 122, ( void * )SOUND_RAM_AT( 0x0c420000 ), 1 ) ;
+	nlsndPackLoad( ( void * )SOUND_RAM_AT( 0x0c420000 ), 7 ) ;
 	load_log_set( nlsndRemainMem() ) ;
 }
 
@@ -1088,8 +1094,8 @@ void sound_debug( void )
 void dbg_pl_load( Uint8 no )
 {
 	nlsndPackFree( 7 ) ;
-	file_load( pl_snd_file_tbl[no], ( void * )0x0cc00000, 1 ) ;
-	nlsndPackLoad( ( void * )0x0cc00000, 7 ) ;
+	file_load( pl_snd_file_tbl[no], ( void * )SOUND_RAM_AT( 0x0cc00000 ), 1 ) ;
+	nlsndPackLoad( ( void * )SOUND_RAM_AT( 0x0cc00000 ), 7 ) ;
 }
 
 /****************************************************************/

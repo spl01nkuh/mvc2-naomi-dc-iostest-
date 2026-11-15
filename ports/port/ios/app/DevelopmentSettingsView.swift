@@ -7,9 +7,9 @@ struct DevelopmentSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Text("Development build — native gameplay is not available yet")
+                Text("Experimental native gameplay build")
                     .font(.headline)
-                Text("You can test importing data, customize touch controls, and save display settings.")
+                Text("Start Game boots the native engine after a validated import. Device testing is still required. Gameplay and audio pause while settings are open.")
                     .foregroundStyle(.secondary)
             }
 
@@ -17,7 +17,7 @@ struct DevelopmentSettingsView: View {
                 LabeledContent("Status", value: store.hasImportedData ? "Imported and validated" : "Not imported")
                 LabeledContent("Storage", value: store.storageLocation)
                     .font(.caption).textSelection(.enabled)
-                Text("Use Import ZIP on the main screen to choose a supported game archive from Files. Data stays in this app’s Documents folder. A successful import does not enable gameplay.")
+                Text("Use Import ZIP on the main screen to choose the complete supported NAOMI mvsc2 archive from Files, then choose Start Game. Imported data and native save data stay in this app’s Documents folder. Dreamcast disc archives are not supported.")
                     .font(.caption).foregroundStyle(.secondary)
                 if let failure = store.storageFailure {
                     Text(failure).foregroundStyle(.orange)

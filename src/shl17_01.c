@@ -315,7 +315,7 @@ static void shl17_01_catch( PLAYER_WORK *ew, PLAYER_WORK *pl_w, SHL17_01_LOCAL_W
 	catch_pos_set( ew, pl_w->catch_w ) ;
 	lw->catch_y = pl_w->catch_w->pos.y ;
 	em->dm_elem = 3 ;
-	em->unk_228 = 3 ;
+	em->dm_elem_now = 3 ;
 	dm00_04_set( em ) ;
 }
 

@@ -329,7 +329,7 @@ static void pl_normal( PLAYER_WORK *pl_w )
 	} ;
 
 	if( pl_w->stun_reset_timer && !--pl_w->stun_reset_timer ) pl_w->stun_cnt = 80 ;
-	pl_w->unk_228 = 0 ;
+	pl_w->dm_elem_now = 0 ;
 	if( !act_23a_tbl[pl_w->act_st] ) pl_w->catch_cnt = 0 ;
 	act_jmp[pl_w->act_st]( pl_w ) ;
 }

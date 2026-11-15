@@ -26,6 +26,7 @@ typedef struct {
     float offs[3];          /* r g b over w */
     float order;            /* in its list */
     float ab[4], cf[4];     /* corners a, b and c, and the edges' flags (rd_gpu.hlsl's inside) */
+    float uvb[4];           /* a sprite's u and v from and to: its texels are read only between */
 } GVTX;
 
 /* GVTX's depth to offs */
@@ -46,7 +47,8 @@ typedef struct {
     float fog_color[4];     /* a r g b, 0 to 255 */
     float fog_density;
     uint32_t zero;          /* 0, unknown to the shader compiler, so it can't regroup the sums */
-    float pad[2];
+    float inv_scale;
+    int32_t sprite_mode;
 } FRAMEU;
 
 enum {
@@ -69,7 +71,15 @@ typedef struct {
     uint32_t serial;
     uint32_t used;          /* the last frame that drew it */
     SDL_GPUTexture* g;
+    int w, h, levels, pal;  /* g's */
 } GTEX;
+
+/* a texture's texels, to be copied from the staging buffer at 'at' */
+typedef struct {
+    SDL_GPUTexture* g;
+    const RD_TEXTURE* t;
+    uint32_t at;
+} PENDING;
 
 /* frames a texture goes undrawn before it is let go */
 #define EVICT_FRAMES 600
@@ -95,6 +105,15 @@ static int exact_edges;     /* rd_soft.c's own edges (rd_gpu.hlsl's EXACT_EDGES)
 static int layers_env;      /* MVC2_GPULAYERS */
 static int fog_on;
 static SDL_GPUTexture* state_tex[RD_MAX_STATES];
+
+/* rd_gpu_view's: the frame drawn at scale times the game's size, then filtered to out_w by out_h (0: not) */
+static int want_scale = 1, want_sprites, want_w, want_h;
+static int scale = 1, out_w, out_h;     /* the targets as made */
+static int sprite_mode;
+static SDL_GPUTexture* out_tex;
+static SDL_GPUShader *full_vs, *resolve_ps;
+static SDL_GPUGraphicsPipeline* resolve_pipe;
+static uint32_t tb_size;
 
 static uint32_t argb16_to_rgba(int format, uint32_t p) {
     uint32_t a, r, g, b;
@@ -126,26 +145,121 @@ static SDL_GPUTexture* make_texture(SDL_GPUTextureFormat format, int w, int h, i
     return SDL_CreateGPUTexture(dev, &ci);
 }
 
-static void upload(SDL_GPUCopyPass* copy, SDL_GPUTexture* g, int k, int w, int h, int bpp, const void* pixels) {
-    SDL_GPUTransferBufferCreateInfo ti = { SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, (Uint32)(w * h * bpp), 0 };
-    SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &ti);
-    SDL_GPUTextureTransferInfo src;
-    SDL_GPUTextureRegion dst;
-    void* p;
-    if (tb == NULL) {
+/* the frame's texels to upload, all in one staging buffer: each level at a multiple of 512 bytes */
+#define STAGE_ALIGN 512u
+static PENDING* pending;
+static int npending, maxpending;
+static SDL_GPUTransferBuffer* stage;
+static uint32_t stage_cap, stage_used;
+
+static int texel_bytes(const RD_TEXTURE* t) {
+    return t->format == RD_PAL4 || t->format == RD_PAL8 ? 1 : 4;
+}
+
+static uint32_t level_bytes(const RD_TEXTURE* t, int k) {
+    int w = t->width >> k, h = t->height >> k;
+    w = w < 1 ? 1 : w, h = h < 1 ? 1 : h;
+    return ((uint32_t)(w * h * texel_bytes(t)) + STAGE_ALIGN - 1) & ~(STAGE_ALIGN - 1);
+}
+
+static void add_pending(SDL_GPUTexture* g, const RD_TEXTURE* t) {
+    int k;
+    if (npending == maxpending) {
+        int n = maxpending ? maxpending * 2 : 256;
+        PENDING* p = realloc(pending, (size_t)n * sizeof *p);
+        if (p == NULL) {
+            return;
+        }
+        pending = p, maxpending = n;
+    }
+    pending[npending].g = g, pending[npending].t = t, pending[npending].at = stage_used;
+    npending++;
+    for (k = 0; k <= t->levels; k++) {
+        stage_used += level_bytes(t, k);
+    }
+}
+
+/* the pending texels and the palette (pal: 1024 ARGB, or NULL) written to the staging buffer, then copied by
+   copy into their textures */
+static void upload_pending(SDL_GPUCopyPass* copy, const uint32_t* pal) {
+    uint32_t pal_at = stage_used;
+    uint8_t* p;
+    int i, k;
+    if (npending == 0 && pal == NULL) {
         return;
     }
-    p = SDL_MapGPUTransferBuffer(dev, tb, false);
-    memcpy(p, pixels, (size_t)(w * h * bpp));
-    SDL_UnmapGPUTransferBuffer(dev, tb);
-    memset(&src, 0, sizeof src);
-    src.transfer_buffer = tb;
-    memset(&dst, 0, sizeof dst);
-    dst.texture = g;
-    dst.mip_level = (Uint32)k;
-    dst.w = (Uint32)w, dst.h = (Uint32)h, dst.d = 1;
-    SDL_UploadToGPUTexture(copy, &src, &dst, false);
-    SDL_ReleaseGPUTransferBuffer(dev, tb);
+    if (pal != NULL) {
+        stage_used += 4096;
+    }
+    if (stage_used > stage_cap) {
+        SDL_GPUTransferBufferCreateInfo ti = { SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, 0, 0 };
+        if (stage != NULL) {
+            SDL_ReleaseGPUTransferBuffer(dev, stage);
+        }
+        ti.size = stage_used + stage_used / 2;
+        stage = SDL_CreateGPUTransferBuffer(dev, &ti);
+        stage_cap = stage != NULL ? ti.size : 0;
+    }
+    p = stage != NULL ? SDL_MapGPUTransferBuffer(dev, stage, true) : NULL;
+    if (p == NULL) {
+        npending = 0, stage_used = 0;
+        return;
+    }
+    for (i = 0; i < npending; i++) {
+        const RD_TEXTURE* t = pending[i].t;
+        uint32_t at = pending[i].at;
+        for (k = 0; k <= t->levels; k++) {
+            int w = t->width >> k, h = t->height >> k, n, j;
+            const void* d = k == 0 ? t->texels : t->mip[k];
+            w = w < 1 ? 1 : w, h = h < 1 ? 1 : h, n = w * h;
+            if (texel_bytes(t) == 1) {
+                memcpy(p + at, d, (size_t)n);
+            } else {
+                uint32_t* px = (uint32_t*)(p + at);
+                for (j = 0; j < n; j++) {
+                    px[j] = argb16_to_rgba(t->format, ((const uint16_t*)d)[j]);
+                }
+            }
+            at += level_bytes(t, k);
+        }
+    }
+    if (pal != NULL) {
+        uint32_t* px = (uint32_t*)(p + pal_at);
+        for (i = 0; i < 1024; i++) {
+            px[i] = argb_to_rgba(pal[i]);
+        }
+    }
+    SDL_UnmapGPUTransferBuffer(dev, stage);
+    for (i = 0; i < npending; i++) {
+        const RD_TEXTURE* t = pending[i].t;
+        uint32_t at = pending[i].at;
+        for (k = 0; k <= t->levels; k++) {
+            SDL_GPUTextureTransferInfo src;
+            SDL_GPUTextureRegion dst;
+            int w = t->width >> k, h = t->height >> k;
+            w = w < 1 ? 1 : w, h = h < 1 ? 1 : h;
+            memset(&src, 0, sizeof src);
+            src.transfer_buffer = stage, src.offset = at;
+            memset(&dst, 0, sizeof dst);
+            dst.texture = pending[i].g;
+            dst.mip_level = (Uint32)k;
+            dst.w = (Uint32)w, dst.h = (Uint32)h, dst.d = 1;
+            /* cycled before its first level, as the GPU may still be reading the last frame's */
+            SDL_UploadToGPUTexture(copy, &src, &dst, k == 0);
+            at += level_bytes(t, k);
+        }
+    }
+    if (pal != NULL) {
+        SDL_GPUTextureTransferInfo src;
+        SDL_GPUTextureRegion dst;
+        memset(&src, 0, sizeof src);
+        src.transfer_buffer = stage, src.offset = pal_at;
+        memset(&dst, 0, sizeof dst);
+        dst.texture = pal_tex;
+        dst.w = 1024, dst.h = 1, dst.d = 1;
+        SDL_UploadToGPUTexture(copy, &src, &dst, true);
+    }
+    npending = 0, stage_used = 0;
 }
 
 static uint32_t hash_of(const RD_TEXTURE* t) {
@@ -216,9 +330,10 @@ static void evict(void) {
     }
 }
 
-/* RGBA8, or R8 indices for the palette formats */
-static SDL_GPUTexture* texture(SDL_GPUCopyPass* copy, const RD_TEXTURE* t) {
-    int pal = t->format == RD_PAL4 || t->format == RD_PAL8, i, k;
+/* RGBA8, or R8 indices for the palette formats: kept while its size and format are, its texels queued again
+   when they change */
+static SDL_GPUTexture* texture(const RD_TEXTURE* t) {
+    int pal = t->format == RD_PAL4 || t->format == RD_PAL8;
     GTEX* e = entry(t);
     if (e == NULL) {
         return NULL;
@@ -227,29 +342,18 @@ static SDL_GPUTexture* texture(SDL_GPUCopyPass* copy, const RD_TEXTURE* t) {
     if (e->serial == t->serial && e->g != NULL) {
         return e->g;
     }
-    if (e->g != NULL) {
+    if (e->g != NULL && (e->w != t->width || e->h != t->height || e->levels != t->levels || e->pal != pal)) {
         SDL_ReleaseGPUTexture(dev, e->g);
+        e->g = NULL;
+    }
+    if (e->g == NULL) {
+        e->g = make_texture(pal ? SDL_GPU_TEXTUREFORMAT_R8_UNORM : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, t->width, t->height,
+                            t->levels + 1, SDL_GPU_TEXTUREUSAGE_SAMPLER);
+        e->w = t->width, e->h = t->height, e->levels = t->levels, e->pal = pal;
     }
     e->serial = t->serial;
-    e->g = make_texture(pal ? SDL_GPU_TEXTUREFORMAT_R8_UNORM : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, t->width, t->height,
-                        t->levels + 1, SDL_GPU_TEXTUREUSAGE_SAMPLER);
-    for (k = 0; e->g != NULL && k <= t->levels; k++) {
-        int w = t->width >> k, h = t->height >> k, n;
-        const void* d = k == 0 ? t->texels : t->mip[k];
-        w = w < 1 ? 1 : w, h = h < 1 ? 1 : h, n = w * h;
-        if (pal) {
-            upload(copy, e->g, k, w, h, 1, d);
-        } else {
-            uint32_t* px = malloc((size_t)n * 4);
-            if (px == NULL) {
-                continue;
-            }
-            for (i = 0; i < n; i++) {
-                px[i] = argb16_to_rgba(t->format, ((const uint16_t*)d)[i]);
-            }
-            upload(copy, e->g, k, w, h, 4, px);
-            free(px);
-        }
+    if (e->g != NULL) {
+        add_pending(e->g, t);
     }
     return e->g;
 }
@@ -272,14 +376,14 @@ static SDL_GPUGraphicsPipeline* pipeline(int kind, int a, int b) {
     SDL_GPUGraphicsPipeline** slot = &pipes[kind][a & 7][b & 7][0];
     SDL_GPUGraphicsPipelineCreateInfo ci;
     SDL_GPUVertexBufferDescription vb;
-    SDL_GPUVertexAttribute at[7];
+    SDL_GPUVertexAttribute at[8];
     SDL_GPUColorTargetDescription ct;
     int i;
-    static const Uint32 offsets[7] = { 0, 8, 16, 24, 40, 56, 72 };
-    static const SDL_GPUVertexElementFormat formats[7] = {
+    static const Uint32 offsets[8] = { 0, 8, 16, 24, 40, 56, 72, 88 };
+    static const SDL_GPUVertexElementFormat formats[8] = {
         SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
         SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4,
-        SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4
+        SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4
     };
     if (*slot != NULL) {
         return *slot;
@@ -289,7 +393,7 @@ static SDL_GPUGraphicsPipeline* pipeline(int kind, int a, int b) {
     vb.slot = 0;
     vb.pitch = sizeof(GVTX);
     vb.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
-    for (i = 0; i < 7; i++) {
+    for (i = 0; i < 8; i++) {
         at[i].location = (Uint32)i;
         at[i].buffer_slot = 0;
         at[i].format = formats[i];
@@ -300,7 +404,7 @@ static SDL_GPUGraphicsPipeline* pipeline(int kind, int a, int b) {
     ci.vertex_input_state.vertex_buffer_descriptions = &vb;
     ci.vertex_input_state.num_vertex_buffers = 1;
     ci.vertex_input_state.vertex_attributes = at;
-    ci.vertex_input_state.num_vertex_attributes = 7;
+    ci.vertex_input_state.num_vertex_attributes = 8;
     ci.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     ci.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
     ci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
@@ -350,7 +454,7 @@ static SDL_GPUGraphicsPipeline* pipeline(int kind, int a, int b) {
 }
 
 static SDL_GPUShader* shader(const unsigned char* code, size_t size, SDL_GPUShaderFormat format, const char* entry,
-                             SDL_GPUShaderStage stage) {
+                             SDL_GPUShaderStage stage, int samplers, int uniforms) {
     SDL_GPUShaderCreateInfo ci;
     memset(&ci, 0, sizeof ci);
     ci.code = code;
@@ -358,11 +462,88 @@ static SDL_GPUShader* shader(const unsigned char* code, size_t size, SDL_GPUShad
     ci.entrypoint = entry;
     ci.format = format;
     ci.stage = stage;
-    if (stage == SDL_GPU_SHADERSTAGE_FRAGMENT) {
-        ci.num_samplers = BINDINGS;
-        ci.num_uniform_buffers = 2;
-    }
+    ci.num_samplers = (Uint32)samplers;
+    ci.num_uniform_buffers = (Uint32)uniforms;
     return SDL_CreateGPUShader(dev, &ci);
+}
+
+static SDL_GPUGraphicsPipeline* make_resolve_pipe(void) {
+    SDL_GPUGraphicsPipelineCreateInfo ci;
+    SDL_GPUColorTargetDescription ct;
+    memset(&ci, 0, sizeof ci);
+    memset(&ct, 0, sizeof ct);
+    ci.vertex_shader = full_vs;
+    ci.fragment_shader = resolve_ps;
+    ci.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    ci.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+    ci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    ci.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+    ct.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    ci.target_info.color_target_descriptions = &ct;
+    ci.target_info.num_color_targets = 1;
+    return SDL_CreateGPUGraphicsPipeline(dev, &ci);
+}
+
+static void release(SDL_GPUTexture** t) {
+    if (*t != NULL) {
+        SDL_ReleaseGPUTexture(dev, *t);
+        *t = NULL;
+    }
+}
+
+/* the frame's targets at n times the game's size; 0 when one could not be made */
+static int make_targets(int n) {
+    SDL_GPUTextureUsageFlags key = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+    int i, w = RD_WIDTH * n, h = RD_HEIGHT * n;
+    for (i = 0; i < 2; i++) {
+        release(&frame_tex[i]), release(&key_q[i]), release(&key_o[i]);
+    }
+    release(&depth_tex);
+    for (i = 0; i < 2; i++) {
+        frame_tex[i] = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, w, h, 1,
+                                    SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET);
+        key_q[i] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, w, h, 1, key);
+        key_o[i] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, w, h, 1, key);
+    }
+    depth_tex = make_texture(SDL_GPU_TEXTUREFORMAT_D32_FLOAT, w, h, 1, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET);
+    scale = n;
+    return frame_tex[0] != NULL && frame_tex[1] != NULL && key_q[0] != NULL && key_q[1] != NULL && key_o[0] != NULL &&
+           key_o[1] != NULL && depth_tex != NULL;
+}
+
+void rd_gpu_view(int resolution, int aa, int w, int h, int sprites) {
+    int n = resolution > 0 ? resolution : h > 0 ? (h * (aa < 1 ? 1 : aa) + RD_HEIGHT - 1) / RD_HEIGHT : 1;
+    want_scale = n < 1 ? 1 : n > RD_GPU_MAX_SCALE ? RD_GPU_MAX_SCALE : n;
+    want_w = w, want_h = h;
+    want_sprites = sprites;
+}
+
+/* the targets as rd_gpu_view wants them: a smaller frame when the larger can't be made */
+static void fit_view(void) {
+    int n = want_scale, w = 0, h = 0;
+    if (n != scale) {
+        while (!make_targets(n) && n > 1) {
+            n--;
+        }
+        want_scale = scale;
+    }
+    if (want_w > 0 && want_h > 0 && (want_w < RD_WIDTH * scale || want_h < RD_HEIGHT * scale)) {
+        w = want_w, h = want_h;
+    }
+    if (w != out_w || h != out_h) {
+        release(&out_tex);
+        if (w > 0 && resolve_pipe != NULL) {
+            out_tex = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, w, h, 1,
+                                   SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET);
+        }
+        out_w = out_tex != NULL ? w : 0, out_h = out_tex != NULL ? h : 0;
+    }
+    sprite_mode = scale > 1 ? want_sprites : 0;
+}
+
+void rd_gpu_frame_size(int* w, int* h) {
+    *w = out_w > 0 ? out_w : RD_WIDTH * scale;
+    *h = out_w > 0 ? out_h : RD_HEIGHT * scale;
 }
 
 bool rd_gpu_init(SDL_GPUDevice* device) {
@@ -370,8 +551,8 @@ bool rd_gpu_init(SDL_GPUDevice* device) {
     const char* e = getenv("MVC2_GPULAYERS");
     const char* q = getenv("MVC2_RDQUALITY");
     const char* g = getenv("MVC2_GPUEDGES");
-    SDL_GPUTextureUsageFlags key = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
-    int i;
+    SDL_GPUShaderStage vtx = SDL_GPU_SHADERSTAGE_VERTEX, frag = SDL_GPU_SHADERSTAGE_FRAGMENT;
+    int n = want_scale;
     dev = device;
     layers_env = e != NULL && atoi(e) > 0 ? atoi(e) : 0;
     if (q != NULL) {
@@ -379,16 +560,19 @@ bool rd_gpu_init(SDL_GPUDevice* device) {
     }
     exact_edges = g == NULL || atoi(g) != 0;
     if (SDL_GetGPUShaderFormats(dev) & SDL_GPU_SHADERFORMAT_DXBC) {
-        vs = shader(rd_gpu_vs_dxbc, sizeof rd_gpu_vs_dxbc, SDL_GPU_SHADERFORMAT_DXBC, "vs_main", SDL_GPU_SHADERSTAGE_VERTEX);
-        ps = exact_edges ? shader(rd_gpu_ps_exact_dxbc, sizeof rd_gpu_ps_exact_dxbc, SDL_GPU_SHADERFORMAT_DXBC, "ps_main",
-                                  SDL_GPU_SHADERSTAGE_FRAGMENT)
-                         : shader(rd_gpu_ps_dxbc, sizeof rd_gpu_ps_dxbc, SDL_GPU_SHADERFORMAT_DXBC, "ps_main", SDL_GPU_SHADERSTAGE_FRAGMENT);
+        SDL_GPUShaderFormat f = SDL_GPU_SHADERFORMAT_DXBC;
+        vs = shader(rd_gpu_vs_dxbc, sizeof rd_gpu_vs_dxbc, f, "vs_main", vtx, 0, 0);
+        ps = exact_edges ? shader(rd_gpu_ps_exact_dxbc, sizeof rd_gpu_ps_exact_dxbc, f, "ps_main", frag, BINDINGS, 2)
+                         : shader(rd_gpu_ps_dxbc, sizeof rd_gpu_ps_dxbc, f, "ps_main", frag, BINDINGS, 2);
+        full_vs = shader(rd_gpu_full_vs_dxbc, sizeof rd_gpu_full_vs_dxbc, f, "vs_full", vtx, 0, 0);
+        resolve_ps = shader(rd_gpu_resolve_ps_dxbc, sizeof rd_gpu_resolve_ps_dxbc, f, "ps_resolve", frag, 1, 1);
     } else if (SDL_GetGPUShaderFormats(dev) & SDL_GPU_SHADERFORMAT_SPIRV) {
-        vs = shader(rd_gpu_vs_spirv, sizeof rd_gpu_vs_spirv, SDL_GPU_SHADERFORMAT_SPIRV, "vs_main", SDL_GPU_SHADERSTAGE_VERTEX);
-        ps = exact_edges ? shader(rd_gpu_ps_exact_spirv, sizeof rd_gpu_ps_exact_spirv, SDL_GPU_SHADERFORMAT_SPIRV, "ps_main",
-                                  SDL_GPU_SHADERSTAGE_FRAGMENT)
-                         : shader(rd_gpu_ps_spirv, sizeof rd_gpu_ps_spirv, SDL_GPU_SHADERFORMAT_SPIRV, "ps_main",
-                                  SDL_GPU_SHADERSTAGE_FRAGMENT);
+        SDL_GPUShaderFormat f = SDL_GPU_SHADERFORMAT_SPIRV;
+        vs = shader(rd_gpu_vs_spirv, sizeof rd_gpu_vs_spirv, f, "vs_main", vtx, 0, 0);
+        ps = exact_edges ? shader(rd_gpu_ps_exact_spirv, sizeof rd_gpu_ps_exact_spirv, f, "ps_main", frag, BINDINGS, 2)
+                         : shader(rd_gpu_ps_spirv, sizeof rd_gpu_ps_spirv, f, "ps_main", frag, BINDINGS, 2);
+        full_vs = shader(rd_gpu_full_vs_spirv, sizeof rd_gpu_full_vs_spirv, f, "vs_full", vtx, 0, 0);
+        resolve_ps = shader(rd_gpu_resolve_ps_spirv, sizeof rd_gpu_resolve_ps_spirv, f, "ps_resolve", frag, 1, 1);
     } else {
         SDL_Log("rd_gpu: the device takes neither DXBC nor SPIR-V");
         return false;
@@ -398,15 +582,13 @@ bool rd_gpu_init(SDL_GPUDevice* device) {
     si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
     si.address_mode_u = si.address_mode_v = si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     point = SDL_CreateGPUSampler(dev, &si);
-    for (i = 0; i < 2; i++) {
-        frame_tex[i] = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, RD_WIDTH, RD_HEIGHT, 1,
-                                    SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET);
+    if (full_vs != NULL && resolve_ps != NULL) {
+        resolve_pipe = make_resolve_pipe();
     }
-    depth_tex = make_texture(SDL_GPU_TEXTUREFORMAT_D32_FLOAT, RD_WIDTH, RD_HEIGHT, 1, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET);
-    key_q[0] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, RD_WIDTH, RD_HEIGHT, 1, key);
-    key_q[1] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, RD_WIDTH, RD_HEIGHT, 1, key);
-    key_o[0] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, RD_WIDTH, RD_HEIGHT, 1, key);
-    key_o[1] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, RD_WIDTH, RD_HEIGHT, 1, key);
+    while (!make_targets(n) && n > 1) {
+        n--;
+    }
+    want_scale = scale;
     pal_tex = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, 1024, 1, 1, SDL_GPU_TEXTUREUSAGE_SAMPLER);
     dummy_rgba = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, 1, 1, 1, SDL_GPU_TEXTUREUSAGE_SAMPLER);
     dummy_r32 = make_texture(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, 1, 1, 1, SDL_GPU_TEXTUREUSAGE_SAMPLER);
@@ -419,15 +601,24 @@ bool rd_gpu_init(SDL_GPUDevice* device) {
 }
 
 void rd_gpu_quit(void) {
-    SDL_GPUTexture* own[] = { frame_tex[0], frame_tex[1], depth_tex, key_q[0], key_q[1], key_o[0], key_o[1], pal_tex, dummy_rgba, dummy_r32 };
+    SDL_GPUTexture** own[] = { &frame_tex[0], &frame_tex[1], &depth_tex, &key_q[0], &key_q[1], &key_o[0], &key_o[1],
+                               &pal_tex, &dummy_rgba, &dummy_r32, &out_tex };
     SDL_GPUGraphicsPipeline** p = &pipes[0][0][0][0];
     size_t i;
     for (i = 0; i < (size_t)ngtex; i++) {
         SDL_ReleaseGPUTexture(dev, gtex[i].g);
     }
     for (i = 0; i < sizeof own / sizeof own[0]; i++) {
-        SDL_ReleaseGPUTexture(dev, own[i]);
+        release(own[i]);
     }
+    if (resolve_pipe != NULL) {
+        SDL_ReleaseGPUGraphicsPipeline(dev, resolve_pipe);
+        resolve_pipe = NULL;
+    }
+    SDL_ReleaseGPUShader(dev, full_vs);
+    SDL_ReleaseGPUShader(dev, resolve_ps);
+    full_vs = resolve_ps = NULL;
+    scale = 1, out_w = out_h = 0, tb_size = 0;
     for (i = 0; i < sizeof pipes / sizeof pipes[0][0][0][0]; i++) {
         if (p[i] != NULL) {
             SDL_ReleaseGPUGraphicsPipeline(dev, p[i]);
@@ -441,6 +632,13 @@ void rd_gpu_quit(void) {
         SDL_ReleaseGPUTransferBuffer(dev, tb);
         tb = NULL;
     }
+    if (stage != NULL) {
+        SDL_ReleaseGPUTransferBuffer(dev, stage);
+        stage = NULL;
+    }
+    free(pending);
+    pending = NULL;
+    npending = maxpending = 0, stage_cap = stage_used = 0;
     SDL_ReleaseGPUSampler(dev, point);
     SDL_ReleaseGPUShader(dev, vs);
     SDL_ReleaseGPUShader(dev, ps);
@@ -478,6 +676,7 @@ static void put_vertex(GVTX* g, const RD_VTX* v, const RD_VTX* col, const RD_STA
     g->order = order;
     memset(g->ab, 0, sizeof g->ab);
     memset(g->cf, 0, sizeof g->cf);
+    memset(g->uvb, 0, sizeof g->uvb);
 }
 
 static void add_batch(int list, int first, int count, int state) {
@@ -587,7 +786,7 @@ static int put_triangle(GVTX* out, const GVTX* g, const RD_TRI* t) {
                 for (j = 0; j < 2; j++) {
                     v[0].ab[2 * j] = t->v[j].x, v[0].ab[2 * j + 1] = t->v[j].y;
                 }
-                v[0].cf[0] = c->x, v[0].cf[1] = c->y, v[0].cf[2] = flags, v[0].cf[3] = 0;
+                v[0].cf[0] = c->x, v[0].cf[1] = c->y, v[0].cf[2] = flags, v[0].cf[3] = g[0].cf[3];
                 out[i] = v[0];
             }
             return 3;
@@ -638,7 +837,7 @@ static int put_triangle(GVTX* out, const GVTX* g, const RD_TRI* t) {
         for (j = 0; j < 2; j++) {
             v[i].ab[2 * j] = t->v[j].x, v[i].ab[2 * j + 1] = t->v[j].y;
         }
-        v[i].cf[0] = c->x, v[i].cf[1] = c->y, v[i].cf[2] = flags, v[i].cf[3] = 0;
+        v[i].cf[0] = c->x, v[i].cf[1] = c->y, v[i].cf[2] = flags, v[i].cf[3] = g[0].cf[3];
     }
     for (i = 0; i + 2 < m; i++) {
         out[n++] = v[0], out[n++] = v[i + 1], out[n++] = v[i + 2];
@@ -658,14 +857,76 @@ static double plane(const RD_VTX* v, const double* f, double x, double y) {
     return f[0] + (f[1] - f[0]) * w1 + (f[2] - f[0]) * w2;
 }
 
+static int sprite(const RD_STATE* s, const RD_TRI* t) {
+    return s->tex != NULL && t->v[0].z == t->v[1].z && t->v[1].z == t->v[2].z;
+}
+
+static float snap16(float x) {
+    return fabsf(x) < 65536.0f ? floorf(x * 16.0f + 0.5f) * (1.0f / 16.0f) : x;
+}
+
+/* the sprites' corners, on a sixteenth of a game pixel: an open-addressed set, ~0 empty */
+static uint64_t* corners;
+static uint32_t corners_size;
+
+static uint64_t corner_key(float x, float y) {
+    uint32_t a, b;
+    memcpy(&a, &x, 4), memcpy(&b, &y, 4);
+    return (uint64_t)a << 32 | b;
+}
+
+static uint64_t* corner_slot(uint64_t k) {
+    uint32_t i = (uint32_t)((k * 0x9E3779B97F4A7C15ull) >> 32) & (corners_size - 1);
+    while (corners[i] != ~0ull && corners[i] != k) {
+        i = (i + 1) & (corners_size - 1);
+    }
+    return &corners[i];
+}
+
+static void find_corners(void) {
+    uint32_t want = 64, count = 0;
+    int list, i, j;
+    for (list = 0; list < RD_LISTS; list++) {
+        count += 3 * (uint32_t)rd_frame->ntris[list];
+    }
+    while (want < 2 * count) {
+        want *= 2;
+    }
+    if (want > corners_size) {
+        free(corners);
+        corners = malloc(want * sizeof *corners);
+        corners_size = corners != NULL ? want : 0;
+    }
+    if (corners == NULL) {
+        return;
+    }
+    memset(corners, 0xFF, corners_size * sizeof *corners);
+    for (list = 0; list < RD_LISTS; list++) {
+        for (i = 0; i < rd_frame->ntris[list]; i++) {
+            const RD_TRI* t = &rd_frame->tris[list][i];
+            const RD_STATE* s = &rd_frame->states[t->state];
+            if (sprite(s, t) && !cull(s, &t->v[0], &t->v[1], &t->v[2])) {
+                for (j = 0; j < 3; j++) {
+                    uint64_t k = corner_key(snap16(t->v[j].x), snap16(t->v[j].y));
+                    *corner_slot(k) = k;
+                }
+            }
+        }
+    }
+}
+
+static int is_corner(float x, float y) {
+    return corners != NULL && *corner_slot(corner_key(x, y)) != ~0ull;
+}
+
 /* the background's 6 vertices, then each list's triangles; how many */
-static int build(float* scale) {
+static int build(float* zscale) {
     int list, i, n = 6;
     float qmax = 0;
     int e;
     for (list = 0; list < RD_LISTS; list++) {
-        for (i = 0; i < rd_frame.ntris[list]; i++) {
-            const RD_TRI* t = &rd_frame.tris[list][i];
+        for (i = 0; i < rd_frame->ntris[list]; i++) {
+            const RD_TRI* t = &rd_frame->tris[list][i];
             int j;
             for (j = 0; j < 3; j++) {
                 if (t->v[j].z > qmax && isfinite(t->v[j].z)) {
@@ -675,14 +936,14 @@ static int build(float* scale) {
         }
     }
     for (i = 0; i < 3; i++) {
-        if (rd_frame.background[i].z > qmax && isfinite(rd_frame.background[i].z)) {
-            qmax = rd_frame.background[i].z;
+        if (rd_frame->background[i].z > qmax && isfinite(rd_frame->background[i].z)) {
+            qmax = rd_frame->background[i].z;
         }
     }
     frexpf(qmax > 0 ? qmax : 1.0f, &e);
-    *scale = ldexpf(1.0f, -e);          /* a power of two: 1/w scaled exactly below 1 */
+    *zscale = ldexpf(1.0f, -e);          /* a power of two: 1/w scaled exactly below 1 */
     for (list = 0; list < RD_LISTS; list++) {
-        n += rd_frame.ntris[list] * (exact_edges ? 3 * (MAX_CORNERS - 2) : 3);
+        n += rd_frame->ntris[list] * (exact_edges ? 3 * (MAX_CORNERS - 2) : 3);
     }
     if ((uint32_t)n > vcap) {
         SDL_GPUBufferCreateInfo bi = { SDL_GPU_BUFFERUSAGE_VERTEX, (Uint32)(n * sizeof(GVTX)), 0 };
@@ -699,7 +960,7 @@ static int build(float* scale) {
     {
         /* the background: 1/w = 1, so it is not divided */
         static const float cx[6] = { 0, RD_WIDTH, 0, RD_WIDTH, RD_WIDTH, 0 }, cy[6] = { 0, 0, RD_HEIGHT, 0, RD_HEIGHT, RD_HEIGHT };
-        const RD_VTX* b = rd_frame.background;
+        const RD_VTX* b = rd_frame->background;
         double f[3];
         int c, j;
         for (j = 0; j < 6; j++) {
@@ -710,7 +971,7 @@ static int build(float* scale) {
             for (i = 0; i < 3; i++) {
                 f[i] = b[i].z;
             }
-            g.depth = (float)plane(b, f, cx[j], cy[j]) * *scale;
+            g.depth = (float)plane(b, f, cx[j], cy[j]) * *zscale;
             for (c = 0; c < 4; c++) {
                 for (i = 0; i < 3; i++) {
                     f[i] = (double)(b[i].base >> (24 - 8 * c) & 255);
@@ -721,18 +982,49 @@ static int build(float* scale) {
         }
     }
     n = 6;
+    if (scale > 1) {
+        find_corners();
+    }
     for (list = 0; list < RD_LISTS; list++) {
         nbatches[list] = 0;
-        for (i = 0; i < rd_frame.ntris[list]; i++) {
-            const RD_TRI* t = &rd_frame.tris[list][i];
-            const RD_STATE* s = &rd_frame.states[t->state];
+        for (i = 0; i < rd_frame->ntris[list]; i++) {
+            const RD_TRI* t = &rd_frame->tris[list][i];
+            const RD_STATE* s = &rd_frame->states[t->state];
+            RD_TRI snapped;
             GVTX g[3];
             int j, k;
             if (cull(s, &t->v[0], &t->v[1], &t->v[2])) {
                 continue;
             }
+            if (scale > 1) {
+                /* drawn larger: corners on a sixteenth of a game pixel, so neighbours a float's rounding apart meet,
+                   and sprites' corners (and the corners they share) on whole ones, so sprites side by side meet as
+                   they do at 640 by 480 */
+                snapped = *t;
+                for (j = 0; j < 3; j++) {
+                    float x = snap16(t->v[j].x), y = snap16(t->v[j].y);
+                    if (is_corner(x, y)) {
+                        x = floorf(x + 0.5f), y = floorf(y + 0.5f);
+                    }
+                    snapped.v[j].x = x, snapped.v[j].y = y;
+                }
+                t = &snapped;
+                if (cull(s, &t->v[0], &t->v[1], &t->v[2])) {
+                    continue;
+                }
+            }
             for (j = 0; j < 3; j++) {
-                put_vertex(&g[j], &t->v[j], s->flat ? &t->v[2] : &t->v[j], s, *scale, (float)i);
+                put_vertex(&g[j], &t->v[j], s->flat ? &t->v[2] : &t->v[j], s, *zscale, (float)i);
+            }
+            /* a sprite: textured, its 1/w the same at each corner. Half a quad has the quad's u and v, from and to */
+            if (sprite(s, t)) {
+                float b[4];
+                b[0] = fminf(t->v[0].u, fminf(t->v[1].u, t->v[2].u)), b[1] = fminf(t->v[0].v, fminf(t->v[1].v, t->v[2].v));
+                b[2] = fmaxf(t->v[0].u, fmaxf(t->v[1].u, t->v[2].u)), b[3] = fmaxf(t->v[0].v, fmaxf(t->v[1].v, t->v[2].v));
+                for (j = 0; j < 3; j++) {
+                    g[j].cf[3] = 1.0f;
+                    memcpy(g[j].uvb, b, sizeof b);
+                }
             }
             k = put_triangle(&verts[n], g, t);
             if (k > 0) {
@@ -815,7 +1107,7 @@ static void draw_list(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* rp, int list
     SDL_GPUGraphicsPipeline* bound = NULL;
     for (i = 0; i < nbatches[list]; i++) {
         const BATCH* b = &batches[list][i];
-        const RD_STATE* s = &rd_frame.states[b->state];
+        const RD_STATE* s = &rd_frame->states[b->state];
         SDL_GPUGraphicsPipeline* p;
         DRAW d;
         if (kind == P_OPAQUE) {
@@ -862,11 +1154,39 @@ static SDL_GPURenderPass* begin(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* color
     return rp;
 }
 
+/* the frame, filtered to out_tex when the window is smaller */
+static SDL_GPUTexture* finish(SDL_GPUCommandBuffer* cmd) {
+    SDL_GPUColorTargetInfo ct;
+    SDL_GPUTextureSamplerBinding tb;
+    SDL_GPURenderPass* rp;
+    float ratio[4];
+    if (out_tex == NULL) {
+        return frame_tex[0];
+    }
+    memset(&ct, 0, sizeof ct);
+    ct.texture = out_tex;
+    ct.load_op = SDL_GPU_LOADOP_DONT_CARE;
+    ct.store_op = SDL_GPU_STOREOP_STORE;
+    rp = SDL_BeginGPURenderPass(cmd, &ct, 1, NULL);
+    if (rp == NULL) {
+        return frame_tex[0];
+    }
+    ratio[0] = (float)(RD_WIDTH * scale) / (float)out_w, ratio[1] = (float)(RD_HEIGHT * scale) / (float)out_h;
+    ratio[2] = ratio[3] = 0;
+    tb.texture = frame_tex[0], tb.sampler = point;
+    SDL_BindGPUGraphicsPipeline(rp, resolve_pipe);
+    SDL_BindGPUFragmentSamplers(rp, 0, &tb, 1);
+    SDL_PushGPUFragmentUniformData(cmd, 0, ratio, sizeof ratio);
+    SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
+    SDL_EndGPURenderPass(rp);
+    return out_tex;
+}
+
 SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
     SDL_GPUCopyPass* copy;
     SDL_GPURenderPass* rp;
     FRAMEU fu;
-    float scale;
+    float zscale;
     int n, i, layer, f = 0;
     /* the translucent layers peeled */
     int layers = layers_env ? layers_env : rd_q.nosort ? 4 : 12;
@@ -874,29 +1194,24 @@ SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
     if (frame_no % 60 == 0) {
         evict();
     }
-    n = build(&scale);
+    fit_view();
+    n = build(&zscale);
+    for (i = 0; i < rd_frame->nstates; i++) {
+        const RD_TEXTURE* t = rd_frame->states[i].tex;
+        state_tex[i] = t == NULL ? NULL : i > 0 && rd_frame->states[i - 1].tex == t ? state_tex[i - 1] : texture(t);
+    }
     copy = SDL_BeginGPUCopyPass(cmd);
     {
         SDL_GPUTransferBufferLocation src = { vtrans, 0 };
         SDL_GPUBufferRegion dst = { vbuf, 0, (Uint32)(n * sizeof(GVTX)) };
         SDL_UploadToGPUBuffer(copy, &src, &dst, true);
     }
-    for (i = 0; i < rd_frame.nstates; i++) {
-        const RD_TEXTURE* t = rd_frame.states[i].tex;
-        state_tex[i] = t == NULL ? NULL : i > 0 && rd_frame.states[i - 1].tex == t ? state_tex[i - 1] : texture(copy, t);
-    }
     fog_on = 0;
     for (i = 0; i < 128; i++) {
         fog_on |= rd_fog.table[i] != 0.0f;
     }
-    if (rd_palette_serial != pal_serial) {
-        uint32_t px[1024];
-        for (i = 0; i < 1024; i++) {
-            px[i] = argb_to_rgba(rd_palette[i]);
-        }
-        upload(copy, pal_tex, 0, 1024, 1, 4, px);
-        pal_serial = rd_palette_serial;
-    }
+    upload_pending(copy, rd_palette_serial != pal_serial ? rd_palette : NULL);
+    pal_serial = rd_palette_serial;
     SDL_EndGPUCopyPass(copy);
 
     memset(&fu, 0, sizeof fu);
@@ -904,6 +1219,8 @@ SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
     fu.fog_color[0] = (float)(rd_fog.color >> 24), fu.fog_color[1] = (float)(rd_fog.color >> 16 & 255);
     fu.fog_color[2] = (float)(rd_fog.color >> 8 & 255), fu.fog_color[3] = (float)(rd_fog.color & 255);
     fu.fog_density = rd_fog.density;
+    fu.inv_scale = 1.0f / (float)scale;
+    fu.sprite_mode = sprite_mode;
     SDL_PushGPUFragmentUniformData(cmd, 1, &fu, sizeof fu);
 
     rp = begin(cmd, frame_tex[0], 1, 0.0f, 1);
@@ -924,7 +1241,7 @@ SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
     SDL_EndGPURenderPass(rp);
 
     if (nbatches[RD_TRANS] == 0) {
-        return frame_tex[0];
+        return finish(cmd);
     }
     /* the translucent list, far to near */
     {
@@ -958,7 +1275,7 @@ SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
             memset(&from, 0, sizeof from);
             memset(&to, 0, sizeof to);
             from.texture = frame_tex[f], to.texture = frame_tex[f ^ 1];
-            SDL_CopyGPUTextureToTexture(copy, &from, &to, RD_WIDTH, RD_HEIGHT, 1, false);
+            SDL_CopyGPUTextureToTexture(copy, &from, &to, (Uint32)(RD_WIDTH * scale), (Uint32)(RD_HEIGHT * scale), 1, false);
         }
         SDL_EndGPUCopyPass(copy);
         keys[0] = keys[1] = NULL, keys[3] = key_o[cur], keys[4] = frame_tex[f];
@@ -974,48 +1291,85 @@ SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
         memset(&from, 0, sizeof from);
         memset(&to, 0, sizeof to);
         from.texture = frame_tex[1], to.texture = frame_tex[0];
-        SDL_CopyGPUTextureToTexture(copy, &from, &to, RD_WIDTH, RD_HEIGHT, 1, false);
+        SDL_CopyGPUTextureToTexture(copy, &from, &to, (Uint32)(RD_WIDTH * scale), (Uint32)(RD_HEIGHT * scale), 1, false);
         SDL_EndGPUCopyPass(copy);
     }
-    return frame_tex[0];
+    return finish(cmd);
 }
 
-/* the last frame, read back as ARGB: slow, for screenshots */
-bool rd_gpu_read(uint32_t* argb) {
+/* t's w by h pixels, RGBA, mapped from the transfer buffer: waits for the GPU. NULL when it fails */
+static const uint8_t* download(SDL_GPUTexture* t, int w, int h) {
     SDL_GPUCommandBuffer* cmd;
     SDL_GPUCopyPass* copy;
     SDL_GPUTextureRegion src;
     SDL_GPUTextureTransferInfo dst;
     SDL_GPUFence* fence;
-    const uint8_t* p;
-    int i;
+    uint32_t size = (uint32_t)(w * h * 4);
+    if (tb != NULL && tb_size < size) {
+        SDL_ReleaseGPUTransferBuffer(dev, tb);
+        tb = NULL;
+    }
     if (tb == NULL) {
-        SDL_GPUTransferBufferCreateInfo ti = { SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, RD_WIDTH * RD_HEIGHT * 4, 0 };
+        SDL_GPUTransferBufferCreateInfo ti = { SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, size, 0 };
         tb = SDL_CreateGPUTransferBuffer(dev, &ti);
+        tb_size = tb != NULL ? size : 0;
     }
     cmd = tb != NULL ? SDL_AcquireGPUCommandBuffer(dev) : NULL;
     if (cmd == NULL) {
-        return false;
+        return NULL;
     }
     copy = SDL_BeginGPUCopyPass(cmd);
     memset(&src, 0, sizeof src);
-    src.texture = frame_tex[0];
-    src.w = RD_WIDTH, src.h = RD_HEIGHT, src.d = 1;
+    src.texture = t;
+    src.w = (Uint32)w, src.h = (Uint32)h, src.d = 1;
     memset(&dst, 0, sizeof dst);
     dst.transfer_buffer = tb;
     SDL_DownloadFromGPUTexture(copy, &src, &dst);
     SDL_EndGPUCopyPass(copy);
     fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
     if (fence == NULL) {
-        return false;
+        return NULL;
     }
     SDL_WaitForGPUFences(dev, true, &fence, 1);
     SDL_ReleaseGPUFence(dev, fence);
-    p = SDL_MapGPUTransferBuffer(dev, tb, false);
+    return SDL_MapGPUTransferBuffer(dev, tb, false);
+}
+
+/* the last frame at the game's size, each pixel the average of those drawn for it: slow, for screenshots */
+bool rd_gpu_read(uint32_t* argb) {
+    const uint8_t* p = download(frame_tex[0], RD_WIDTH * scale, RD_HEIGHT * scale);
+    int x, y, i, j, c, n = scale * scale, pitch = RD_WIDTH * scale * 4;
     if (p == NULL) {
         return false;
     }
-    for (i = 0; i < RD_WIDTH * RD_HEIGHT; i++) {
+    for (y = 0; y < RD_HEIGHT; y++) {
+        for (x = 0; x < RD_WIDTH; x++) {
+            uint32_t sum[4] = { 0, 0, 0, 0 };
+            for (j = 0; j < scale; j++) {
+                const uint8_t* q = p + (size_t)(y * scale + j) * pitch + (size_t)x * scale * 4;
+                for (i = 0; i < scale * 4; i++) {
+                    sum[i & 3] += q[i];
+                }
+            }
+            for (c = 0; c < 4; c++) {
+                sum[c] = (sum[c] + n / 2) / n;
+            }
+            argb[y * RD_WIDTH + x] = sum[3] << 24 | sum[0] << 16 | sum[1] << 8 | sum[2];
+        }
+    }
+    SDL_UnmapGPUTransferBuffer(dev, tb);
+    return true;
+}
+
+bool rd_gpu_read_view(uint32_t* argb) {
+    int w, h, i;
+    const uint8_t* p;
+    rd_gpu_frame_size(&w, &h);
+    p = download(out_tex != NULL ? out_tex : frame_tex[0], w, h);
+    if (p == NULL) {
+        return false;
+    }
+    for (i = 0; i < w * h; i++) {
         argb[i] = (uint32_t)p[4 * i + 3] << 24 | (uint32_t)p[4 * i] << 16 | (uint32_t)p[4 * i + 1] << 8 | p[4 * i + 2];
     }
     SDL_UnmapGPUTransferBuffer(dev, tb);

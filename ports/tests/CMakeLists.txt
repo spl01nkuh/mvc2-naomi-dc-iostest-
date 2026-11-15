@@ -9,6 +9,8 @@ find_package(ZLIB REQUIRED)
 find_package(Threads REQUIRED)
 set(PORT "${CMAKE_CURRENT_SOURCE_DIR}/../port")
 get_filename_component(GAME "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+add_library(mvc2_native_host_alloc STATIC "${PORT}/native64/engine/host_alloc.c")
+target_include_directories(mvc2_native_host_alloc PRIVATE "${PORT}/include")
 
 # These independently testable components do not change the existing game's
 # 32-bit ABI requirement or claim that the complete game is ARM64-ready.
@@ -206,14 +208,15 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
     add_test(NAME arm64_coroutine COMMAND test_coro)
     add_executable(test_native64_board test_native64_board.c
         "${PORT}/naomi/naomi_board.c" "${PORT}/naomi/naomi_rom.c" "${PORT}/naomi/nl_am.c"
-        "${PORT}/nl/nl_tex.c" "${PORT}/snd/snd_nl.c" "${PORT}/snd/aica.c" "${PORT}/snd/arm7.c"
+        "${PORT}/nl/nl_tex.c" "${PORT}/snd/snd_nl.c" "${PORT}/snd/snd_drv.c"
+        "${PORT}/snd/aica.c" "${PORT}/snd/arm7.c" "${PORT}/naomi/naomi_zip.c"
         "${PORT}/sys/coro_arm64.c" "${PORT}/sys/coro_arm64.S")
     target_include_directories(test_native64_board PRIVATE "${PORT}/include" "${PORT}/sys"
         "${PORT}/nl" "${PORT}/snd" "${GAME}/include")
     target_compile_definitions(test_native64_board PRIVATE HOST_NATIVE64=1 _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
     target_compile_options(test_native64_board PRIVATE -UNDEBUG
         "$<$<COMPILE_LANGUAGE:C>:-include;${PORT}/include/port_prefix.h>" -ffunction-sections -fdata-sections)
-    target_link_libraries(test_native64_board PRIVATE mvc2_native_model_store mvc2_native_renderer mvc2_native_texture_files Threads::Threads)
+    target_link_libraries(test_native64_board PRIVATE mvc2_native_model_store mvc2_native_renderer mvc2_native_texture_files Threads::Threads ZLIB::ZLIB)
     if(APPLE)
         target_link_options(test_native64_board PRIVATE "LINKER:-dead_strip")
     else()
@@ -222,4 +225,62 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
     add_test(NAME native64_board COMMAND test_native64_board)
 else()
     message(STATUS "ARM64 coroutine execution requires an ARM64 host; not registered on this architecture")
+endif()
+
+# Upstream 0.2.1 uses optional allocations when unpacking textures and caching
+# cartridge blocks. Exercise the production native allocator in these paths.
+foreach(test IN ITEMS model texture_file render sprite sdk board)
+    if(TARGET test_native64_${test})
+        target_link_libraries(test_native64_${test} PRIVATE mvc2_native_host_alloc)
+    endif()
+endforeach()
+
+mvc2_core_test(native64_raw_gameplay LEGACY_WARNINGS test_native64_raw_gameplay.c
+    "${GAME}/src/am_load.c" "${GAME}/src/pl_char.c" "${GAME}/src/work.c"
+    "${PORT}/nl/nl_tex.c" "${PORT}/naomi/naomi_board.c")
+mvc2_core_test(native64_raw_gameplay_dc DREAMCAST LEGACY_WARNINGS test_native64_raw_gameplay.c
+    "${GAME}/src/am_load.c" "${GAME}/src/pl_char.c" "${GAME}/src/work.c"
+    "${PORT}/nl/nl_tex.c" "${PORT}/naomi/naomi_board.c")
+foreach(test IN ITEMS native64_raw_gameplay native64_raw_gameplay_dc)
+    target_include_directories(test_${test} PRIVATE "${PORT}/nl" "${PORT}/render" "${PORT}/sys" "${PORT}/snd")
+    target_compile_definitions(test_${test} PRIVATE _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
+    target_link_libraries(test_${test} PRIVATE mvc2_native_game_memory mvc2_native_host_alloc)
+endforeach()
+mvc2_core_test(native64_vms_backup LEGACY_WARNINGS test_native64_vms_backup.c
+    "${GAME}/src/work.c" "${PORT}/dc/dc_vmu.c")
+mvc2_core_test(native64_vms_backup_dc DREAMCAST LEGACY_WARNINGS test_native64_vms_backup.c
+    "${GAME}/src/work.c" "${PORT}/dc/dc_vmu.c" "${GAME}/src/dc/net_vms.c")
+target_link_libraries(test_native64_vms_backup PRIVATE mvc2_native_game_memory)
+target_link_libraries(test_native64_vms_backup_dc PRIVATE mvc2_native_game_memory)
+target_compile_definitions(test_native64_vms_backup PRIVATE _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
+target_compile_definitions(test_native64_vms_backup_dc PRIVATE _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
+
+# Verify the actual writable-section checkpoint on Apple Clang. The GCC
+# fixture uses explicit sections to exercise the same preservation algorithm.
+add_executable(test_native_engine_state "${PORT}/native64/engine/tests/test_engine_state.c"
+    "${PORT}/native64/engine/engine_state.c")
+target_include_directories(test_native_engine_state PRIVATE "${PORT}/native64/engine")
+target_compile_definitions(test_native_engine_state PRIVATE MVC2_ENGINE_SECTION_SNAPSHOT=1)
+target_compile_options(test_native_engine_state PRIVATE -UNDEBUG -fno-common -Wall -Wextra -Werror)
+add_test(NAME native_engine_state COMMAND test_native_engine_state)
+add_test(NAME native_engine_state_late_capture COMMAND test_native_engine_state late)
+
+add_executable(test_native_sdk_lines "${PORT}/native64/engine/test_sdk_lines.c"
+    "${PORT}/native64/engine/sdk_lines.c")
+target_include_directories(test_native_sdk_lines PRIVATE "${GAME}/include" "${PORT}/include"
+    "${PORT}/nl" "${PORT}/render")
+target_compile_definitions(test_native_sdk_lines PRIVATE HOST_NATIVE64=1)
+target_compile_options(test_native_sdk_lines PRIVATE -UNDEBUG -Wall -Wextra -Werror
+    -include "${PORT}/include/port_prefix.h")
+target_link_libraries(test_native_sdk_lines PRIVATE m)
+add_test(NAME native_sdk_lines COMMAND test_native_sdk_lines)
+
+# Link the complete native program on executable ARM64 hosts. Missing game or
+# SDK symbols must fail CI even when a device ROM is unavailable for gameplay.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+    add_subdirectory("${PORT}/native64/engine" native-engine)
+    add_executable(test_native_gameplay_runtime test_native_gameplay_runtime.c)
+    target_link_libraries(test_native_gameplay_runtime PRIVATE mvc2_native_engine mvc2_ios_assets)
+    target_compile_options(test_native_gameplay_runtime PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+    add_test(NAME native_gameplay_runtime COMMAND test_native_gameplay_runtime)
 endif()

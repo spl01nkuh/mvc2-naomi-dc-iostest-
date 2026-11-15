@@ -226,7 +226,12 @@ static void shl14_02_catch( PLAYER_WORK *ew )
 	em_w->cg_shadow = 0xff ;
 	ew->pos.x = em_w->pos.x ;
 	ew->pos.y = em_w->pos.y ;
+#ifdef HOST_PORT
+	/* the board's pl_w is the stack pointer, and the word it reads above the stack is 0 */
+	em_w->pos.y = 0.0f ;
+#else
 	em_w->pos.y = pl_w->ground_y ;
+#endif
 	pl_w = ew->master_w ;
 	pl_w->catch_no = 0xc3 ;
 	pl_ef_catch_set( ew, em_w ) ;

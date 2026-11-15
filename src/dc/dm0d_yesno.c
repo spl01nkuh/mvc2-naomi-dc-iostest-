@@ -1,5 +1,5 @@
 /* DM0D, a yes/no bar: it opens out, its cursor slides to the answer in yesno_ans, and it goes
-   when the answer is -1. unk_8C212F16 is set while it moves. */
+   when the answer is -1. yesno_slide is set while it moves. */
 #include "player.h"
 #include "dm0d.h"
 
@@ -70,7 +70,7 @@ void yesno_open( PLAYER_WORK *w )
 		w->scale.x += 0.05f ;
 	}
 	if( !w->timer0 ){
-		unk_8C212F16 = 0 ;
+		yesno_slide = 0 ;
 		w->scale.x = 1.0f ;
 		w->routine_1 ++ ;
 	}
@@ -148,7 +148,7 @@ void yesno_cursor_wait( PLAYER_WORK *w )
 {
 	if( w->type != yesno_ans ){
 		w->routine_1 ++ ;
-		unk_8C212F16 = 1 ;
+		yesno_slide = 1 ;
 		w->timer0 = 10 ;
 	}
 	w->type = yesno_ans ;
@@ -166,7 +166,7 @@ void yesno_cursor_slide( PLAYER_WORK *w )
 		w->routine_1 = 0 ;
 		if( yesno_ans ) w->pos.x = 4.7f ;
 		else w->pos.x = 0.0f ;
-		unk_8C212F16 = 0 ;
+		yesno_slide = 0 ;
 	}
 }
 

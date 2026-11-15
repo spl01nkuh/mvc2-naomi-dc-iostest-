@@ -10,7 +10,14 @@ extern void *memcpy( void *dst, const void *src, Uint32 n ) ;
 
 /* the shapes' file, in words: the count of points that move and a second word, the numbers of
    those points, and then every shape's points */
-#ifdef TARGET_DC	/* the stage's file loads lower, and its other look has its own */
+#ifdef HOST_NATIVE64
+#include "host_memory.h"
+/* The shape counts, vertex indices and VEC3 payload remain serialized words;
+   only the buffer's native address changes. */
+#define unk_0D852038 ( ( Sint32 * )HOST_NATIVE64_RAM_AT( 0x0d852038 ) )
+#define unk_0CEC5020 ( ( Sint32 * )HOST_NATIVE64_RAM_AT( 0x0cec5020 ) )
+#define unk_0CEC4918 ( ( Sint32 * )HOST_NATIVE64_RAM_AT( 0x0cec4918 ) )
+#elif defined( TARGET_DC )	/* the stage's file loads lower, and its other look has its own */
 extern Sint32 unk_0CEC5020[], unk_0CEC4918[] ;
 #else
 extern Sint32 unk_0D852038[] ;

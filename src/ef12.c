@@ -256,8 +256,8 @@ static void ef12_main( PLAYER_WORK *ew )
 		ef12_start, ef12_run, ef12_free, ef12_free,
 	} ;
 
-	ew->unk_138 = vs_sys_work.team_w[ew->pl_no][0] ;
-	ef12_jmp[ew->routine_0]( ew, ew->unk_138 ) ;
+	ew->team_top_w = vs_sys_work.team_w[ew->pl_no][0] ;
+	ef12_jmp[ew->routine_0]( ew, ew->team_top_w ) ;
 }
 
 /*==============================================================*/

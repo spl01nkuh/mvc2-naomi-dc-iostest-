@@ -13,7 +13,7 @@ Library routines the port lacks are stubs that say so in the log (`port/tools/ge
 Sound: the AICA's own driver runs on an emulated ARM7 with its DSP; the Dreamcast's ADX music is decoded by
 the port. `MVC2_SOUND=0` turns it off; `MVC2_WAV=file` records it. On the 3DS the DSP is off, and `MVC2_REVERB=1` adds a cheap reverb in its place.
 
-**No game data is included.** You need the MAME `mvsc2` set, unzipped into a folder, and for the
+**No game data is included.** You need the MAME `mvsc2` set (the zip or its files), and for the
 Dreamcast the files of your own USA disc, extracted into a folder.
 
 ## How it fits together
@@ -53,15 +53,19 @@ decompilation, pass `-DMVC2_DECOMP=FOLDER` and make its tables with `tools/point
 Both versions run at their boards' own 59.94 frames a second, whatever the monitor's refresh rate (both drive
 VGA from a 27 MHz clock, 858 by 525). `MVC2_FPS=n` sets another rate, and `MVC2_FPS=0` runs as fast as it can.
 
-The picture is drawn in software, on as many threads as the machine has (`MVC2_RDTHREADS=n` sets the count;
+The picture is drawn by the GPU through SDL_GPU (Direct3D 12 or Vulkan), by the PowerVR2's rules, at the
+window's resolution: `resolution = 1` to `12` in `mvc2.cfg` sets a multiple of 640 by 480 instead, `aa = 2` to `4`
+draws that many times larger again and filters it down, and `sprites = sharp`, `pixel` or `arcade` sets how a
+flat textured triangle (a sprite, the HUD, text) is read when drawn larger. `renderer = soft`, or a GPU that can't,
+draws it in software at 640 by 480 instead, on as many threads as the machine has (`MVC2_RDTHREADS=n` sets the count;
 the picture is the same for any count). On a slow machine, `MVC2_RDQUALITY=half` draws it at 320 by 240 and
 shows each pixel as four: about three and a half times faster, but small text and sprites lose detail.
 `render =` in `mvc2.cfg` sets the quality for every run, and `MVC2_RDQUALITY` overrides it for one. Its words:
 `exact` (the default, every pixel as the PowerVR2 draws it), `fast` (the nearest texel, one mip level a
 triangle), `half`, `fast+half`, `nofog` (no fog) and `nosort` (translucent triangles not sorted per pixel).
 
-The front end is built with SDL3 (`SDL3.dll` beside the executable). `renderer = gpu` in `mvc2.cfg` draws with
-the GPU through SDL_GPU (Direct3D 12 or Vulkan); when it can't, it says why and draws in software.
+The front end is built with SDL3 (`SDL3.dll` beside the executable). When the GPU can't start, it says why and
+draws in software; test runs draw in software unless `mvc2.cfg` names a renderer.
 `-DMVC2_SDL3=OFF` builds it with SDL2 (`mingw-w64-i686-SDL2`), software only.
 
 `build/mvc2dc` is the Dreamcast alone. Test runs show no message boxes and run as fast as they can unless
@@ -156,10 +160,10 @@ and 2 on the Dreamcast), so there the 3dsx runs the Dreamcast version and the ar
 faster CPU, and no more memory than an Old 3DS gives (64 MB as a 3dsx, 80 as the CIA).
 
 Everything is in `sdmc:/3ds/mvc2`: `mvc2.cfg`, `roms/mvsc2` and `disc` as on the PC, and `mvc2.log`. The
-first start joins the ROM set's files into one file, `roms/mvsc2/mvsc2.bin` (136 MB), which the game then
+first start unpacks the ROM set into one file, `roms/mvsc2/mvsc2.bin` (136 MB), which the game then
 reads in 64 KB blocks through a cache of what memory allows, a thread on the other core reading ahead. The
-picture is drawn by the GPU at 320 by 240, 1:1 in the middle of the top screen; `scale = stretch` stretches
-it across, and `render = exact` draws it at 640 by 480 and halves it (slower). Test runs read `env.txt`'s
+picture is drawn by the GPU at 320 by 240, 1:1 in the middle of the top screen; `scale = stretch` (or
+`MVC2_STRETCH=1`) stretches it across, and `render = exact` draws it at 640 by 480 and halves it (slower). Test runs read `env.txt`'s
 `NAME=value` lines as environment variables (`MVC2_FRAMES`, `MVC2_SHOT`, `MVC2_PRESS` as on the PC).
 
 ## Which game it runs
@@ -167,7 +171,8 @@ it across, and `render = exact` draws it at 640 by 480 and halves it (slower). T
 At start-up `mvc2` looks for each version's data, checking that the files are there with the right sizes
 (it does not read them through):
 
-- the arcade's: the MAME `mvsc2` set unzipped (`epr-23085a.ic11` and `mpr-23048.ic17s` to `mpr-23084.ic32s`);
+- the arcade's: the MAME `mvsc2` set (`epr-23085a.ic11` and `mpr-23048.ic17s` to `mpr-23084.ic32s`), or its
+  `mvsc2.zip` in the folder or beside it, which the first start unpacks into `mvsc2.bin`;
 - the Dreamcast's: the files of the USA disc (`1ST_READ.BIN` and the rest).
 
 With one found, that one runs. With both, it asks which to play, once, and keeps the answer in `mvc2.cfg`

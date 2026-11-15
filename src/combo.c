@@ -355,9 +355,9 @@ void time_bonus( Uint32 *hi, Uint32 *lo )
 }
 
 /****************************************************************/
-/*			The bonus by the winner's unk_9a					*/
+/*			The bonus by the winner's no_ko_cnt				*/
 /****************************************************************/
-void unk_9a_bonus( Uint32 *hi, Uint32 *lo )
+void no_ko_bonus( Uint32 *hi, Uint32 *lo )
 {
 	Uint8 i ;
 
@@ -384,7 +384,7 @@ void bonus_add( Uint32 *hi, Uint32 *lo )
 	score_bcd_add( &pts[0], b_hi, b_lo ) ;
 	time_bonus( &b_hi, &b_lo ) ;
 	score_bcd_add( &pts[0], b_hi, b_lo ) ;
-	unk_9a_bonus( &b_hi, &b_lo ) ;
+	no_ko_bonus( &b_hi, &b_lo ) ;
 	score_bcd_add( &pts[0], b_hi, b_lo ) ;
 	*hi = pts[1] ;
 	*lo = pts[0] ;

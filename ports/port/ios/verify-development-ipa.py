@@ -13,6 +13,7 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
     base = "Payload/MVC2Development.app/"
     info = plistlib.loads(archive.read(base + "Info.plist"))
     assert info["CFBundlePackageType"] == "APPL"
+    assert info["CFBundleShortVersionString"] == "0.2.1"
     assert info["CFBundleIdentifier"] == "com.spl01nkuh.mvc2.native.dev"
     assert info["CFBundleExecutable"] == "MVC2Development"
     assert info["UIFileSharingEnabled"] and info["LSSupportsOpeningDocumentsInPlace"]
@@ -31,4 +32,4 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
     assert len(archive.read(base + "default.metallib")) > 100
     assert not any(name.endswith((".ic11", ".ic17s", ".ic18", ".zip")) for name in names), "game data must not be bundled"
     assert not any("embedded.mobileprovision" in name for name in names), "this artifact is unsigned"
-    print("Development IPA verified: iOS ARM64 executable, bundled Metal library, Files support; unsigned, no gameplay claim.")
+    print("Native gameplay test IPA verified: iOS ARM64 executable, bundled Metal library, Files support; unsigned, device gameplay unverified.")

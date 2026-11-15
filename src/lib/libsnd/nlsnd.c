@@ -48,7 +48,7 @@ static volatile Sint32 snd_busy;
 static volatile Uint32 *snd_ring;
 static volatile SNDINFO *snd_info;
 static Sint32 snd_base;
-static volatile Sint32 *snd_unk_b8;
+static volatile Sint32 *snd_free_top;	/* the driver's word for the first byte of sound memory it leaves free */
 static Sint32 snd_ram_size;
 static Sint32 snd_used;
 static Sint32 snd_stream_size;
@@ -360,7 +360,7 @@ Sint32 nlsndInit( const SNDDRIVER *driver, Sint32 mode )
 		snd_stream[i].buf[0] = snd_stream[i].buf[1] = -1;
 	}
 	snd_base = NLSND_RAM + driver->base_ofs;
-	snd_unk_b8 = ( volatile Sint32 * )( NLSND_RAM + 0x10 + driver->unk_80 );
+	snd_free_top = ( volatile Sint32 * )( NLSND_RAM + 0x10 + driver->free_ofs );
 	snd_info = ( volatile SNDINFO * )( NLSND_RAM + *( const Uint32 * )( ( Uint32 )driver + 0xc8 ) );	/* info_ofs */
 	snd_ring = ( volatile Uint32 * )SND_RING_BASE;
 	snd_used = 0;
@@ -935,7 +935,7 @@ Sint32 nlsndStreamInit( Sint16 mono, Sint16 stereo, Sint16 mode, Sint16 count )
 		if ( ( snd_stream_size = ( size - count * 64 ) / count & 0x7fffffe0 ) > SND_STREAM_MAX_SIZE )
 			snd_stream_size = SND_STREAM_MAX_SIZE;
 		unit = snd_stream_size + 64;
-		start = *snd_unk_b8;
+		start = *snd_free_top;
 		if ( start & 31 )
 			start = ( start & -32 ) + 32;
 		mem = snd_ram_size - unit - start;

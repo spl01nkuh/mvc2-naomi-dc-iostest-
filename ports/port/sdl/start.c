@@ -25,7 +25,7 @@ static const struct {
     const char* needs;
 } modes[MODES] = {
     { "arcade", "MVC2_ROM", "roms/mvsc2",
-      "the arcade's ROM set (MAME's mvsc2, unzipped: epr-23085a.ic11 and mpr-23048.ic17s to mpr-23084.ic32s)" },
+      "the arcade's ROM set (MAME's mvsc2.zip, or its files: epr-23085a.ic11 and mpr-23048.ic17s to mpr-23084.ic32s)" },
     { "dc", "MVC2_DC_DISC", "disc", "the files of the USA Dreamcast disc (1ST_READ.BIN and the rest)" },
 };
 
@@ -58,8 +58,9 @@ static const char* beside_exe(const char* path, char* buf, size_t size) {
         return path;
     }
 #ifdef __3DS__
-    (void)base, (void)buf, (void)size;
-    return path;        /* the 3DS starts in its data folder, sdmc:/3ds/mvc2 */
+    (void)base;
+    snprintf(buf, size, "%s", path);    /* the 3DS starts in its data folder, sdmc:/3ds/mvc2 */
+    return buf;
 #else
     if (base[0] == 0) {
 #ifdef MVC2_SDL3
@@ -352,11 +353,13 @@ int start_game(void) {
     }
 #ifdef MVC2_ARCADE
     if (mode == ARCADE) {
+        host_keep_program(&arc_program);
         return naomi_init(&arc_program, path[mode]);
     }
 #endif
 #ifdef MVC2_DC
     if (mode == DC) {
+        host_keep_program(&dc_program);
         return dc_init(&dc_program, path[mode]);
     }
 #endif

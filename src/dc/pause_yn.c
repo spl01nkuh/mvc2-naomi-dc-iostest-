@@ -1,5 +1,5 @@
 /* The training menu's yes/no window and its cursor on the pause's list, shown while
-   training_work.unk_1c is 5. */
+   training_work.menu_disp is 5. */
 #include "player.h"
 #include "nl.h"
 #include "dm.h"
@@ -50,13 +50,13 @@ void pause_yn_cursor_set( void )
 
 void pause_yn_win_move( PLAYER_WORK *w )
 {
-	if( training_work.unk_1c != 5 ) work_free( w ) ;
+	if( training_work.menu_disp != 5 ) work_free( w ) ;
 }
 
 /* it follows the answer and glows */
 void pause_yn_cursor_move( PLAYER_WORK *w )
 {
-	if( training_work.unk_1c != 5 ){
+	if( training_work.menu_disp != 5 ){
 		work_free( w ) ;
 		return ;
 	}

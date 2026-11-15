@@ -61,7 +61,7 @@ typedef struct SYSTEM_WORK {
 	Sint8	round_time_no;		/* 04d: the home game's round time setting: 30, 60 or 99 seconds, 3 no clock */
 	Uint8	attract_step;	/* 04e: the attract's step to start at, once (6 after a game) */
 	Uint8	renda_level;	/* 04f: the mashing setting, copied to cpu_renda_level at each game */
-	Uint8	unk_50;	/* 050: set when a home game is quit from the pause, cleared as a game starts; never read */
+	Uint8	quit_flag;	/* 050: set when a home game is quit from the pause, cleared as a game starts; never read */
 	Uint8	arcade_clear;	/* 051: the arcade game has been cleared (kept on the card): the stage select has stage 8 too */
 	Uint8	gauge_double;	/* 052: a home rule: the hyper combo gauge fills twice as fast */
 	Uint8	red_vital_keep;		/* 053: a home rule: the red vital does not come back */
@@ -163,7 +163,7 @@ typedef struct OPTION_WORK {
 	Uint8	unk_0f;
 	Float	adjust_x;	/* 010: the screen position: added to where a scene puts its pictures */
 	Float	adjust_y;	/* 014 */
-	Sint32	unk_18;		/* 018: the screen, from the cable at start-up; 1 draws the front's OBJ_FIT models less tall */
+	Sint32	adjust_size;	/* 018: the screen's size, 100 - adjust_size per cent; at start-up the cable's: 0 VGA, 1 NTSC (the front's OBJ_FIT models drawn less tall), 2 PAL */
 	Uint8	unk_1c;
 	Uint8	unk_1d;
 	Uint8	unk_1e;
@@ -177,14 +177,14 @@ typedef struct OPTION_WORK {
 typedef struct SECRET_WORK {
 	Uint8	vm_level;	/* 000 */
 	Uint8	vm_exp;		/* 001: the points toward the next level, 0 to 99 */
-	Uint16	d_pts;		/* 002 */
-	Uint16	unk_04;
-	Uint16	n_pts;		/* 006: the second kind's, as d_pts */
-	Uint16	unk_08;
+	Uint16	d_pts;		/* 002: the home game's points, which the shop takes */
+	Uint16	n_pts;		/* 004: the arcade's, which it adds to the card's data */
+	Uint16	v_pts;		/* 006: the third kind's (v_point_get) */
+	Uint16	n_link;		/* 008: the times an arcade has read the card (the network form's N_LINK), up to 9999 */
 	Uint16	unk_0a;
 	Uint16	unk_0c;
 	Uint16	unk_0e;
-	Uint8	unk_10;		/* 010: the network games counted, up to 99 */
+	Uint8	net_cnt;	/* 010: the network games counted, up to 99 */
 	Uint8	unk_11;
 	Uint8	play_hour;	/* 012: the time played, up to 99:59:59 */
 	Uint8	play_min;
@@ -241,7 +241,7 @@ typedef struct VMS_WORK {
 	Uint32	bu_busy_bit;	/* 03c: a bit for each port waiting on the backup library's callback */
 	Sint32	get_point[2];	/* 040: each side's points given to its card, shown when it joins */
 	Sint32	d_point;	/* 048: the home game's points earned since the last save, 0 to 9999 (d_point_add) */
-	Sint32	n_point;	/* 04c: and its second kind (n_point_add) */
+	Sint32	v_point;	/* 04c: and of the third kind, v_pts (v_point_add) */
 	Uint8	task_step;	/* 050: where a card task is, 0 to 5 */
 	Uint8	card_done_bit;	/* 051: a bit for each side whose card has been read; it can't read again */
 	Uint8	save_busy;	/* 052: set while a file is being saved; main waits on it before it exits */
@@ -260,8 +260,8 @@ typedef struct VMS_WORK {
 	Uint8	net_cnt_flag;	/* 07e: a network game to count: vms_net_cnt_up adds it to the secret work's count, once */
 	Uint8	unk_7f;
 	Uint8	net_key_keep[8];	/* 080: the key as it was when the file was loaded */
-	Uint8	unk_88;		/* 088 */
-	Uint8	unk_89;
+	Uint8	dow_sum;	/* 088: the download file's sum as worked out */
+	Uint8	dow_file_sum;	/* 089: and as the file has it */
 	Uint8	unk_8a[0x90 - 0x8a];
 } VMS_WORK;
 
@@ -385,8 +385,8 @@ typedef struct TRAINING_WORK {
 	Sint8	page;		/* 000: the menu's page, a routine of training_menu */
 	Sint8	cursor;		/* 001: the first page's line */
 	Sint8	cursor2;	/* 002: the line of the page shown */
-	Sint8	unk_03;
-	Sint8	unk_04;		/* 004: the dummy: 1 the computer plays it */
+	Sint8	cursor3;	/* 003: the line of the sub-menu or the settings page */
+	Sint8	dummy_mode;	/* 004: who plays the other side: 0 the dummy, 1 the computer, 2 a second player */
 	Sint8	stance;		/* 005: what the dummy does: 1 crouches, 2 jumps */
 	Sint8	dummy_guard;	/* 006: the dummy guards: 1 after the first hit, 2 always */
 	Sint8	dummy_air_recover;	/* 007: the dummy recovers in the air */
@@ -401,7 +401,7 @@ typedef struct TRAINING_WORK {
 	Uint8	unk_10[0x19 - 0x10];
 	Sint8	delay_hyper_free;	/* 019: a player in the chain of delayed hyper combos may join it again (to Sys's) */
 	Sint8	step[2];	/* 01a: the page's step (fade out, wait, the menu, leave), and the line chosen */
-	Sint8	unk_1c;		/* 01c: the menu's objects to show */
+	Sint8	menu_disp;	/* 01c: the menu's windows to show: 1 the backdrop, 2 the menu, 3 a sub-menu, 4 the settings, 5 the yes/no; 0 none */
 	Uint8	unk_1d[0x20 - 0x1d];
 } TRAINING_WORK;
 

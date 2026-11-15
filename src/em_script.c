@@ -11,7 +11,7 @@ typedef int ( *CMD_FUNC )( PLAYER_WORK *pl_w, CPU_SCRIPT *sc );
 /* the part of a character's own work (tlocal) that command 114 tests */
 typedef struct EM_TLOCAL_W {
 	Uint8	unk_00[0x0e];
-	Uint8	unk_0e;		/* 0e: a flag the character keeps for its script */
+	Uint8	script_flag;	/* 0e: a flag the character keeps for its script (if_tlocal) */
 } EM_TLOCAL_W;
 
 /* each command's length in the script, with its parameters */
@@ -1087,7 +1087,7 @@ static int if_tlocal( PLAYER_WORK *pl_w, CPU_SCRIPT *sc )
 
 	if( !cmd_start_ck( pl_w, 4 ) ) return 0 ;
 	cmd_read( pl_w, sc, 0 ) ;
-	return if_ck( pl_w, sc, lw->unk_0e == 0 ) ;
+	return if_ck( pl_w, sc, lw->script_flag == 0 ) ;
 }
 
 /*==============================================================*/

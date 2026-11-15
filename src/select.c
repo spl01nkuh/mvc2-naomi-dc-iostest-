@@ -295,7 +295,7 @@ static void sel_init( void )
 	sel_w.same_flag = 0 ;
 #ifdef TARGET_DC
 	/* the versus, and the training with the computer on both sides, have no speed to choose */
-	if( Sys->home_mode == HOME_VERSUS || training_work.unk_04 == 2 ){
+	if( Sys->home_mode == HOME_VERSUS || training_work.dummy_mode == 2 ){
 		sel_speed_side = -1 ;
 		Sys->join_side = 0 ;
 		goto speed_end ;

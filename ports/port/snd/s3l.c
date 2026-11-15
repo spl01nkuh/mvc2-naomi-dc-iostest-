@@ -53,6 +53,9 @@ extern void nlsndStreamSetHdPan(uint8_t* hd, int16_t ch, int32_t pan);
 
 /* the host: the sound RAM at an SH4 address (snd.h), and the cartridge's ROM */
 extern int naomi_rom_read(uint32_t offset, void* dst, uint32_t size);
+#ifdef __3DS__
+extern void ctr_rom_stream(uint32_t at, uint32_t size, int loop);
+#endif
 
 #define S3L_PORTS   8
 #define S3L_HEAD    64          /* the head before a stream's data */
@@ -138,12 +141,13 @@ static void s3l_read(const S3LPORT* port, uint32_t dst)
     } else {
         s3l_fetch(port->read, p);
     }
+    snd_sh4_written(dst, S3L_HALF);
 }
 
 /* Reads a stream's head from the ROM. */
 void s3lGetHeader(uint32_t adr, SNDSTREAMHD* hd)
 {
-    snd_sync();
+    SND_CALL();
     if (!naomi_rom_read(adr, hd, S3L_HEAD)) {
         memset(hd, 0, S3L_HEAD);
     }
@@ -160,7 +164,7 @@ int s3lInit(int mono, int stereo, int quad)
     int n_stereo;
     int i;
 
-    snd_sync();
+    SND_CALL();
     (void)quad;
     nlsndStreamInit(mono, stereo, 0, 0);
     for (p = s3l_port; p < s3l_port + S3L_PORTS; p++) {
@@ -223,7 +227,7 @@ int s3lSetStereoPort(int port, uint32_t adr, int loop)
     S3LPORT* p;
     uint32_t bits;
 
-    snd_sync();
+    SND_CALL();
     if (port == -1) {
         return -1;
     }
@@ -244,6 +248,9 @@ int s3lSetStereoPort(int port, uint32_t adr, int loop)
     p->start = adr;
     p->read = adr;
     p->loop = loop;
+#ifdef __3DS__
+    ctr_rom_stream(p->start, p->size, p->loop);
+#endif
     p->end = (p->hd.size - p->hd.unk_2e * 2) * 8 / bits >> 1;
     p->state = S3L_STOP;
     return 0;
@@ -255,7 +262,7 @@ int s3lSetMonoPort(int port, uint32_t adr, int loop)
     S3LPORT* p;
     uint32_t bits;
 
-    snd_sync();
+    SND_CALL();
     if (port == -1) {
         return -1;
     }
@@ -276,6 +283,9 @@ int s3lSetMonoPort(int port, uint32_t adr, int loop)
     p->start = adr;
     p->read = adr;
     p->loop = loop;
+#ifdef __3DS__
+    ctr_rom_stream(p->start, p->size, p->loop);
+#endif
     p->end = (p->hd.size - p->hd.unk_2e) * 8 / bits;
     p->state = S3L_STOP;
     return 0;
@@ -319,7 +329,7 @@ int s3lSetVolume(int port, int vol)
         return -1;
     }
     if (!snd_defer(s3l_set_volume, port, vol)) {
-        snd_sync();
+        SND_CALL();
         s3l_set_volume(port, vol);
     }
     return 0;
@@ -330,7 +340,7 @@ int s3lSetVolumeBias(int port, int bias)
 {
     S3LPORT* p;
 
-    snd_sync();
+    SND_CALL();
     if (port == -1) {
         return -1;
     }
@@ -355,7 +365,7 @@ int s3lSetPanpot(int port, int pan)
     int pan0;
     int pan1;
 
-    snd_sync();
+    SND_CALL();
     if (port == -1) {
         return -1;
     }
@@ -409,7 +419,7 @@ int s3lSetTranspose(int port, int transp)
     S3LPORT* p;
     int v;
 
-    snd_sync();
+    SND_CALL();
     if (port == -1) {
         return -1;
     }
@@ -432,7 +442,7 @@ int s3lSetDetune(int port, int detune)
     S3LPORT* p;
     int v;
 
-    snd_sync();
+    SND_CALL();
     if (port == -1) {
         return -1;
     }
@@ -454,7 +464,7 @@ int s3lSetFx(int port, int fxch, int fxlv)
 {
     S3LPORT* p;
 
-    snd_sync();
+    SND_CALL();
     if (port == -1) {
         return -1;
     }
@@ -490,7 +500,7 @@ int s3lSetFxCh(int port, int ch, int fxch, int fxlv)
     S3LPORT* p;
     uint32_t chreq;
 
-    snd_sync();
+    SND_CALL();
     if (port == -1) {
         return -1;
     }
@@ -521,7 +531,7 @@ int s3lSetFilter(int port, int cutf, int q)
 {
     S3LPORT* p;
 
-    snd_sync();
+    SND_CALL();
     if (port == -1) {
         return -1;
     }
@@ -548,7 +558,7 @@ int s3lStartPort(int port)
 {
     S3LPORT* p;
 
-    snd_sync();
+    SND_CALL();
     if (port == -1) {
         return -1;
     }
@@ -564,7 +574,7 @@ int s3lStopPort(int port)
 {
     S3LPORT* p;
 
-    snd_sync();
+    SND_CALL();
     if (port == -1) {
         return -1;
     }
@@ -702,7 +712,7 @@ static void s3l_intr(int a, int b)
 void s3lIntr(void)
 {
     if (!snd_defer(s3l_intr, 0, 0)) {
-        snd_sync();
+        SND_CALL();
         s3l_intr(0, 0);
     }
 }

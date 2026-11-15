@@ -279,12 +279,12 @@ static void test_character_copies(void)
 
     /* The documented packed body word must write exactly four size bytes,
        without aliasing an unrelated Uint32 object or changing its neighbors. */
-    destination.unk_138 = &source;
+    destination.team_top_w = &source;
     destination.cg_prm = 77;
     assert(BODY_SIZE_SET(&destination, UINT32_C(0x20202424)) == UINT32_C(0x20202424));
     assert(destination.size_top == 0x24 && destination.size_bottom == 0x24);
     assert(destination.size_front == 0x20 && destination.size_back == 0x20);
-    assert(destination.unk_138 == &source && destination.cg_prm == 77);
+    assert(destination.team_top_w == &source && destination.cg_prm == 77);
 }
 
 int main(void)

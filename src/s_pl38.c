@@ -1981,7 +1981,7 @@ static void nml_k_catch_grab( PLAYER_WORK *pl_w, PLAYER_WORK *em )
 		pl_w->cg_type = 0 ;
 		pl_w->routine_2 ++ ;
 		em->dm_elem = 3 ;
-		em->unk_228 = 3 ;
+		em->dm_elem_now = 3 ;
 		dm00_04_set( em ) ;
 	}
 }

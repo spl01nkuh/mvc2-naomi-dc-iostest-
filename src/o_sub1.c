@@ -95,10 +95,10 @@ int scr_in_ck( PLAYER_WORK *pl_w )
 	x = !pl_w->disp_dir ? size[1] : size[0] ;
 	size[0] = size[0] + size[1] + DOT_X( 128.0f ) ;
 	scr.x += DOT_X( 64.0f ) ;
-	if( ( Uint16 )( scr.x + x ) > ( Uint16 )( size[0] + 640.0f ) ) return 0 ;
+	if( ( Uint16 )( int )( scr.x + x ) > ( Uint16 )( int )( size[0] + 640.0f ) ) return 0 ;
 	size[0] = pl_w->size_top * pl_w->scale.y * 2.142857f + pl_w->size_bottom * pl_w->scale.y * 2.142857f + DOT_Y( 32.0f ) ;
 	size[1] = DOT_Y( 16.0f ) + pl_w->size_bottom * pl_w->scale.y * 2.142857f ;
-	if( ( Uint16 )( scr.y + size[1] ) > ( Uint16 )( size[0] + 480.0f ) ) return 0 ;
+	if( ( Uint16 )( int )( scr.y + size[1] ) > ( Uint16 )( int )( size[0] + 480.0f ) ) return 0 ;
 	return 1 ;
 }
 
@@ -118,7 +118,7 @@ int scr_in_x_ck( PLAYER_WORK *pl_w )
 	x = !pl_w->disp_dir ? size[1] : size[0] ;
 	size[0] = size[0] + size[1] + DOT_X( 128.0f ) ;
 	scr.x += DOT_X( 64.0f ) ;
-	if( ( Uint16 )( scr.x + x ) > ( Uint16 )( size[0] + 640.0f ) ) return 0 ;
+	if( ( Uint16 )( int )( scr.x + x ) > ( Uint16 )( int )( size[0] + 640.0f ) ) return 0 ;
 	return 1 ;
 }
 
@@ -134,7 +134,7 @@ int scr_in_y_ck( PLAYER_WORK *pl_w )
 	get_2d_pos( &pl_w->pos, &scr ) ;
 	size[0] = pl_w->size_top * pl_w->scale.y * 2.142857f + pl_w->size_bottom * pl_w->scale.y * 2.142857f + DOT_Y( 32.0f ) ;
 	size[1] = DOT_Y( 16.0f ) + pl_w->size_bottom * pl_w->scale.y * 2.142857f ;
-	if( ( Uint16 )( scr.y + size[1] ) > ( Uint16 )( size[0] + 480.0f ) ) return 0 ;
+	if( ( Uint16 )( int )( scr.y + size[1] ) > ( Uint16 )( int )( size[0] + 480.0f ) ) return 0 ;
 	return 1 ;
 }
 

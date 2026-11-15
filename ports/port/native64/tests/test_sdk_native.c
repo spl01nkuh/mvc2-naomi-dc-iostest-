@@ -95,6 +95,11 @@ static void draw_initialization(void) {
     word(group, 0x20); /* floating material color, untextured opaque */
     word(group + 4, (uint32_t)RD_ALWAYS << 29);
     word(group + 8, (uint32_t)RD_ONE << 29 | (uint32_t)RD_FOG_NONE << 22);
+    /* Bounds enclosing the generated screen-space triangle, now required by
+     * upstream's sphere culling before vertex/light processing. */
+    scalar(group + 16, 60, 0);
+    scalar(group + 20, 60, 0);
+    scalar(group + 28, 60, 0);
     scalar(group + 40, 1, 0);
     for (unsigned i = 0; i < 4; ++i) scalar(group + 44 + 4 * i, 1, 0);
     word(group + 76, 104);
@@ -110,8 +115,8 @@ static void draw_initialization(void) {
     nlObjPutSetGlobalAmbience(0);
     rd_begin_frame();
     nlObjPut((int*)object);
-    assert(rd_frame.ntris[RD_OPAQUE] == 1);
-    assert(rd_frame.tris[RD_OPAQUE][0].v[0].base == 0xffffffff);
+    assert(rd_frame->ntris[RD_OPAQUE] == 1);
+    assert(rd_frame->tris[RD_OPAQUE][0].v[0].base == 0xffffffff);
 
     NLSystemWork_.vertex_depth = 7;
     NLSystemWork_.znear = .3f;
@@ -128,8 +133,8 @@ static void draw_initialization(void) {
     nlLightInit();
     rd_begin_frame();
     nlObjPut((int*)object);
-    assert(rd_frame.ntris[RD_OPAQUE] == 1);
-    assert(rd_frame.tris[RD_OPAQUE][0].v[0].base == 0xff4d4d4d);
+    assert(rd_frame->ntris[RD_OPAQUE] == 1);
+    assert(rd_frame->tris[RD_OPAQUE][0].v[0].base == 0xff4d4d4d);
 }
 
 int main(void) {

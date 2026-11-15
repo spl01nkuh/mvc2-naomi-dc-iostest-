@@ -2327,7 +2327,7 @@ static void psycharge_catch_move( PLAYER_WORK *pl_w )
 		pl_w->catch_w->dm_hit_w = pl_w ;
 		pl_w->catch_w->atck_no = pl17_at_psycharge_hit ;
 		ew->dm_elem = 3 ;
-		ew->unk_228 = 3 ;
+		ew->dm_elem_now = 3 ;
 		dm00_04_set( ew ) ;
 		catch_damage( pl_w ) ;
 	}

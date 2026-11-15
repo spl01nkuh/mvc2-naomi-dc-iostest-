@@ -187,7 +187,7 @@ void line_arrow( PLAYER_WORK *w )
 		return ;
 	}
 	w->disp_flag = 0 ;
-	if( unk_8C21429C ) return ;
+	if( sel_close_flag ) return ;
 	w->disp_flag = 1 ;
 	w->timer0 ++ ;
 	w->timer0 %= 45 ;
@@ -216,7 +216,7 @@ void line_slide_wait( PLAYER_WORK *w )
 		w->timer1 = 30 ;
 		w->spd.x = 1.0f ;
 		w->routine_2 ++ ;
-		unk_8C212F20 = 1 ;
+		net_wait = 1 ;
 	}
 }
 
@@ -231,7 +231,7 @@ void line_slide_in( PLAYER_WORK *w )
 		switch( w->sub_no ){
 		case 13 :
 			w->pos.x = 8.2f ;
-			unk_8C212F20 = 0 ;
+			net_wait = 0 ;
 			break ;
 		case 14 :
 			w->pos.x = 2.75f ;
@@ -261,7 +261,7 @@ void line_slide_stay( PLAYER_WORK *w )
 	if( unk_8C2136FD == 2 && unk_8C2136FE == 6 ){
 		w->routine_2 ++ ;
 		w->timer1 = 30 ;
-		unk_8C212F20 = 1 ;
+		net_wait = 1 ;
 	}
 }
 
@@ -276,7 +276,7 @@ void line_slide_out( PLAYER_WORK *w )
 		switch( w->sub_no ){
 		case 13 :
 			w->pos.x = 38.2f ;
-			unk_8C212F20 = 0 ;
+			net_wait = 0 ;
 			break ;
 		case 14 :
 			w->pos.x = 32.75f ;

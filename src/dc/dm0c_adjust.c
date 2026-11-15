@@ -8,7 +8,7 @@
 
 /* a character of a number drawn by the menu */
 
-extern Float adjust_size_tbl[6] ;	/* system.c: the screen's size, 100% to 95%, by option_w.unk_18 */
+extern Float adjust_size_tbl[6] ;	/* system.c: the screen's size, 100% to 95%, by option_w.adjust_size */
 extern void dm0c_work_free( PLAYER_WORK *w ) ;
 extern void dm0c_work_free2( PLAYER_WORK *w ) ;
 
@@ -130,7 +130,7 @@ void adjust_num_set( PLAYER_WORK *w )
 	type = w->type ;
 	c = adjust_num_tbl[type] ;
 	if( type == 2 ){
-		n = 100 - option_w.unk_18 ;
+		n = 100 - option_w.adjust_size ;
 		if( n / 100 ) c->disp = 1 ;
 		else c->disp = 0 ;
 		n %= 100 ;
@@ -220,7 +220,7 @@ void adjust_screen_init( PLAYER_WORK *w )
 	w->obj_flag = OBJ_POS | OBJ_ROT_Z | OBJ_SCALE | OBJ_TRNSL | OBJ_FADE ;
 	w->pos.x = option_w.adjust_x / 10.0f ;
 	w->pos.y = -( option_w.adjust_y / 10.0f ) ;
-	w->scale.x = w->scale.y = adjust_size_tbl[option_w.unk_18] ;
+	w->scale.x = w->scale.y = adjust_size_tbl[option_w.adjust_size] ;
 }
 
 /****************************************************************/
@@ -289,7 +289,7 @@ void adjust_screen_main( PLAYER_WORK *w )
 {
 	w->pos.x = option_w.adjust_x / 10.0f ;
 	w->pos.y = -( option_w.adjust_y / 10.0f ) ;
-	w->scale.x = w->scale.y = adjust_size_tbl[option_w.unk_18] ;
+	w->scale.x = w->scale.y = adjust_size_tbl[option_w.adjust_size] ;
 }
 
 /****************************************************************/

@@ -1,5 +1,5 @@
 /* DM0D, a question with two answers: its frame, a cursor on the answer net_cursor_no is on, and
-   the text, all gone once unk_8C212F20 says it is answered. */
+   the text, all gone once net_wait says it is answered. */
 #include "player.h"
 #include "nl.h"
 #include "dm0d.h"
@@ -61,10 +61,10 @@ void ask_top( PLAYER_WORK *w )
 		ask_parts_set( 2, 0x11d ) ;
 		break ;
 	case 1 :
-		if( unk_8C212F20 ){
+		if( net_wait ){
 			w->routine_0 ++ ;
-			ask_parts_set( 3, unk_8C212F20 + 0x119 ) ;
-			if( unk_8C212F20 == 1 ) ask_parts_set( 3, 56 ) ;
+			ask_parts_set( 3, net_wait + 0x119 ) ;
+			if( net_wait == 1 ) ask_parts_set( 3, 56 ) ;
 		}
 		break ;
 	case 2 :
@@ -75,7 +75,7 @@ void ask_top( PLAYER_WORK *w )
 void ask_parts( PLAYER_WORK *w )
 {
 	if( !w->routine_0 ){
-		if( unk_8C212F20 ){
+		if( net_wait ){
 			w->routine_0 ++ ;
 			w->disp_flag = 0 ;
 		}
@@ -98,7 +98,7 @@ void ask_cursor( PLAYER_WORK *w )
 		x = w->pos.x ;
 		w->pos = ask_cursor_pos[net_cursor_no] ;
 		if( w->pos.x != x ) w->timer1 = 0 ;
-		if( unk_8C212F20 ){
+		if( net_wait ){
 			w->routine_0 ++ ;
 			w->disp_flag = 0 ;
 		}

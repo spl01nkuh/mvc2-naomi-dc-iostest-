@@ -21,7 +21,7 @@ extern void mono_set( void ) ;
 extern void vib_req( int pl_no, int no ) ;
 extern void disp_adjust_set( void ) ;
 extern void d_point_get( void ) ;
-extern void n_point_get( void ) ;
+extern void v_point_get( void ) ;
 extern int decide_ck( void ) ;
 extern int cancel_ck( void ) ;
 extern int decide_cancel_ck( void ) ;
@@ -423,7 +423,7 @@ void option_exit( OPTION_WORK *ow )
 			Sys->routine_1 = 4 ;
 			Sys->routine_2 = Sys->routine_3 = Sys->exit_flag = 0 ;
 			if( vms_work.d_point ) d_point_get() ;
-			if( vms_work.n_point ) n_point_get() ;
+			if( vms_work.v_point ) v_point_get() ;
 			break ;
 		}
 		Sys->routine_3 ++ ;
@@ -433,7 +433,7 @@ void option_exit( OPTION_WORK *ow )
 		Sys->timer0 = 120 ;
 		vms_work.card_task_step[0][0] = vms_work.card_task_step[0][1] = 0 ;
 		vms_work.card_task_step[1][0] = vms_work.card_task_step[1][1] = 0 ;
-		if( vms_work.d_point && vms_work.n_point ){
+		if( vms_work.d_point && vms_work.v_point ){
 			vms_work.vm_msg[0] = 3 ;
 			dm0c_vm_msg_set() ;
 			vms_work.vm_msg[1] = 1 ;
@@ -442,7 +442,7 @@ void option_exit( OPTION_WORK *ow )
 		} else if( vms_work.d_point ){
 			vms_work.vm_msg[0] = 1 ;
 			goto msg ;
-		} else if( vms_work.n_point ){
+		} else if( vms_work.v_point ){
 			vms_work.vm_msg[0] = 2 ;
 		msg :
 			dm0c_vm_msg_set() ;
@@ -467,7 +467,7 @@ void option_exit( OPTION_WORK *ow )
 			vms_work.vm_msg[1] = 2 ;
 			dm0c_vm_win_set( vms_work.vm_msg[1] ) ;
 			if( vms_work.d_point ) d_point_get() ;
-			if( vms_work.n_point ) n_point_get() ;
+			if( vms_work.v_point ) v_point_get() ;
 		}
 		return ;
 	case 3 :
@@ -713,7 +713,7 @@ void option_adjust( OPTION_WORK *ow )
 		Sys->timer0 = 0 ;
 		adjust_x_keep = ow->adjust_x ;
 		adjust_y_keep = ow->adjust_y ;
-		screen_keep = ow->unk_18 ;
+		screen_keep = ow->adjust_size ;
 		option_adjust_set() ;
 		disp_adjust_clear() ;
 		fade_set( 0xff000000, 10, FADE_IN ) ;

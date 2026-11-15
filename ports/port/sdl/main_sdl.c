@@ -44,6 +44,7 @@ const HOST_INPUT* host_input(void) {
 static unsigned presented;
 static int switch_req;      /* F9 */
 static int coin_req;
+static int test_run;        /* MVC2_FRAMES: the press list is the only input */
 
 /* MVC2_PRESS=n:key,...: player 1 holds the key for 5 frames from frame n; coin and switch happen at n */
 static uint32_t pressed(void) {
@@ -82,15 +83,19 @@ static uint32_t pressed(void) {
 static void read_input(void) {
     input.player[0] = pressed();
     input.player[1] = 0;
-    input_read(&input);
+    input.coin = 0;
+    input.test = 0;
+    if (!test_run) {
+        input_read(&input);
+        if (key_held(SDL_SCANCODE_9)) {
+            input.player[0] |= JVS_SERVICE;
+        }
+        input.test = key_held(SDL_SCANCODE_F2);
+    }
     if (coin_req) {
         input.coin = 1;
         coin_req = 0;
     }
-    if (key_held(SDL_SCANCODE_9)) {
-        input.player[0] |= JVS_SERVICE;
-    }
-    input.test = key_held(SDL_SCANCODE_F2);
 }
 
 static uint32_t frame[RD_WIDTH * RD_HEIGHT];
@@ -100,33 +105,35 @@ static void put32(unsigned char* p, uint32_t v) {
 }
 
 /* SDL2's BMP header (BITMAPV4HEADER), so shots match whichever SDL is used */
-static void save_bmp(const char* name, const uint32_t* argb) {
-    unsigned char h[122];
-    uint32_t row[RD_WIDTH];
-    FILE* f = fopen(name, "wb");
+static void save_bmp(const char* name, const uint32_t* argb, int w, int h) {
+    unsigned char hd[122];
+    uint32_t* row = malloc((size_t)w * 4);
+    FILE* f = row != NULL ? fopen(name, "wb") : NULL;
     int y, x;
     if (f == NULL) {
+        free(row);
         return;
     }
-    memset(h, 0, sizeof h);
-    h[0] = 'B', h[1] = 'M';
-    put32(h + 2, sizeof h + RD_WIDTH * RD_HEIGHT * 4);
-    put32(h + 10, sizeof h);
-    put32(h + 14, 108);
-    put32(h + 18, RD_WIDTH);
-    put32(h + 22, RD_HEIGHT);
-    h[26] = 1, h[28] = 32, h[30] = 3;
-    put32(h + 34, RD_WIDTH * RD_HEIGHT * 4);
-    put32(h + 54, 0x00FF0000), put32(h + 58, 0x0000FF00), put32(h + 62, 0x000000FF), put32(h + 66, 0xFF000000);
-    put32(h + 70, 0x57696E20);              /* "Win " */
-    fwrite(h, sizeof h, 1, f);
-    for (y = RD_HEIGHT - 1; y >= 0; y--) {
-        for (x = 0; x < RD_WIDTH; x++) {
-            put32((unsigned char*)&row[x], argb[y * RD_WIDTH + x]);
+    memset(hd, 0, sizeof hd);
+    hd[0] = 'B', hd[1] = 'M';
+    put32(hd + 2, sizeof hd + (uint32_t)(w * h * 4));
+    put32(hd + 10, sizeof hd);
+    put32(hd + 14, 108);
+    put32(hd + 18, (uint32_t)w);
+    put32(hd + 22, (uint32_t)h);
+    hd[26] = 1, hd[28] = 32, hd[30] = 3;
+    put32(hd + 34, (uint32_t)(w * h * 4));
+    put32(hd + 54, 0x00FF0000), put32(hd + 58, 0x0000FF00), put32(hd + 62, 0x000000FF), put32(hd + 66, 0xFF000000);
+    put32(hd + 70, 0x57696E20);             /* "Win " */
+    fwrite(hd, sizeof hd, 1, f);
+    for (y = h - 1; y >= 0; y--) {
+        for (x = 0; x < w; x++) {
+            put32((unsigned char*)&row[x], argb[(size_t)y * w + x]);
         }
-        fwrite(row, sizeof row, 1, f);
+        fwrite(row, (size_t)w * 4, 1, f);
     }
     fclose(f);
+    free(row);
 }
 
 /* the GPU's frame read back, at most once a frame */
@@ -161,8 +168,22 @@ static void screenshot(void) {
         list += n + 1;
     }
     snprintf(name, sizeof name, "shot_%u.bmp", presented);
+#ifdef MVC2_SDL3
+    /* MVC2_SHOTVIEW=1: the picture as the window shows it */
+    if (gpu && getenv("MVC2_SHOTVIEW") != NULL) {
+        int w, h;
+        uint32_t* big;
+        rd_gpu_frame_size(&w, &h);
+        big = malloc((size_t)w * h * 4);
+        if (big != NULL && rd_gpu_read_view(big)) {
+            save_bmp(name, big, w, h);
+        }
+        free(big);
+        return;
+    }
+#endif
     read_frame();
-    save_bmp(name, frame);
+    save_bmp(name, frame, RD_WIDTH, RD_HEIGHT);
 }
 
 /* both boards: a 27 MHz pixel clock, 858 by 525 */
@@ -200,26 +221,67 @@ static void pace(void) {
 }
 
 #ifdef MVC2_SDL3
+static SDL_GPUTexture* gpu_wrapped;     /* gpu_screen's */
+static int gpu_wrapped_w, gpu_wrapped_h;
+
+/* the GPU's picture settings from mvc2.cfg: resolution (auto or 1 to 12), aa (1 to 4), sprites */
+static int view_res, view_aa = 1, view_sprites = RD_SPRITES_SHARP;
+static const char* const sprite_names[] = { "arcade", "sharp", "pixel" };
+
+void view_settings(void) {
+    const char* r = config_get("resolution");
+    const char* a = config_get("aa");
+    const char* sp = config_get("sprites");
+    int i;
+    view_res = r != NULL && atoi(r) > 0 ? atoi(r) : 0;
+    view_aa = a != NULL && atoi(a) > 0 ? atoi(a) : 1;
+    view_aa = view_aa > 4 ? 4 : view_aa;
+    view_sprites = RD_SPRITES_SHARP;
+    for (i = 0; i < 3; i++) {
+        if (sp != NULL && strcmp(sp, sprite_names[i]) == 0) {
+            view_sprites = i;
+        }
+    }
+}
+
+/* the game's picture's size in the window, in pixels */
+static void view_size(int* w, int* h) {
+    SDL_FRect r;
+    *w = *h = 0;
+    if (SDL_GetRenderLogicalPresentationRect(renderer, &r) && r.w >= 1 && r.h >= 1) {
+        *w = (int)(r.w + 0.5f), *h = (int)(r.h + 0.5f);
+    }
+}
+
 static SDL_Texture* gpu_frame(void) {
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(gpu);
     SDL_GPUTexture* t;
+    int w, h;
     if (cmd == NULL) {
         return gpu_screen;
     }
+    view_size(&w, &h);
+    rd_gpu_view(view_res, view_aa, w, h, view_sprites);
     t = rd_gpu_end_frame(cmd);
     SDL_SubmitGPUCommandBuffer(cmd);
+    rd_gpu_frame_size(&w, &h);
+    if (gpu_screen != NULL && (t != gpu_wrapped || w != gpu_wrapped_w || h != gpu_wrapped_h)) {
+        SDL_DestroyTexture(gpu_screen);
+        gpu_screen = NULL;
+    }
     if (gpu_screen == NULL && t != NULL) {
         SDL_PropertiesID props = SDL_CreateProperties();
         SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_FORMAT_NUMBER, SDL_PIXELFORMAT_ABGR8888);
         SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_ACCESS_NUMBER, SDL_TEXTUREACCESS_STATIC);
-        SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_WIDTH_NUMBER, RD_WIDTH);
-        SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_HEIGHT_NUMBER, RD_HEIGHT);
+        SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_WIDTH_NUMBER, w);
+        SDL_SetNumberProperty(props, SDL_PROP_TEXTURE_CREATE_HEIGHT_NUMBER, h);
         SDL_SetPointerProperty(props, SDL_PROP_TEXTURE_CREATE_GPU_TEXTURE_POINTER, t);
         gpu_screen = SDL_CreateTextureWithProperties(renderer, props);
         SDL_DestroyProperties(props);
         if (gpu_screen != NULL) {
             SDL_SetTextureScaleMode(gpu_screen, SDL_SCALEMODE_NEAREST);
         }
+        gpu_wrapped = t, gpu_wrapped_w = w, gpu_wrapped_h = h;
     }
     return gpu_screen;
 }
@@ -449,6 +511,7 @@ static int open_window(void) {
     const char* size = config_get("window");
     const char* full = config_get("fullscreen");
     const char* scale = config_get("scale");
+    const char* r;
     int w, h, i;
     keep_settings = getenv("MVC2_FRAMES") == NULL;
     if (!keep_settings) {
@@ -480,7 +543,9 @@ static int open_window(void) {
             scaling = i;
         }
     }
-    return make_renderer(config_get("renderer") != NULL && strcmp(config_get("renderer"), "gpu") == 0);
+    /* the GPU unless mvc2.cfg says soft; a test run draws by rd_soft.c's rules unless it says gpu */
+    r = config_get("renderer");
+    return make_renderer(r != NULL ? strcmp(r, "soft") != 0 : !test_run);
 }
 
 /* 1 when the window took the event */
@@ -603,9 +668,29 @@ static int missing_screen(int argc, char** argv) {
     }
 }
 
+void* host_try_malloc(size_t bytes) {
+    return malloc(bytes);
+}
+
+void* host_try_calloc(size_t n, size_t size) {
+    return calloc(n, size);
+}
+
+void host_out_of_memory(const char* what, size_t bytes) {
+    char text[200];
+    snprintf(text, sizeof text, "Out of memory: %s of %lu bytes failed.", what, (unsigned long)bytes);
+    host_log("stopped: %s", text);
+    if (getenv("MVC2_FRAMES") == NULL) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Marvel vs. Capcom 2", text, NULL);
+    }
+    exit(1);
+}
+
 int main(int argc, char** argv) {
     int quit = 0;
     long frames_left = getenv("MVC2_FRAMES") ? atol(getenv("MVC2_FRAMES")) : -1;
+
+    test_run = frames_left >= 0;
 
     if (!naomi_map_ram()) {
         fprintf(stderr, "could not map main RAM at %08X\n", NAOMI_RAM_BASE);
@@ -614,10 +699,10 @@ int main(int argc, char** argv) {
     host_divzero_install();
     pace_init();
 #ifdef MVC2_SDL3
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | (test_run ? 0 : SDL_INIT_GAMEPAD))) {
 #else
     SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | (test_run ? 0 : SDL_INIT_GAMECONTROLLER)) != 0) {
 #endif
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
@@ -626,6 +711,9 @@ int main(int argc, char** argv) {
         return 1;
     }
     rd_quality(config_get("render"));   /* MVC2_RDQUALITY overrides it */
+#ifdef MVC2_SDL3
+    view_settings();
+#endif
     input_init();
     if (window == NULL && !open_window()) {
         fprintf(stderr, "SDL: %s\n", SDL_GetError());
@@ -642,6 +730,10 @@ int main(int argc, char** argv) {
     while (!quit) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
+            if (test_run) {
+                quit |= e.type == SDL_EVENT_QUIT;
+                continue;
+            }
             input_event(&e);
             if (window_key(&e) || menu_event(&e)) {
                 continue;

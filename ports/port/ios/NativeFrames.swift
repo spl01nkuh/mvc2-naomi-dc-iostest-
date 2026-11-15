@@ -18,6 +18,14 @@ struct NativeCanvasFrame {
     /// `rd_end_frame` writes numeric 0xAARRGGBB words. Convert their components
     /// explicitly so presentation never depends on the CPU's byte order.
     init?(width: Int, height: Int, argb: [UInt32]) {
+        guard let frame = argb.withUnsafeBufferPointer({
+            NativeCanvasFrame(width: width, height: height, argb: $0)
+        }) else { return nil }
+        self = frame
+    }
+
+    /// Copy the native renderer's borrowed pixels before its next step.
+    init?(width: Int, height: Int, argb: UnsafeBufferPointer<UInt32>) {
         guard width > 0, height > 0, width <= 4096, height <= 4096,
               argb.count == width * height else { return nil }
         var pixels = [UInt8](repeating: 0, count: argb.count * 4)
@@ -45,6 +53,7 @@ final class NativeFrameStore {
     private let lock = NSLock()
     private var frame: NativeCanvasFrame?
     private var generation: UInt64 = 0
+    private var notificationPending = false
 
     func publish(frame: NativeCanvasFrame) {
         lock.lock()
@@ -69,8 +78,15 @@ final class NativeFrameStore {
     }
 
     private func notifyPresentation() {
+        lock.lock()
+        guard !notificationPending else { lock.unlock(); return }
+        notificationPending = true
+        lock.unlock()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            self.lock.lock()
+            self.notificationPending = false
+            self.lock.unlock()
             NotificationCenter.default.post(name: .mvc2NativeFrame, object: self)
         }
     }

@@ -311,7 +311,7 @@ void win_parts_main( PLAYER_WORK *w )
 	Sint8 side ;
 
 	if( w->sub_type == 14 ){
-		if( unk_8C212F1B & 0x80 ) side = 1 ;
+		if( win_side_flag & 0x80 ) side = 1 ;
 		else side = 0 ;
 		if( net_rec[side].unk_220 ){
 			w->obj = obj_dm0d->obj[45] ;
@@ -411,7 +411,7 @@ void win_nop2( PLAYER_WORK *w )
 /****************************************************************/
 void win_mark_main( PLAYER_WORK *w )
 {
-	if( unk_8C212F10 & 0x80 ) w->disp_flag = 1 ;
+	if( win_mark_flag & 0x80 ) w->disp_flag = 1 ;
 	else w->disp_flag = 0 ;
 }
 
@@ -456,7 +456,7 @@ void win_rec_main( PLAYER_WORK *w )
 		else w->pos.x += w->spd.x ;
 		break ;
 	}
-	if( unk_8C212F1B & 0x80 ) side = 1 ;
+	if( win_side_flag & 0x80 ) side = 1 ;
 	else side = 0 ;
 	p = pos_tbl ;
 	if( net_rec[side].handle[0] )

@@ -6,22 +6,6 @@
 #include "pl_char.h"
 #include "pl_color_old.h"
 
-/* an effect's animation frame: the first eight bytes of a player's */
-typedef struct EF_CHAR_DATA {
-	Sint32	unk_00;		/* 000: the frame's codes; after a last frame, where the animation goes on */
-	Uint8	unk_04[0x08 - 0x04];
-} EF_CHAR_DATA;
-
-/* what an effect's frame leaves in cg_prm */
-typedef struct EF_CHAR_WORK {
-	EF_CHAR_DATA data;
-	Sint32	unk_08;
-	Sint32	unk_0c;
-	Sint32	unk_10;
-} EF_CHAR_WORK;
-
-#define EF_CG( w )	( *( EF_CHAR_WORK * )&( w )->cg_prm )
-
 #define CG( w )	( *( CHAR_DATA * )&( w )->cg_prm )
 
 /* the special palette lines, after the six colours' eight lines of 16 */
@@ -40,17 +24,17 @@ int ef_char_set( PLAYER_WORK *ef_w, Uint8 group, Uint8 no )
 	tbl = ( Uint32 * )( ef_w->char_adrs + tbl[group] ) ;
 	ef_w->cg_adrs = ( Sint8 * )( tbl[no] + ef_w->char_adrs ) ;
 	EF_CG( ef_w ).data = *( EF_CHAR_DATA * )ef_w->cg_adrs ;
-	EF_CG( ef_w ).unk_08 = 0 ;
-	EF_CG( ef_w ).unk_0c = 0 ;
-	EF_CG( ef_w ).unk_10 = 0 ;
+	EF_CG( ef_w ).prio_l = 0 ;
+	EF_CG( ef_w ).se_l = 0 ;
+	EF_CG( ef_w ).rival_l = 0 ;
 	if( !ef_w->cg_ctr ){
 		do {
 			ef_w->cg_adrs = ef_w->cg_adrs + sizeof( EF_CHAR_DATA ) ;
-			if( ef_w->cg_end_flag & CG_END ) ef_w->cg_adrs = ( Sint8 * )( ef_w->char_adrs + ( ( EF_CHAR_DATA * )ef_w->cg_adrs )->unk_00 ) ;
+			if( ef_w->cg_end_flag & CG_END ) ef_w->cg_adrs = ( Sint8 * )( ef_w->char_adrs + ( ( EF_CHAR_DATA * )ef_w->cg_adrs )->loop_ofs ) ;
 			EF_CG( ef_w ).data = *( EF_CHAR_DATA * )ef_w->cg_adrs ;
-			EF_CG( ef_w ).unk_08 = 0 ;
-			EF_CG( ef_w ).unk_0c = 0 ;
-			EF_CG( ef_w ).unk_10 = 0 ;
+			EF_CG( ef_w ).prio_l = 0 ;
+			EF_CG( ef_w ).se_l = 0 ;
+			EF_CG( ef_w ).rival_l = 0 ;
 		} while( !ef_w->cg_ctr ) ;
 	}
 }
@@ -70,17 +54,17 @@ void ef_char_set2( PLAYER_WORK *ef_w, Uint8 group, Uint8 no, int frame )
 	ef_w->cg_adrs = ( Sint8 * )( tbl[no] + ef_w->char_adrs ) ;
 	ef_w->cg_adrs = ef_w->cg_adrs + frame * sizeof( EF_CHAR_DATA ) ;
 	EF_CG( ef_w ).data = *( EF_CHAR_DATA * )ef_w->cg_adrs ;
-	EF_CG( ef_w ).unk_08 = 0 ;
-	EF_CG( ef_w ).unk_0c = 0 ;
-	EF_CG( ef_w ).unk_10 = 0 ;
+	EF_CG( ef_w ).prio_l = 0 ;
+	EF_CG( ef_w ).se_l = 0 ;
+	EF_CG( ef_w ).rival_l = 0 ;
 	if( !ef_w->cg_ctr ){
 		do {
 			ef_w->cg_adrs = ef_w->cg_adrs + sizeof( EF_CHAR_DATA ) ;
-			if( ef_w->cg_end_flag & CG_END ) ef_w->cg_adrs = ( Sint8 * )( ef_w->char_adrs + ( ( EF_CHAR_DATA * )ef_w->cg_adrs )->unk_00 ) ;
+			if( ef_w->cg_end_flag & CG_END ) ef_w->cg_adrs = ( Sint8 * )( ef_w->char_adrs + ( ( EF_CHAR_DATA * )ef_w->cg_adrs )->loop_ofs ) ;
 			EF_CG( ef_w ).data = *( EF_CHAR_DATA * )ef_w->cg_adrs ;
-			EF_CG( ef_w ).unk_08 = 0 ;
-			EF_CG( ef_w ).unk_0c = 0 ;
-			EF_CG( ef_w ).unk_10 = 0 ;
+			EF_CG( ef_w ).prio_l = 0 ;
+			EF_CG( ef_w ).se_l = 0 ;
+			EF_CG( ef_w ).rival_l = 0 ;
 		} while( !ef_w->cg_ctr ) ;
 	}
 }
@@ -96,11 +80,11 @@ Sint8 ef_char_move( PLAYER_WORK *ef_w )
 	if( !--ef_w->cg_ctr ){
 		do {
 			ef_w->cg_adrs = ef_w->cg_adrs + sizeof( EF_CHAR_DATA ) ;
-			if( ( end = ef_w->cg_end_flag & CG_END ) ) ef_w->cg_adrs = ( Sint8 * )( ef_w->char_adrs + ( ( EF_CHAR_DATA * )ef_w->cg_adrs )->unk_00 ) ;
+			if( ( end = ef_w->cg_end_flag & CG_END ) ) ef_w->cg_adrs = ( Sint8 * )( ef_w->char_adrs + ( ( EF_CHAR_DATA * )ef_w->cg_adrs )->loop_ofs ) ;
 			EF_CG( ef_w ).data = *( EF_CHAR_DATA * )ef_w->cg_adrs ;
-			EF_CG( ef_w ).unk_08 = 0 ;
-			EF_CG( ef_w ).unk_0c = 0 ;
-			EF_CG( ef_w ).unk_10 = 0 ;
+			EF_CG( ef_w ).prio_l = 0 ;
+			EF_CG( ef_w ).se_l = 0 ;
+			EF_CG( ef_w ).rival_l = 0 ;
 		} while( !ef_w->cg_ctr ) ;
 	}
 	return end ;

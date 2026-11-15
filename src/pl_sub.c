@@ -183,7 +183,7 @@ void pl_init( void )
 #ifdef TARGET_DC	/* a home rule: one character a side */
 			if( Sys->one_char && !j ){
 				pl_w->one_char_flag = 1 ;
-				vs_sys_w->unk_8a[i] = pl_w->work_no ;
+				vs_sys_w->one_char_no[i] = pl_w->work_no ;
 			}
 #endif
 			pl_w->disp_flag = pl_w->be_flag ;

@@ -1477,7 +1477,7 @@ static void dm_spark( PLAYER_WORK *dm_w, PLAYER_WORK *at_w )
 	dm_w->recover_ng_flag = 0 ;
 	dm_w->atck_level = at_w->atck_level ;
 	if( ( dm_w->dm_elem = 5 ) != dm_w->dm_elem_old ) dm_w->elem_ef_cnt = 0 ;
-	dm_w->unk_228 = 5 ;
+	dm_w->dm_elem_now = 5 ;
 	if( dm_w->pl_stance != STANCE_AIR ){
 		dm_char_set( dm_w ) ;
 		return ;

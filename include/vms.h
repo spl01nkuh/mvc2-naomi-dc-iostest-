@@ -12,7 +12,7 @@ typedef struct VMS_SLOT {
 	Sint32	func;		/* 004: the backup library's last call that came back for it; 18 none yet */
 	Sint32	result;		/* 008: how it came out; 0xffff0000 for nothing yet */
 	Sint32	disk_blocks;	/* 00c: the blocks the card is mounted for, 122 by default; the mount's result */
-	Sint32	unk_10;		/* 010 */
+	Sint32	param;		/* 010: the callback's last parameter */
 	Sint32	sys_file;	/* 014: MVLVS.C2_SYS */
 	Sint32	up_file;	/* 018: MVLVS.C2__UP */
 	Sint32	net_file;	/* 01c: CAP_NET_.NET */

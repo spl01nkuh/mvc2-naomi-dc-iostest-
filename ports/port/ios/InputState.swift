@@ -11,12 +11,26 @@ final class InputState: ObservableObject {
     var buttons: UInt16 {
         lock.lock()
         defer { lock.unlock() }
+        return normalizedButtons()
+    }
+
+    private func normalizedButtons() -> UInt16 {
         let value = sources.values.reduce(0, |)
         // Opposing directions are neutral, including overlapping custom buttons.
         var result = value
         if value & 0x3000 == 0x3000 { result &= ~UInt16(0x3000) }
         if value & 0x0c00 == 0x0c00 { result &= ~UInt16(0x0c00) }
         return result
+    }
+
+    /// A simulation frame consumes its player mask and one credit event under
+    /// the same lock, so UI changes cannot split a native input snapshot.
+    func snapshotForFrame() -> (buttons: UInt16, coin: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        let coin = pendingCoins > 0
+        if coin { pendingCoins -= 1 }
+        return (normalizedButtons(), coin)
     }
 
     func set(source: String, buttons: UInt16) {

@@ -9158,8 +9158,8 @@
 8C011726 secret_work_init
 8C011780 d_point_add
 8C0117A2 d_point_get
-8C011806 n_point_add
-8C011828 n_point_get
+8C011806 v_point_add
+8C011828 v_point_get
 8C011898 vms_card_bit_set
 8C0118A8 vms_port_first
 8C011910 vms_port_move
@@ -11200,7 +11200,7 @@
 8C05A882 bcd_conv combo
 8C05A8B4 vital_bonus
 8C05AA1E time_bonus
-8C05AA62 unk_9a_bonus
+8C05AA62 no_ko_bonus
 8C05AAC4 bonus_add
 8C05AB54 pl_fly
 8C05AC74 fly_end pl_fly
@@ -21530,15 +21530,15 @@
 8C212F0D unk_8C212F0D
 8C212F0E unk_8C212F0E
 8C212F0F unk_8C212F0F
-8C212F10 unk_8C212F10
+8C212F10 win_mark_flag
 8C212F14 yesno_ans
-8C212F16 unk_8C212F16
+8C212F16 yesno_slide
 8C212F18 rec_item_no
 8C212F19 net_cursor_no
-8C212F1B unk_8C212F1B
+8C212F1B win_side_flag
 8C212F1C board_cursor_no
 8C212F1E board_decide
-8C212F20 unk_8C212F20
+8C212F20 net_wait
 8C212F22 win_pict_u
 8C212F24 win_pict_v
 8C212F21 net_info_flag
@@ -21562,7 +21562,7 @@
 8C2136FE unk_8C2136FE
 8C2136FF unk_8C2136FF
 8C213700 unk_8C213700
-8C213705 unk_8C213705
+8C213705 net_line_st
 8C213806 net_user_id
 8C213822 net_password
 8C213836 net_board_side
@@ -21575,11 +21575,11 @@
 8C213A2A unk_8C213A2A
 8C213A6A unk_8C213A6A
 8C213A74 unk_8C213A74
-8C213AEE unk_8C213AEE
+8C213AEE board_cnt
 8C213AF0 net_win_add
 8C213AF2 net_lose_add
-8C213AF8 unk_8C213AF8
-8C213AFC unk_8C213AFC
+8C213AF8 net_entry_num2
+8C213AFC net_entry_num3
 8C213B00 net_entry_num
 8C213B04 net_play_time
 8C213B08 net_rank
@@ -21589,7 +21589,7 @@
 8C213CA8 room_info
 8C2141E5 net_area_no
 8C2141E7 room_info_cnt
-8C2141E8 unk_8C2141E8
+8C2141E8 room_btn_no
 8C2141E9 net_room_no
 8C2141EA net_vs_key
 8C2141F2 net_vs_handle
@@ -21600,11 +21600,11 @@
 8C21428E net_vs_lose_add
 8C214292 unk_8C214292
 8C214294 unk_8C214294
-8C21429C unk_8C21429C
+8C21429C sel_close_flag
 8C2142A7 net_pad_bit
 8C2143AE unk_8C2143AE
-8C2143C2 unk_8C2143C2
-8C2143C4 unk_8C2143C4
+8C2143C2 sel_on
+8C2143C4 sel_ans
 8C2143C6 net_key_list
 8C214C16 net_rec
 8C215124 sys_flag
@@ -21620,10 +21620,10 @@
 8C21527E net_entry_str
 8C21528A lobby_time_flag
 8C21528C lobby_time
-8C215294 unk_8C215294
+8C215294 board_pt
 8C21529C log_scroll
-8C2152A0 unk_8C2152A0
-8C2152A2 unk_8C2152A2
+8C2152A0 net_win_cnt2
+8C2152A2 net_lose_cnt2
 8C2152A6 button_cfg
 8C2152CC task_wait
 8C2152D0 vsync_count
@@ -21790,7 +21790,7 @@
 8C2DAD64 snd_ring nlsnd
 8C2DAD68 snd_info nlsnd
 8C2DAD6C snd_base nlsnd
-8C2DAD70 snd_unk_b8 nlsnd
+8C2DAD70 snd_free_top nlsnd
 8C2DAD74 snd_ram_size nlsnd
 8C2DAD78 snd_used nlsnd
 8C2DAD7C snd_stream_size nlsnd

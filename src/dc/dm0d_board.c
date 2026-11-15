@@ -158,7 +158,7 @@ void board_main( PLAYER_WORK *w )
 			w->routine_0 ++ ;
 			w->pos.x = board_face_x[n] ;
 			w->pos.y = board_face_y[n & 1] ;
-			w->obj = obj_dm0d->obj[w->timer0 + ( unk_8C213AEE > 0 ) * 15] ;
+			w->obj = obj_dm0d->obj[w->timer0 + ( board_cnt > 0 ) * 15] ;
 		}
 		break ;
 	case 0x50 :
@@ -186,11 +186,11 @@ void board_main( PLAYER_WORK *w )
 	case 0x60 :
 		if( !w->routine_0 ){
 			w->routine_0 ++ ;
-			board_num_put( unk_8C213AEE, 10, 0x82, board_cnt_pos, &board_fade_cnt ) ;
+			board_num_put( board_cnt, 10, 0x82, board_cnt_pos, &board_fade_cnt ) ;
 		}
 		break ;
 	case 0x70 :
-		if( !unk_8C213AEE ) break ;
+		if( !board_cnt ) break ;
 		w->disp_flag = 0 ;
 		if( board_decide[n] == 1 ) w->disp_flag = 1 ;
 		break ;
@@ -204,7 +204,7 @@ void board_main( PLAYER_WORK *w )
 	case 0xc0 :
 		if( !w->routine_0 ){
 			w->routine_0 ++ ;
-			board_num_put( unk_8C215294, 999, 3, board_pt_pos, &board_fade_pt ) ;
+			board_num_put( board_pt, 999, 3, board_pt_pos, &board_fade_pt ) ;
 		}
 		str_put( 240.0f, 212.0f, -12.01f, 0xffffffff, ( char * )net_handle ) ;
 		break ;

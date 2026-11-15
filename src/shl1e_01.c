@@ -23,7 +23,14 @@ typedef struct SHL1E_01_LOCAL_W {
 } SHL1E_01_LOCAL_W;
 #define SHL1E_01_LW( w )	( ( SHL1E_01_LOCAL_W * )&( w )->obj_mtx )
 
+#ifdef HOST_PORT
+/* shl1e_00's air shot can run off its table into head_init before any head has run: on the board the null
+   pointer reads the BIOS */
+static SHL1E_01_LOCAL_W shl1e_01_none ;
+static SHL1E_01_LOCAL_W *shl1e_01_lw = &shl1e_01_none ;
+#else
 static SHL1E_01_LOCAL_W *shl1e_01_lw ;		/* the work being run */
+#endif
 static SHL1E_01_LOCAL_W *shl1e_01_master_lw ;	/* a part's head */
 static PL1E_LOCAL_W *shl1e_01_pl_lw ;		/* Akuma's */
 

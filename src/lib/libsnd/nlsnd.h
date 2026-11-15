@@ -60,7 +60,7 @@ typedef struct SNDDRIVER {
 	Uint32	unk_00[21];
 	Uint32	size;		/* 054 */
 	Uint32	unk_58[10];
-	Uint32	unk_80;
+	Uint32	free_ofs;	/* 080: where its word for the first free byte of sound memory is, less 0x10 */
 	Uint32	base_ofs;	/* 084 */
 	Uint32	unk_88[15];
 	Uint32	unk_c4;

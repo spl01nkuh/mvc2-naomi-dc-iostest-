@@ -5,7 +5,8 @@ data comes with it.
 
 ## The game's data
 
-- The arcade: MAME's `mvsc2` set, unzipped into `roms/mvsc2` beside the executable.
+- The arcade: MAME's `mvsc2.zip` in `roms/mvsc2` beside the executable (or its files, unzipped there). The first
+  start unpacks the zip into `roms/mvsc2/mvsc2.bin` (136 MB).
 - The Dreamcast: the files of your own USA disc (`1ST_READ.BIN` and the rest) in `disc`.
 
 Other folders can be set in `mvc2.cfg` (`arcade = ...`, `dc = ...`) or given on the command line
@@ -26,7 +27,7 @@ it says what and where; put it there and press Enter.
 5 is a coin, 9 service, F2 the arcade's test menu.
 
 - F1: the controls screen (or Back with the right shoulder held). Enter sets a control from the next key
-  or button, Delete puts it back, Escape closes. It also switches the renderer and the picture quality.
+  or button, Delete puts it back, Escape closes. It also sets the renderer, the picture and the sprites.
 - F3: frame times.
 - F9: switch between the arcade and the Dreamcast.
 - F10: scaling (aspect, integer, stretch). F11 or Alt+Enter: full screen.
@@ -46,8 +47,15 @@ Controllers: the first plugged in is player 1's, the second player 2's.
 
 ## Settings
 
-`mvc2.cfg` beside the executable has the settings, each explained there. On a slow PC, `render = half`
-is much faster; `renderer = gpu` draws with the graphics card.
+`mvc2.cfg` beside the executable has the settings, each explained there.
+
+The graphics card draws the game at the window's resolution: 3D stages, polygons and effects come out sharp, while the
+characters keep their pixels (`sprites = sharp`; `pixel` for no smoothing at all, `arcade` for the
+arcade's own filtering). `aa = 2` (up to 4) smooths edges by drawing larger still; `resolution = 1` is
+the arcade's 640 by 480. F1 sets these too.
+
+Without a graphics card that can, or with `renderer = soft`, the CPU draws the arcade's 640 by 480
+instead; on a slow PC, `render = half` makes that much faster.
 
 `unlock = all` lets you choose every character, colour and stage. Your saves keep only what you really
 unlocked, but games played this way still count in the records.

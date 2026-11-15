@@ -71,9 +71,9 @@ static void game_init( void )
 	/* the mode's own set-up: points for starting an arcade game, the training's rules, the
 	   network's */
 #if BUILD_DATE >= 20000412
-	if( option_w.unk_18 == 1 ) Sys->disp_line = 7 ;
+	if( option_w.adjust_size == 1 ) Sys->disp_line = 7 ;
 #else
-	if( option_w.unk_18 ) Sys->disp_line = 7 ;
+	if( option_w.adjust_size ) Sys->disp_line = 7 ;
 #endif
 	if( Sys->home_mode == HOME_ARCADE ){
 		d_point_add( Sys->new_side != 3 ? 100 : 200 ) ;
@@ -144,7 +144,7 @@ static void game_start( void )
 	Sys->routine_3 = 0 ;
 	Sys->exit_flag = 0 ;
 	Sys->sel_done_flag = 1 ;
-	Sys->unk_50 = 0 ;
+	Sys->quit_flag = 0 ;
 	Sys->new_side_keep = Sys->new_side ;
 	Sys->stage_cnt = 0 ;
 	if( ( Sys->new_side | Sys->play_side ) != 3 ) Sys->stage_cnt = pl_work[Sys->new_side - 1].stage_cnt ;

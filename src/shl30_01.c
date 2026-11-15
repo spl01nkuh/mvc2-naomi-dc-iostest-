@@ -9,7 +9,7 @@
 /* the head's own work, in obj_mtx */
 typedef struct SHL30_01_LOCAL_W {
 	Sint16	rect[4];	/* 00: the size of a part, from shl30_01_circle: two offsets and two joins */
-	Sint16	unk_08;		/* 08 */
+	Sint16	timer;		/* 08: a count down: frames while it slows or drains, parts left to wind in (8.8) */
 	Sint16	unk_0a;		/* 0a */
 	Sint8	aim_dir;		/* 0c */
 	Sint8	turn_spd;		/* 0d */
@@ -24,10 +24,10 @@ typedef struct SHL30_01_LOCAL_W {
 	PLAYER_WORK	*hold_w;	/* 28: the opponent's effect */
 	Float	old_x;		/* 2c */
 	Sint16	drain_type;		/* 30 */
-	Sint8	unk_32;		/* 32 */
+	Sint8	atck_set;		/* 32: the player's atck_flag has been set for it */
 	Sint8	wind_turn;		/* 33 */
 	Sint8	move_flag;		/* 34 */
-	Sint8	unk_35;		/* 35 */
+	Sint8	join_flag;		/* 35: the record's join_flag */
 	Uint8	sp_type;		/* 36: the special move it belongs to */
 } SHL30_01_LOCAL_W;
 typedef struct SHL30_01_VEC2 {
@@ -113,7 +113,7 @@ typedef struct SHL30_01_DATA {
 	Sint8	no;		/* 00: negative for the end */
 	Uint8	dir;	/* 01 */
 	Uint8	unk_02;	/* 02 */
-	Sint8	unk_03;	/* 03 */
+	Sint8	join_flag;	/* 03: the coil starts from the part's join, not its middle */
 	Sint16	x;		/* 04 */
 	Sint16	y;		/* 06 */
 	Sint8	aim_dir;	/* 08 */
@@ -457,7 +457,7 @@ static void shl30_01_init( PLAYER_WORK *ew, SHL30_01_LOCAL_W *lw )
 	ew->dm_flag = 0 ;
 	ew->atck_no = shl30_01_atck_no[pl_w->atck_level] ;
 	HIT_RESET( ew ) ;
-	lw->unk_32 = 0 ;
+	lw->atck_set = 0 ;
 	no = ( ( ew->dir + 4 ) & 0xf8 ) / 8 ;
 	SHL30_01_CHAR_SET( ew, lw, no ) ;
 	lw->rest_cnt = 0 ;
@@ -609,12 +609,12 @@ static void shl30_01_head_slow( PLAYER_WORK *ew, SHL30_01_LOCAL_W *lw )
 	ew->pos.y = lw->start_y + ew->spd.y ;
 	ew->disp_flag = 1 ;
 	lw->move_flag = 1 ;
-	if( -- lw->unk_08 <= 0 ){
-		lw->unk_08 = 8 ;
+	if( -- lw->timer <= 0 ){
+		lw->timer = 8 ;
 		if( ( ew->acc.x *= 2.0f ) > 32.0f ){
 			pl_w->routine_2 = 3 ;
 			ew->routine_1 = 2 ;
-			lw->unk_08 = 0xe00 ;
+			lw->timer = 0xe00 ;
 			lw->unk_0a = ew->dir ;
 			lw->wind_turn = 0 ;
 		}
@@ -637,8 +637,8 @@ static void shl30_01_head_wind_set( PLAYER_WORK *ew, SHL30_01_LOCAL_W *lw )
 	scr_excep_clr() ;
 	pl_w->pl_stop_now = 0 ;
 	ew->routine_1 = 2 ;
-	HI_BYTE( lw->unk_08 ) = lw->part_cnt ;
-	LO_BYTE( lw->unk_08 ) = 0 ;
+	HI_BYTE( lw->timer ) = lw->part_cnt ;
+	LO_BYTE( lw->timer ) = 0 ;
 	lw->unk_0a = ew->dir ;
 	if( lw->hold_w ){
 		lw->hold_w->routine_0 = 2 ;
@@ -667,9 +667,9 @@ static void shl30_01_head_wind( PLAYER_WORK *ew, SHL30_01_LOCAL_W *lw )
 	head_lw = lw ;
 	pl_w = ew->master_w ;
 	flag = 0 ;
-	cnt = ( Uint8 )HI_BYTE( lw->unk_08 ) ;
-	lw->unk_08 -= 0x140 ;
-	if( ( Uint8 )HI_BYTE( lw->unk_08 ) != ( Uint8 )cnt ) flag = 1 ;
+	cnt = ( Uint8 )HI_BYTE( lw->timer ) ;
+	lw->timer -= 0x140 ;
+	if( ( Uint8 )HI_BYTE( lw->timer ) != ( Uint8 )cnt ) flag = 1 ;
 	if( ( Sint8 )cnt >= 0 ){
 		LO_BYTE( turn ) = lw->wind_turn ;
 		do {
@@ -709,7 +709,7 @@ static void shl30_01_head_wind( PLAYER_WORK *ew, SHL30_01_LOCAL_W *lw )
 		tail_w->pos.x = head_lw->start_x ;
 		tail_w->pos.y = head_lw->start_y ;
 		tail_w->disp_flag = 1 ;
-		if( ( Uint8 )HI_BYTE( head_lw->unk_08 ) > 0 ){
+		if( ( Uint8 )HI_BYTE( head_lw->timer ) > 0 ){
 			shl30_01_follow( tail_w, head_w ) ;
 			return ;
 		}
@@ -970,8 +970,8 @@ static void shl30_01_chase_1( PLAYER_WORK *ew, SHL30_01_LOCAL_W *lw )
 	em_w->atck_no = shl30_01_hold_no[( ( PL30_LOCAL_W * )pl_w->tlocal )->level / 2] ;
 	scr_excep_set( pl_w, 13, 6 ) ;
 	head_w->routine_1 = 2 ;
-	HI_BYTE( head_lw->unk_08 ) = head_lw->part_cnt ;
-	LO_BYTE( head_lw->unk_08 ) = 0 ;
+	HI_BYTE( head_lw->timer ) = head_lw->part_cnt ;
+	LO_BYTE( head_lw->timer ) = 0 ;
 	head_lw->unk_0a = ew->dir ;
 	head_lw->wind_turn = 0 ;
 	if( head_lw->hold_w ){
@@ -1073,7 +1073,7 @@ aim :	/* nothing jumps here */
 		if( !i ){
 			v.x = wlw->start_x ;
 			v.y = wlw->start_y ;
-			if( head_lw->unk_35 ){
+			if( head_lw->join_flag ){
 				v.x -= wlw->rect[2] ;
 				v.y = v.y + wlw->rect[3] ;
 			}
@@ -1133,8 +1133,8 @@ aim :	/* nothing jumps here */
 		em_w->atck_no = shl30_01_hold_no[( ( PL30_LOCAL_W * )pl_w->tlocal )->level / 2] ;
 		scr_excep_set( pl_w, 13, 6 ) ;
 		head_w->routine_1 = 2 ;
-		HI_BYTE( head_lw->unk_08 ) = head_lw->part_cnt ;
-		LO_BYTE( head_lw->unk_08 ) = 0 ;
+		HI_BYTE( head_lw->timer ) = head_lw->part_cnt ;
+		LO_BYTE( head_lw->timer ) = 0 ;
 		head_lw->unk_0a = ew->dir ;
 		head_lw->wind_turn = 0 ;
 		if( head_lw->hold_w ){
@@ -1286,8 +1286,8 @@ steer_b :
 	em_w->atck_no = pl30_at_coil_slam ;
 	scr_excep_set( pl_w, 13, 6 ) ;
 	head_w->routine_1 = 2 ;
-	HI_BYTE( head_lw->unk_08 ) = head_lw->part_cnt ;
-	LO_BYTE( head_lw->unk_08 ) = 0 ;
+	HI_BYTE( head_lw->timer ) = head_lw->part_cnt ;
+	LO_BYTE( head_lw->timer ) = 0 ;
 	head_lw->unk_0a = ew->dir ;
 	head_lw->wind_turn = 0 ;
 	if( head_lw->hold_w ){
@@ -1333,7 +1333,7 @@ static void shl30_01_head_drain_set( PLAYER_WORK *ew, SHL30_01_LOCAL_W *lw )
 	em_w = pl_w->catch_w ;
 	em_w->catch_cnt += 2 ;
 	ew->routine_1 = 5 ;
-	lw->unk_08 = 0 ;
+	lw->timer = 0 ;
 	ew->timer0 = 60 ;
 	hold_renda_set( em_w, 24 ) ;
 	catch_renda_set( pl_w, 6 ) ;
@@ -1345,7 +1345,7 @@ static void shl30_01_head_drain_set( PLAYER_WORK *ew, SHL30_01_LOCAL_W *lw )
 	for( i = 0 ; i <= lw->part_cnt ; i ++ ){
 		if( ( wlw->unk_0a = k ) ){
 			if( !( k & 1 ) ){
-				if( ( sw = shl30_02_drain_set( w, ew, &lw->unk_08 ) ) ){
+				if( ( sw = shl30_02_drain_set( w, ew, &lw->timer ) ) ){
 					sw->timer0 = 2 ;
 					sw->timer1 = lw->part_cnt - i ;
 					sw->sub_type = lw->drain_type ;
@@ -1409,10 +1409,10 @@ static void shl30_01_head_drain( PLAYER_WORK *ew, SHL30_01_LOCAL_W *lw )
 		return ;
 	}
 	if( catch_renda_ck( pl_w ) ) shl30_01_dm( ew, lw, pl_w ) ;
-	if( -- lw->unk_08 <= 0 ){
-		lw->unk_08 = 2 ;
+	if( -- lw->timer <= 0 ){
+		lw->timer = 2 ;
 		if( !( lw->unk_0a & 1 ) ){
-			if( ( sw = shl30_02_drain_set( ew, ew, &lw->unk_08 ) ) ){
+			if( ( sw = shl30_02_drain_set( ew, ew, &lw->timer ) ) ){
 				sw->sub_type = lw->drain_type ;
 				sw->timer0 = lw->unk_0a / 2 ;
 				sw->timer1 = lw->part_cnt ;
@@ -1501,8 +1501,8 @@ static void shl30_01_part_move( PLAYER_WORK *ew, SHL30_01_LOCAL_W *lw )
 	hlw->part_cnt ++ ;
 	if( !hew->routine_1 && hlw->rest_cnt < 4 ){
 		hew->routine_1 = 1 ;
-		hlw->unk_08 = 0xa00 ;		/* overwritten at once */
-		hlw->unk_08 = 0 ;
+		hlw->timer = 0xa00 ;		/* overwritten at once */
+		hlw->timer = 0 ;
 		hew->acc.x = 4.0f ;
 	}
 next :
@@ -1510,8 +1510,8 @@ next :
 		if( hew->routine_1 <= 1 ){
 			hew->cg_atck_flag = CG_ATCK_ON ;
 			hit_work_set( hew ) ;
-			if( !hlw->unk_32 ){
-				hlw->unk_32 = 1 ;
+			if( !hlw->atck_set ){
+				hlw->atck_set = 1 ;
 				pl_w->atck_flag = -128 ;
 			}
 		}
@@ -1611,7 +1611,7 @@ static void shl30_01_pos( PLAYER_WORK *ew, SHL30_01_LOCAL_W *lw, SHL30_01_DATA *
 	v[1] = lw->start_y = pl_w->pos.y + lw->ofs_y ;
 	no = ( ( dir + 4 ) & 0xf8 ) / 8 ;
 	SHL30_01_CHAR_SET( ew, lw, no ) ;
-	if( dat->unk_03 ){
+	if( dat->join_flag ){
 		v[0] = v[0] - lw->rect[2] ;
 		v[1] += lw->rect[3] ;
 	}
@@ -1638,7 +1638,7 @@ static void shl30_01_dat_set( PLAYER_WORK *ew, SHL30_01_LOCAL_W *lw, SHL30_01_DA
 	v[0] = DOT_X( dat->x ) ;
 	v[1] = dat->y * DOT_Y( 1.0f ) ;
 	lw->unk_0a = dat->no ;
-	lw->unk_35 = dat->unk_03 ;
+	lw->join_flag = dat->join_flag ;
 	cur = dat->aim_dir ;
 	step = dat->aim_step ;
 	accel = dat->aim_acc ;

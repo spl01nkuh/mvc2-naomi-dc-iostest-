@@ -11,6 +11,7 @@ struct VIn {
     float4 offs : TEXCOORD4;    /* r g b over w, and the triangle's place in its list */
     float4 ab : TEXCOORD5;      /* the corners a and b, for the exact edges */
     float4 cf : TEXCOORD6;      /* c, and the edges' flags (see inside) */
+    float4 uvb : TEXCOORD7;     /* a sprite's u and v, from and to */
 };
 
 struct VOut {
@@ -22,6 +23,7 @@ struct VOut {
     nointerpolation float order : TEXCOORD4;
     nointerpolation float4 ab : TEXCOORD5;
     nointerpolation float4 cf : TEXCOORD6;
+    nointerpolation float4 uvb : TEXCOORD7;
 };
 
 VOut vs_main(VIn v) {
@@ -34,6 +36,7 @@ VOut vs_main(VIn v) {
     o.order = v.offs.w;
     o.ab = v.ab;
     o.cf = v.cf;
+    o.uvb = v.uvb;
     return o;
 }
 
@@ -74,7 +77,8 @@ cbuffer Frame : register(b1, space3) {
     float4 fog_color;   /* a r g b, 0 to 255 */
     float fog_density;
     uint zero;          /* 0, for hold() */
-    float2 pad2;
+    float inv_scale;    /* the game's pixels a pixel drawn */
+    int sprite_mode;    /* drawn larger, a flat triangle's texture: 0 as the game has it, 1 sharp, 2 the nearest texel */
 };
 
 #define F_TEX 1
@@ -114,13 +118,39 @@ int4 texel(int x, int y, int k) {
     return int4(t.a * 255.0 + 0.5, t.r * 255.0 + 0.5, t.g * 255.0 + 0.5, t.b * 255.0 + 0.5);
 }
 
-int4 sample_tex(int k, float u, float v) {
+/* smode 1: bilinear only across a texel's edges, fw the texels a pixel at level 0; 2: the nearest texel. Either
+   reads only the sprite's own texels, between uvb's corners */
+int4 sample_tex(int k, float u, float v, int smode, float2 fw, float4 uvb) {
     uint uvm = flags / F_UV & 15;
     bool cv = (uvm & 1) != 0, cu = (uvm & 2) != 0, fv = (uvm & 4) != 0, fu = (uvm & 8) != 0;
     int w = max((uint)width >> k, 1), h = max((uint)height >> k, 1);
     float su = u * w, sv = v * h;
+    bool bilinear = (flags & F_BILINEAR) != 0;
     int4 c;
-    if (!(flags & F_BILINEAR)) {
+    if (smode == 2) {
+        bilinear = false;
+    } else if (smode == 1) {
+        float2 f = fw * exp2(-(float)k);
+        if (max(f.x, f.y) < 1.0) {
+            /* the blend's width in texels: a pixel's, or for a texture the game magnifies and filters, up to a
+               texel (its own bilinear) from 1.25 to 2 game pixels a texel */
+            float2 wide = f;
+            if (bilinear) {
+                float2 m = inv_scale / max(f, 1.0e-6);
+                wide = lerp(f, 1.0, saturate((m - 1.25) / 0.75));
+            }
+            float2 s = float2(su, sv), seam = floor(s + 0.5);
+            s = seam + clamp((s - seam) / max(wide, 1.0e-4), -0.5, 0.5);
+            su = s.x, sv = s.y;
+            bilinear = true;
+        }
+    }
+    if (smode != 0) {
+        float2 lo = uvb.xy * float2(w, h) + 0.5, hi = uvb.zw * float2(w, h) - 0.5;
+        float2 s = clamp(float2(su, sv), min(lo, hi), max(lo, hi));
+        su = s.x, sv = s.y;
+    }
+    if (!bilinear) {
         c = texel(wrap((int)floor(su), w, cu, fu), wrap((int)floor(sv), h, cv, fv), k);
     } else {
         int x = (int)floor(su - 0.5), y = (int)floor(sv - 0.5);
@@ -225,18 +255,18 @@ float edge_sign(float2 a, float2 b, float px, float py) {
     return r;
 }
 
-/* rd_soft.c's inside(); cf.z: bits 0-2 own b-c, c-a and a-b, bit 3 area > 0, bit 4 every pixel */
-bool inside(int2 p, float4 ab, float4 cf) {
+/* rd_soft.c's inside() at the game's point at; cf.z: bits 0-2 own b-c, c-a and a-b, bit 3 area > 0, bit 4 every pixel */
+bool inside(float2 at, float4 ab, float4 cf) {
     uint f = (uint)cf.z;
-    float px = (float)p.x + 0.5, py = (float)p.y + 0.5, s = f & 8 ? 1.0 : -1.0;
+    float px = at.x, py = at.y, s = f & 8 ? 1.0 : -1.0;
     float e0 = edge_sign(ab.zw, cf.xy, px, py) * s, e1 = edge_sign(cf.xy, ab.xy, px, py) * s;
     float e2 = edge_sign(ab.xy, ab.zw, px, py) * s;
     return (f & 16) != 0 || !(e0 < 0 || e1 < 0 || e2 < 0 || (e0 == 0 && !(f & 1)) || (e1 == 0 && !(f & 2)) ||
                               (e2 == 0 && !(f & 4)));
 }
-#define INSIDE(p, i) inside(p, i.ab, i.cf)
+#define INSIDE(at, i) inside(at, i.ab, i.cf)
 #else
-#define INSIDE(p, i) true
+#define INSIDE(at, i) true
 #endif
 
 /* the fragment's key (1/w, place) is past the last layer's */
@@ -247,6 +277,7 @@ bool past_last(float q, float order, int2 p) {
 
 float4 ps_main(VOut i) : SV_Target0 {
     int2 p = int2(i.pos.xy);
+    float2 at = i.pos.xy * inv_scale;   /* the pixel's centre in the game's pixels */
     float z = i.q;
     /* the helper pixels carry the steps past the edges */
     float2 uvz_x = ddx_fine(i.uv), uvz_y = ddy_fine(i.uv);
@@ -259,7 +290,7 @@ float4 ps_main(VOut i) : SV_Target0 {
         if (!past_last(z, i.order, p)) {
             discard;
         }
-        [branch] if (!INSIDE(p, i)) {
+        [branch] if (!INSIDE(at, i)) {
             discard;
         }
         return float4(z, 0, 0, 0);
@@ -268,7 +299,7 @@ float4 ps_main(VOut i) : SV_Target0 {
         if (!past_last(z, i.order, p) || z != min_q.Load(int3(p, 0))) {
             discard;
         }
-        [branch] if (!INSIDE(p, i)) {
+        [branch] if (!INSIDE(at, i)) {
             discard;
         }
         return float4(i.order, 0, 0, 0);
@@ -276,7 +307,7 @@ float4 ps_main(VOut i) : SV_Target0 {
     if (mode == 3 && (z != min_q.Load(int3(p, 0)) || i.order != min_o.Load(int3(p, 0)))) {
         discard;
     }
-    [branch] if (!INSIDE(p, i)) {
+    [branch] if (!INSIDE(at, i)) {
         discard;
     }
     float rz = 1.0 / z;
@@ -289,12 +320,17 @@ float4 ps_main(VOut i) : SV_Target0 {
     int4 c = base;
     if (flags & F_TEX) {
         int k = 0;
+        /* cf.w: a flat triangle, a sprite */
+        int smode = i.cf.w != 0 ? sprite_mode : 0;
+        float2 uv = float2(u, v), fw = 0;
         if (levels > 0) {
             /* as rd_soft.c takes the steps */
-            float2 uv = float2(u, v);
             k = mip_level((uvz_x - uv * z_x) * rz, (uvz_y - uv * z_y) * rz);
         }
-        int4 t = sample_tex(k, u, v);
+        if (smode == 1) {
+            fw = (abs((uvz_x - uv * z_x) * rz) + abs((uvz_y - uv * z_y) * rz)) * float2(width, height);
+        }
+        int4 t = sample_tex(k, u, v, smode, fw, i.uvb);
         if (!(flags & F_TEX_ALPHA)) {
             t.x = 255;
         }

@@ -11,6 +11,7 @@
 #include "host_matrix.h"
 #include "host_memory.h"
 #include "model_store.h"
+#include "rd_list.h"
 
 extern MVC2HostMatrix* nlInitMatrix(MVC2HostMatrix* stack, int count);
 extern void nlMatrixMode(int mode);
@@ -57,6 +58,11 @@ static MVC2NativeModel* fixture(void) {
     word(bytes + MESH + 4, (uint32_t)RD_ALWAYS << 29);
     word(bytes + MESH + 8, (uint32_t)RD_ONE << 29 | (uint32_t)RD_FOG_NONE << 22);
     word(bytes + MESH + 12, (uint32_t)RD_RGB565 << 27);
+    /* Upstream 0.2.1 tests the serialized sphere before emitting a group.
+     * This sphere encloses the triangle at z=-2, rather than the old fixture's
+     * zero-radius sphere at the camera origin. */
+    scalar(bytes + MESH + 24, -2, 0);
+    scalar(bytes + MESH + 28, 1, 0);
     bytes[MESH + 36] = 0xff; /* unlit */
     for (unsigned i = 0; i < 4; ++i) scalar(bytes + MESH + 44 + i * 4, 1, 0);
     word(bytes + MESH + 76, 104);
@@ -159,6 +165,13 @@ static void render(MVC2HostObjectFile* model, uint32_t* frame, const char* threa
     rd_begin_frame();
     rd_background(0xff112233);
     nlObjPut(object);
+    assert(rd_frame->ntris[RD_OPAQUE] == 1);
+    /* The same bounds translated out of view must be culled before the
+     * software renderer receives another triangle. */
+    nlTranslate(10000, 0, 0);
+    nlObjPut(object);
+    assert(rd_frame->ntris[RD_OPAQUE] == 1);
+    nlTranslate(-10000, 0, 0);
     quad(110, 1, 0xffff0000, 0);
     quad(100, 2, 0xff00ff00, 0);
     quad(90, 3, 0x800000ff, 1);

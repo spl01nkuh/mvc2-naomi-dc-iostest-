@@ -1,10 +1,12 @@
-name: iOS development IPA
+name: iOS native gameplay IPA
 on:
   push:
-    branches: [native-ios-port]
+    branches: [native-ios-gameplay]
     paths:
       - ports/port/ios/**
-      - ports/port/include/naomi_input.h
+      - ports/port/**
+      - include/**
+      - src/**
       - .github/workflows/ios-development-ipa.yml
   workflow_dispatch:
 permissions:
@@ -12,12 +14,12 @@ permissions:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Build device development IPA
+      - name: Build device native gameplay IPA
         env:
           MVC2_DEV_BUILD_NUMBER: ${{ github.run_number }}
         run: bash ports/port/ios/build-development-ipa.sh device
@@ -25,9 +27,9 @@ jobs:
         run: bash ports/port/ios/build-development-ipa.sh simulator
       - name: Verify IPA structure and native components
         run: |
-          python3 ports/port/ios/verify-development-ipa.py build/ios-development-device/MVC2-Development-unsigned.ipa
+          python3 ports/port/ios/verify-development-ipa.py build/ios-development-device/MVC2-Gameplay-unsigned.ipa
           xcrun vtool -show-build build/ios-development-device/Release-iphoneos/MVC2Development.app/MVC2Development
-      - name: Launch simulator development app
+      - name: Launch simulator gameplay host
         run: |
           device_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for group in d["devices"].values() for v in group if v["name"].startswith("iPhone")))')"
           xcrun simctl bootstatus "$device_id" -b
@@ -37,13 +39,13 @@ jobs:
           xcrun simctl io "$device_id" screenshot build/ios-development-simulator/launch.png
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: MVC2-Development-unsigned
+          name: MVC2-Gameplay-unsigned
           path: |
-            build/ios-development-device/MVC2-Development-unsigned.ipa
+            build/ios-development-device/MVC2-Gameplay-unsigned.ipa
             build/ios-development-device/SHA256.txt
           if-no-files-found: error
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: MVC2-Development-simulator-launch
+          name: MVC2-Gameplay-simulator-launch
           path: build/ios-development-simulator/launch.png
           if-no-files-found: error

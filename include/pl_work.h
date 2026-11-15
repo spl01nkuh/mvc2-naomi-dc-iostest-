@@ -103,7 +103,7 @@ typedef struct PLAYER_WORK {
 	Uint16	char_ofs;	/* 132: where the animation groups' table is in char_adrs */
 	Sint16	disp_ofs_x;	/* 134: the centre the sprite turns about, across, from its position (rot_ofs_x or the frame's SPR_PRM) */
 	Sint16	disp_ofs_y;	/* 136: the same, up and down */
-	struct PLAYER_WORK *unk_138;	/* 138: ef12.c keeps the side's first player here */
+	struct PLAYER_WORK *team_top_w;	/* 138: in a front word (ef12.c), its side's first player */
 	Uint8	size_top;	/* 13c: the body's height above its position (dots, scaled by scale.y) */
 	Uint8	size_bottom;		/* 13d: the body's reach below its position, as the screen edge checks read it */
 	Uint8	size_front;	/* 13e: the body's width in front of it (dots, scaled by scale.x) */
@@ -236,7 +236,7 @@ typedef struct PLAYER_WORK {
 	Float	back_spd_y;		/* 21c: and its y speed */
 	Float	blow_spd;		/* 220: the knock-back's speed */
 	Float	blow_acc;		/* 224: and its change */
-	Uint8	unk_228;	/* 228: set with dm_elem by a hit of an element (3, 5) and cleared each frame; never read */
+	Uint8	dm_elem_now;	/* 228: the element of a hit taken this frame, set with dm_elem by the hits that set it themselves (3, 5); cleared each frame, never read */
 	Sint8	elem_ef_cnt;	/* 229: element effects out on the player (dm00_0x, pls28_00), at most 4 */
 	Uint8	dm_elem;	/* 22a: the element of the last hit this player took, 1 to 5 */
 	Uint8	dm_elem_old;	/* 22b: dm_elem before the last hit or throw cleared it */

@@ -318,7 +318,7 @@ int pls0c_02_spin( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 			w->acc.y = ew->acc.y + w->spd.y ;
 			if( w->acc.y < 0.0f ) w->acc.y += 256.0f ;
 			if( w->acc.y >= 256.0f ) w->acc.y -= 256.0f ;
-			w->dir = ( pl_w->dir + ( ( ( Uint8 )w->acc.y + 4 ) >> 3 ) ) & 31 ;
+			w->dir = ( pl_w->dir + ( ( ( Uint8 )( int )w->acc.y + 4 ) >> 3 ) ) & 31 ;
 			ew = w ;
 		}
 	}

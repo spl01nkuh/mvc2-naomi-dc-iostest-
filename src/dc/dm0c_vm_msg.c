@@ -86,7 +86,7 @@ void vm_msg_init( PLAYER_WORK *w )
 		if( w->timer0 == 0x100 ) break ;
 		pos += 4 ;
 	case 0x200 :
-		vm_msg_num_set( w, vm->n_point, 4, 2, pos ) ;
+		vm_msg_num_set( w, vm->v_point, 4, 2, pos ) ;
 		break ;
 	case 0x400 :
 	case 0x500 :

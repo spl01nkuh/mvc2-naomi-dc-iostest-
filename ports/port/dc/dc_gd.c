@@ -1,6 +1,9 @@
 /*
  * dc_gd.c  The Dreamcast's disc (Shinobi's gdFs) over a folder of its files, read at once in whole 2048-byte
- * sectors; a request is complete when gdFsGetStat next looks, and the drive's door never opens.
+ * sectors; a request is complete when gdFsGetStat next looks, and the drive's door never opens. On the 3DS with
+ * MVC2_GD_ASYNC=1, gdFsReqRd32's reads are done on another thread, and complete after as many frames as a drive
+ * would take (MVC2_GD_SEEK, GD_RATE), waited for then if need be: the same frames on every run, whatever the SD card
+ * does. With MVC2_GD_AHEAD=1 too, a ...POL.BIN file so read has its ...TEX.BIN read ahead, for the game's gdFsRead.
  */
 
 #include <stdio.h>
@@ -9,6 +12,7 @@
 #include <sys/stat.h>
 
 #include "naomi_host.h"
+#include "prof.h"
 #include "shinobi.h"
 
 #define GD_MAX_OPEN 16
@@ -19,6 +23,9 @@ struct GDS_FS_HANDLE {
     Sint32 size;
     long pos;           /* where the next sector is read from */
     Sint32 stat;
+#ifdef __3DS__
+    char name[32];
+#endif
 };
 
 static char root[1024];
@@ -53,19 +60,325 @@ int dc_gd_open(const char* disc_path) {
     return 1;
 }
 
+#ifdef __3DS__
+#include <3ds.h>
+
+/* MVC2_GD_NOBUF=1: the files read without stdio's buffer, each read one call to the SD card's service */
+static int no_buf = -1;
+static int trace = -1;
+
+static uint64_t read_begin(void) {
+    return svcGetSystemTick();
+}
+
+/* with MVC2_TRACE_GD: a read's time */
+static void read_end(const char* what, uint64_t t0, size_t bytes) {
+    if (trace) {
+        host_log("gd %s %u KB in %.1f ms (frame %u)", what, (unsigned)(bytes >> 10),
+                 (double)(svcGetSystemTick() - t0) * 1000.0 / SYSCLOCK_ARM11, host_frame());
+    }
+}
+
+/* MVC2_GD_ASYNC=1: gdFsReqRd32's reads done on ctr_stream.c's reader, the handle READ for the frames a drive of
+   GD_RATE bytes a second would take, so that the game's loader (am_load.c) keeps its frames going as a file is read */
+#define GD_RATE (4u << 20)
+static unsigned gd_seek;    /* frames before a read's first byte, MVC2_GD_SEEK (5) */
+static int async_on = -1;
+static GDFS async_gd;       /* the handle whose read is on the reader */
+static unsigned async_due;  /* the game's frame it is complete in */
+static int async_job;       /* 0: taken from the read-ahead at once */
+
+static int gd_async(void) {
+    if (async_on < 0) {
+        const char* e = getenv("MVC2_GD_SEEK");
+        async_on = getenv("MVC2_GD_ASYNC") != NULL && atoi(getenv("MVC2_GD_ASYNC")) != 0;
+        gd_seek = e != NULL && atoi(e) >= 0 ? (unsigned)atoi(e) : 5;
+        if (async_on) {
+            host_log("gd: the game's requested reads done on another thread (MVC2_GD_ASYNC), a read's first byte "
+                     "%u frames after it is asked for (MVC2_GD_SEEK), the rest at %u KB a second", gd_seek, GD_RATE >> 10);
+        }
+    }
+    return async_on;
+}
+
+static void ahead_after(const char* name);
+static void next_after(const char* name, int sync);
+
+/* the reader's read finished, waited for if need be */
+static void async_end(void) {
+    PROF_START(t0);
+    float ms = 0.0f;
+    int waited = async_job && ctr_read_busy();
+    size_t got = async_job ? ctr_read_end(&ms) : 0;
+    host_fills++;
+    async_gd->stat = GDD_STAT_COMPLETE;
+    if (trace) {
+        if (async_job) {
+            host_log("gd read %u KB in %.1f ms on the reader (frame %u%s)", (unsigned)(got >> 10), (double)ms,
+                     host_frame(), waited ? ", waited for" : "");
+        }
+    }
+    ahead_after(async_gd->name);
+    next_after(async_gd->name, 0);
+    async_gd = NULL;
+    PROF_STOP(PZ_GD_READ, t0);
+}
+
+#define async_wait(gd) ((gd) == async_gd && (gd) != NULL ? async_end() : (void)0)
+
+/* MVC2_GD_AHEAD=1: the files opened lately, and the texture file read ahead after its models' */
+#define AHEAD_MOST 0x1A0000
+static int ahead_on = -1;
+static char opened[16][32];
+static unsigned opened_n;
+
+static int gd_ahead(void) {
+    if (ahead_on < 0) {
+        ahead_on = getenv("MVC2_GD_AHEAD") != NULL && atoi(getenv("MVC2_GD_AHEAD")) != 0;
+        if (ahead_on) {
+            host_log("gd: a models file's textures read ahead (MVC2_GD_AHEAD)");
+        }
+    }
+    return ahead_on;
+}
+
+static void ahead_after(const char* name) {
+    size_t n = strlen(name);
+    char tex[32];
+    unsigned i;
+    if (!gd_ahead() || n < 7 || n >= sizeof tex || strcmp(name + n - 7, "POL.BIN") != 0) {
+        return;
+    }
+    memcpy(tex, name, n - 7);
+    strcpy(tex + n - 7, "TEX.BIN");
+    for (i = 0; i < 16; i++) {
+        if (strcmp(opened[i], tex) == 0) {
+            return;                     /* read lately already */
+        }
+    }
+    if (ctr_ahead_start(dc_gd_path(tex), AHEAD_MOST) && trace) {
+        host_log("gd %s read ahead (frame %u)", tex, host_frame());
+    }
+}
+
+/* MVC2_GD_NEXT=1: the textures the menus read whole with gdFsRead, in the frame they are wanted, read ahead after
+   the file the game reads before them, when that one came from the reader or the read-ahead (there is time then)
+   and nothing else is read ahead: the main menu's after the title's sounds, the mode select's after the main menu's.
+   And the main menu's again once the opening's music is read, in place of anything read ahead: the title follows */
+static const struct {
+    const char *after, *next;
+    int first;          /* in place of what is read ahead, after a read here too */
+} next_files[] = {
+    { "SE_SYUK.BIN", "DM07TEX.BIN", 0 }, { "DM07TEX.BIN", "DM0CTEX.BIN", 0 }, { "ADX_OPEN.BIN", "DM07TEX.BIN", 1 },
+};
+static int next_on = -1;
+
+/* after name is read: on the reader or from the read-ahead, else here (sync) */
+static void next_after(const char* name, int sync) {
+    unsigned i;
+    if (next_on < 0) {
+        next_on = gd_ahead() && getenv("MVC2_GD_NEXT") != NULL && atoi(getenv("MVC2_GD_NEXT")) != 0;
+        if (next_on) {
+            host_log("gd: the menus' textures read ahead after the files before them (MVC2_GD_NEXT)");
+        }
+    }
+    if (!next_on) {
+        return;
+    }
+    for (i = 0; i < sizeof next_files / sizeof next_files[0]; i++) {
+        if (strcmp(name, next_files[i].after) != 0 || (sync && !next_files[i].first) ||
+            (!next_files[i].first && !ctr_ahead_idle()) || ctr_ahead_has(dc_gd_path(next_files[i].next))) {
+            continue;
+        }
+        if (ctr_ahead_start(dc_gd_path(next_files[i].next), AHEAD_MOST) && trace) {
+            host_log("gd %s read ahead after %s (frame %u)", next_files[i].next, name, host_frame());
+        }
+    }
+}
+
+/* the file's sectors from the read-ahead, if they are there (and read already, when done) */
+static int ahead_take(GDFS gd, Sint32 nsct, void* buf, int done) {
+    size_t want = (size_t)nsct * GDD_SCT_SIZE;
+    float ms;
+    uint64_t t0;
+    if (ahead_on <= 0 || ctr_ahead_has(dc_gd_path(gd->name)) < 1 + done) {
+        return 0;
+    }
+    t0 = svcGetSystemTick();
+    if (!ctr_ahead_take((size_t)gd->pos, buf, want, &ms)) {
+        PROF_ADD(PZ_GD_READ, svcGetSystemTick() - t0);
+        return 0;
+    }
+    host_fills++;
+    gd->pos += (long)want;
+    gd->stat = GDD_STAT_COMPLETE;
+    if (trace) {
+        host_log("gd %u KB taken from the read-ahead (read in %.1f ms), %.1f ms here (frame %u)",
+                 (unsigned)(want >> 10), (double)ms, (double)(svcGetSystemTick() - t0) * 1000.0 / SYSCLOCK_ARM11,
+                 host_frame());
+    }
+    next_after(gd->name, 0);
+    PROF_ADD(PZ_GD_READ, svcGetSystemTick() - t0);
+    return 1;
+}
+
+/* MVC2_GD_KEEP=1: the files the game closes kept open, the last KEEP_MOST, for when it opens one again; the one
+   pushed out closed on the reader. A file read ahead is opened as the reader left it */
+#define KEEP_MOST 8
+static int keep_on = -1;
+static struct {
+    char name[32];
+    FILE* f;
+    Sint32 size;
+    unsigned used;
+} kept[KEEP_MOST];
+static unsigned keep_clock, keep_hits, keep_opens;
+
+static FILE* keep_take(const char* name, Sint32* size) {
+    unsigned i;
+    if (keep_on < 0) {
+        keep_on = getenv("MVC2_GD_KEEP") != NULL && atoi(getenv("MVC2_GD_KEEP")) != 0;
+        if (keep_on) {
+            host_log("gd: the last %d files closed kept open for the game's next opens (MVC2_GD_KEEP)", KEEP_MOST);
+        }
+    }
+    if (!keep_on) {
+        return NULL;
+    }
+    keep_opens++;
+    for (i = 0; i < KEEP_MOST; i++) {
+        if (kept[i].f != NULL && strcmp(kept[i].name, name) == 0) {
+            FILE* f = kept[i].f;
+            kept[i].f = NULL;
+            *size = kept[i].size;
+            keep_hits++;
+            if (trace) {
+                host_log("gd %s open still (%u of %u opens so)", name, keep_hits, keep_opens);
+            }
+            return f;
+        }
+    }
+    return NULL;
+}
+
+/* 1 when gd's file is kept */
+static int keep_put(GDFS gd) {
+    unsigned i, at = 0;
+    if (keep_on <= 0) {
+        return 0;
+    }
+    for (i = 0; i < KEEP_MOST; i++) {
+        if (kept[i].f == NULL) {
+            at = i;
+            break;
+        }
+        if (kept[i].used < kept[at].used) {
+            at = i;
+        }
+    }
+    if (kept[at].f != NULL) {
+        ctr_close_later(kept[at].f);
+    }
+    snprintf(kept[at].name, sizeof kept[at].name, "%s", gd->name);
+    kept[at].f = gd->f;
+    kept[at].size = gd->size;
+    kept[at].used = ++keep_clock;
+    return 1;
+}
+
+/* MVC2_GD_PROGS=1: the six players' programs (S_PLxxA to S_PLxxF), read at once as a fight begins, opened and read on
+   the reader once their names are known: the players' voices (PLxx_VOI) come just before, the six in the players'
+   order when no character is there twice */
+static int progs_on = -1;
+static char voices[6][3];
+static unsigned nvoices;
+
+static void progs_after_open(const char* name) {
+    unsigned k;
+    if (progs_on < 0) {
+        progs_on = getenv("MVC2_GD_PROGS") != NULL && atoi(getenv("MVC2_GD_PROGS")) != 0;
+        if (progs_on) {
+            host_log("gd: the players' programs read ahead once their voices are read (MVC2_GD_PROGS)");
+        }
+    }
+    if (!progs_on) {
+        return;
+    }
+    if (strncmp(name, "PL", 2) != 0 || strlen(name) != 12 || strcmp(name + 4, "_VOI.BIN") != 0) {
+        nvoices = 0;
+        return;
+    }
+    if (nvoices == 0) {
+        ctr_small_drop();
+    }
+    if (nvoices < 6) {
+        memcpy(voices[nvoices], name + 2, 2);
+        voices[nvoices++][2] = 0;
+    }
+    if (nvoices == 6) {
+        for (k = 0; k < 6; k++) {
+            char prog[32];
+            snprintf(prog, sizeof prog, "S_PL%s%c.BIN", voices[k], (char)('A' + k));
+            if (ctr_small_start(dc_gd_path(prog), 64 << 10) && trace) {
+                host_log("gd %s read ahead (frame %u)", prog, host_frame());
+            }
+        }
+        nvoices = 0;
+    }
+}
+
+static void keep_close_all(void) {
+    unsigned i;
+    for (i = 0; i < KEEP_MOST; i++) {
+        if (kept[i].f != NULL) {
+            fclose(kept[i].f);
+            kept[i].f = NULL;
+        }
+    }
+}
+#else
+#define read_begin() 0
+#define read_end(what, t0, bytes) ((void)(t0))
+#define async_wait(gd) ((void)0)
+#endif
+
 static FILE* open_file(const char* name) {
     char path[1200];
+    FILE* f;
     snprintf(path, sizeof path, "%s/%s", root, name);
-    return fopen(path, "rb");
+    f = fopen(path, "rb");
+#ifdef __3DS__
+    if (no_buf < 0) {
+        no_buf = getenv("MVC2_GD_NOBUF") != NULL && atoi(getenv("MVC2_GD_NOBUF")) != 0;
+        trace = getenv("MVC2_TRACE_GD") != NULL;
+        if (no_buf) {
+            host_log("gd: the files read without stdio's buffer (MVC2_GD_NOBUF)");
+        }
+    }
+    if (f != NULL && no_buf) {
+        setvbuf(f, NULL, _IONBF, 0);
+    }
+#endif
+    return f;
 }
+
+#ifdef __3DS__
+const char* dc_gd_path(const char* name) {
+    static char path[1200];
+    snprintf(path, sizeof path, "%s/%s", root, name);
+    return path;
+}
+#endif
 
 long dc_gd_read_file(const char* name, void* buf, long max) {
     FILE* f = open_file(name);
+    uint64_t t0 = read_begin();
     long n;
     if (f == NULL) {
         return -1;
     }
     n = (long)fread(buf, 1, (size_t)max, f);
+    read_end(name, t0, (size_t)n);
     fclose(f);
     return n;
 }
@@ -80,6 +393,12 @@ Sint32 gdFsInit(Sint32 max_open, void* work, Sint32 max_dirent, void* dirbuf) {
 
 void gdFsFinish(void) {
     int i;
+    async_wait(async_gd);
+#ifdef __3DS__
+    ctr_ahead_drop(1);
+    ctr_small_drop();
+    keep_close_all();
+#endif
     for (i = 0; i < GD_MAX_OPEN; i++) {
         if (files[i].f != NULL) {
             fclose(files[i].f);
@@ -94,13 +413,31 @@ GDFS gdFsOpen(const char* fname, void* dirrec) {
     for (i = 0; i < GD_MAX_OPEN; i++) {
         if (files[i].f == NULL) {
             GDFS gd = &files[i];
+#ifdef __3DS__
+            PROF_START(t0);
+            long n = 0;
+            if ((gd->f = ctr_small_open(dc_gd_path(fname), &n)) != NULL ||
+                (keep_on > 0 && (gd->f = ctr_ahead_file(dc_gd_path(fname), &n)) != NULL)) {
+                gd->size = (Sint32)n;
+            } else if ((gd->f = keep_take(fname, &gd->size)) == NULL && (gd->f = open_file(fname)) != NULL) {
+                fseek(gd->f, 0, SEEK_END);
+                gd->size = (Sint32)ftell(gd->f);
+            }
+            PROF_STOP(PZ_GD_OPEN, t0);
+            progs_after_open(fname);
+            snprintf(gd->name, sizeof gd->name, "%s", fname);
+            snprintf(opened[opened_n++ % 16], sizeof opened[0], "%s", fname);
+#else
             gd->f = open_file(fname);
+#endif
             if (gd->f == NULL) {
                 host_log("gdFsOpen: no %s on the disc", fname);
                 return NULL;
             }
+#ifndef __3DS__
             fseek(gd->f, 0, SEEK_END);
             gd->size = (Sint32)ftell(gd->f);
+#endif
             if (getenv("MVC2_TRACE_GD")) {
                 host_log("gd %s %X (frame %u)", fname, gd->size, host_frame());
             }
@@ -114,9 +451,18 @@ GDFS gdFsOpen(const char* fname, void* dirrec) {
 }
 
 void gdFsClose(GDFS gd) {
+    async_wait(gd);
     if (gd != NULL && gd->f != NULL) {
+        PROF_START(t0);
+#ifdef __3DS__
+        if (!keep_put(gd)) {
+            fclose(gd->f);
+        }
+#else
         fclose(gd->f);
+#endif
         gd->f = NULL;
+        PROF_STOP(PZ_GD_OPEN, t0);
     }
 }
 
@@ -130,20 +476,53 @@ Sint32 gdFsGetFileSize(GDFS gd, Sint32* fsize) {
 
 static void read_sectors(GDFS gd, Sint32 nsct, void* buf) {
     size_t want = (size_t)nsct * GDD_SCT_SIZE, got = 0;
+    PROF_START(t1);
+    host_fills++;
     if (gd->pos < gd->size) {
+        uint64_t t0 = read_begin();
+#ifdef __3DS__
+        /* not past the file's end: a read that reaches it costs the SD card another access */
+        size_t n = (size_t)(gd->size - gd->pos) < want ? (size_t)(gd->size - gd->pos) : want;
+#else
+        size_t n = want;
+#endif
         fseek(gd->f, gd->pos, SEEK_SET);
-        got = fread(buf, 1, want, gd->f);
+        got = fread(buf, 1, n, gd->f);
+        read_end("read", t0, got);
     }
     memset((char*)buf + got, 0, want - got);
     gd->pos += (long)want;
     gd->stat = GDD_STAT_COMPLETE;
+    PROF_STOP(PZ_GD_READ, t1);
 }
 
 Sint32 gdFsRead(GDFS gd, Sint32 nsct, void* buf) {
     if (gd == NULL || gd->f == NULL) {
         return -1;
     }
+    async_wait(gd);
+#ifdef __3DS__
+    if (ahead_take(gd, nsct, buf, 0)) {
+        return GDD_ERR_OK;
+    }
+    {
+        PROF_START(t0);
+        if (ctr_small_take(dc_gd_path(gd->name), (size_t)gd->pos, buf, (size_t)nsct * GDD_SCT_SIZE)) {
+            host_fills++;
+            gd->pos += (long)nsct * GDD_SCT_SIZE;
+            gd->stat = GDD_STAT_COMPLETE;
+            PROF_STOP(PZ_GD_READ, t0);
+            if (trace) {
+                host_log("gd %s taken as read ahead (frame %u)", gd->name, host_frame());
+            }
+            return GDD_ERR_OK;
+        }
+    }
     read_sectors(gd, nsct, buf);
+    next_after(gd->name, 1);
+#else
+    read_sectors(gd, nsct, buf);
+#endif
     return GDD_ERR_OK;
 }
 
@@ -151,6 +530,34 @@ Sint32 gdFsReqRd32(GDFS gd, Sint32 nsct, void* buf) {
     if (gd == NULL || gd->f == NULL) {
         return -1;
     }
+#ifdef __3DS__
+    if (gd_async() && gd->pos < gd->size) {
+        size_t want = (size_t)nsct * GDD_SCT_SIZE;
+        if (async_gd != NULL) {
+            return 0;                   /* the drive busy: asked again */
+        }
+        uint32_t bytes = (uint32_t)(gd->size - gd->pos) < want ? (uint32_t)(gd->size - gd->pos) : (uint32_t)want;
+        unsigned due = host_frame() + gd_seek + (unsigned)((bytes * 60ull + GD_RATE - 1) / GD_RATE);
+        if (ahead_take(gd, nsct, buf, 1)) {
+            async_job = 0;              /* in already, but complete when the drive would be */
+        } else {
+            if (ctr_ahead_has(dc_gd_path(gd->name))) {
+                ctr_ahead_drop(0);      /* still being read: read here instead */
+            }
+            memset((char*)buf + bytes, 0, want - bytes);
+            if (!ctr_read_start(gd->f, gd->pos, buf, bytes)) {
+                read_sectors(gd, nsct, buf);
+                return nsct;
+            }
+            async_job = 1;
+            gd->pos += (long)want;
+        }
+        async_due = due;
+        gd->stat = GDD_STAT_READ;
+        async_gd = gd;
+        return nsct;
+    }
+#endif
     read_sectors(gd, nsct, buf);
     return nsct;
 }
@@ -161,12 +568,18 @@ Sint32 gdFsSeek(GDFS gd, Sint32 offset, Sint32 origin) {
     if (gd == NULL || gd->f == NULL) {
         return -1;
     }
+    async_wait(gd);
     base = origin == 1 ? gd->pos : origin == 2 ? (gd->size + GDD_SCT_SIZE - 1) / GDD_SCT_SIZE * GDD_SCT_SIZE : 0;
     gd->pos = base + (long)offset * GDD_SCT_SIZE;
     return GDD_ERR_OK;
 }
 
 Sint32 gdFsGetStat(GDFS gd) {
+#ifdef __3DS__
+    if (gd != NULL && gd == async_gd && (int)(host_frame() - async_due) >= 0) {
+        async_end();
+    }
+#endif
     return gd != NULL ? gd->stat : GDD_STAT_IDLE;
 }
 

@@ -105,7 +105,7 @@ static const char* const labels[ACTIONS] = {
     "LIGHT KICK", "HEAVY KICK", "ASSIST 2", "START", "COIN",
 };
 
-enum { ROW_RENDERER = ACTIONS, ROW_PICTURE, ROW_DEFAULTS, ROW_DONE, ROWS };
+enum { ROW_RENDERER = ACTIONS, ROW_PICTURE, ROW_SPRITES, ROW_DEFAULTS, ROW_DONE, ROWS };
 
 static int row_line(int a) {
     return 3 + a + (a >= ROW_RENDERER);
@@ -118,8 +118,59 @@ static const char* picture(void) {
     return config_get("render") != NULL ? config_get("render") : "exact";
 }
 
+/* the GPU's: its resolution and aa */
+static const struct {
+    const char *name, *resolution, *aa;
+} gpu_pictures[] = {
+    { "auto", "auto", "1" }, { "auto, aa 2x", "auto", "2" }, { "auto, aa 3x", "auto", "3" }, { "auto, aa 4x", "auto", "4" },
+    { "the arcade's 640 by 480", "1", "1" },
+};
+enum { GPU_PICTURES = sizeof gpu_pictures / sizeof gpu_pictures[0] };
+
+static int gpu_picture(void) {
+    const char* r = config_get("resolution") != NULL ? config_get("resolution") : "auto";
+    const char* a = config_get("aa") != NULL ? config_get("aa") : "1";
+    int i;
+    for (i = 0; i < GPU_PICTURES; i++) {
+        if (strcmp(r, gpu_pictures[i].resolution) == 0 && strcmp(a, gpu_pictures[i].aa) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static const char* const sprite_modes[] = { "sharp", "pixel", "arcade" };
+enum { SPRITE_MODES = sizeof sprite_modes / sizeof sprite_modes[0] };
+
+static const char* sprites(void) {
+    return config_get("sprites") != NULL ? config_get("sprites") : "sharp";
+}
+
+static void change_sprites(int way) {
+    int i, now = 0;
+    for (i = 0; i < SPRITE_MODES; i++) {
+        if (strcmp(sprites(), sprite_modes[i]) == 0) {
+            now = i;
+        }
+    }
+    config_set("sprites", sprite_modes[(now + way + SPRITE_MODES) % SPRITE_MODES]);
+#ifdef MVC2_SDL3
+    view_settings();
+#endif
+}
+
 static void change_picture(int way) {
     int i, now = -1;
+#ifdef MVC2_SDL3
+    if (renderer_gpu()) {
+        now = gpu_picture();
+        now = now < 0 ? 0 : (now + way + GPU_PICTURES) % GPU_PICTURES;
+        config_set("resolution", gpu_pictures[now].resolution);
+        config_set("aa", gpu_pictures[now].aa);
+        view_settings();
+        return;
+    }
+#endif
     for (i = 0; i < PICTURES; i++) {
         if (strcmp(picture(), pictures[i]) == 0) {
             now = i;
@@ -148,8 +199,13 @@ static const char* setting(int a, char* buf, size_t size) {
     if (a == ROW_RENDERER) {
         snprintf(buf, size, "%s%s%s", renderer_gpu() ? "GPU" : "SOFT", renderer_note != NULL ? "  " : "",
                  renderer_note != NULL ? renderer_note : "");
+    } else if (a == ROW_SPRITES) {
+        snprintf(buf, size, "%s%s", sprites(), renderer_gpu() ? "" : "  (GPU ONLY)");
+    } else if (renderer_gpu()) {
+        int i = gpu_picture();
+        snprintf(buf, size, "%s", i >= 0 ? gpu_pictures[i].name : "as mvc2.cfg sets it");
     } else {
-        snprintf(buf, size, "%s%s", picture(), renderer_gpu() ? "  (SOFT ONLY)" : "");
+        snprintf(buf, size, "%s", picture());
     }
     for (i = 0; buf[i] != 0; i++) {
         buf[i] = buf[i] >= 'a' && buf[i] <= 'z' ? buf[i] - 'a' + 'A' : buf[i];
@@ -200,15 +256,15 @@ void menu_draw(uint32_t* frame, int w, int h) {
     for (a = 0; a < ROWS; a++) {
         uint32_t color = a == row ? YELLOW : WHITE;
         if (a == ROW_DEFAULTS) {
-            draw_text(0, row_line(a), "ALL BACK AS AT FIRST", color);
+            draw_text(0, row_line(a), "SET TO DEFAULT", color);
             continue;
         }
         if (a == ROW_DONE) {
             draw_text(0, row_line(a), "DONE", color);
             continue;
         }
-        if (a == ROW_RENDERER || a == ROW_PICTURE) {
-            draw_text(0, row_line(a), a == ROW_RENDERER ? "RENDERER" : "PICTURE", color);
+        if (a == ROW_RENDERER || a == ROW_PICTURE || a == ROW_SPRITES) {
+            draw_text(0, row_line(a), a == ROW_RENDERER ? "RENDERER" : a == ROW_PICTURE ? "PICTURE" : "SPRITES", color);
             snprintf(line, sizeof line, "< %s >", setting(a, one, sizeof one));
             draw_text(13, row_line(a), line, color);
             continue;
@@ -227,7 +283,7 @@ void menu_draw(uint32_t* frame, int w, int h) {
         draw_text(13, row_line(a), n > 0 ? line : "-", color);
     }
     draw_text(0, 21, "UP/DOWN CHOOSE   LEFT/RIGHT PLAYER OR SETTING", GREY);
-    draw_text(0, 22, "ENTER/A SET   DEL/X AS AT FIRST   ESC/B DONE", GREY);
+    draw_text(0, 22, "ENTER/A SET   DEL/X DEFAULT   ESC/B DONE", GREY);
 }
 
 static void close_menu(void) {
@@ -249,6 +305,8 @@ static void act(int up, int down, int left, int right, int enter, int reset, int
         row = (row + 1) % ROWS;
     } else if ((left || right) && row == ROW_PICTURE) {
         change_picture(right ? 1 : -1);
+    } else if ((left || right || enter) && row == ROW_SPRITES) {
+        change_sprites(left ? -1 : 1);
     } else if ((left || right || enter) && row == ROW_RENDERER) {
         change_renderer();
     } else if (enter && row == ROW_PICTURE) {

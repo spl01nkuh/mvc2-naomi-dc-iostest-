@@ -6,6 +6,7 @@
 #include <math.h>
 
 #include "nl_port.h"
+#include "prof.h"
 
 typedef struct {
     int32_t sprno;
@@ -36,7 +37,7 @@ typedef struct {
 #define NLSPR_LISTTYPE_OPAQUE 0
 
 static int max_spr = NL_MAX_TEX;
-static float screen_w = 640.0f, screen_h = 480.0f;
+static float screen_x = 1.0f, screen_y = 1.0f;     /* 640 and 480 over the imaginary screen's size */
 
 void nlInitSprite(int* work, int nbLoadSpr, int nbMaxSpr) {
     (void)work;
@@ -45,8 +46,8 @@ void nlInitSprite(int* work, int nbLoadSpr, int nbMaxSpr) {
 }
 
 void nlSpriteSetImaginaryScreenSize(float w, float h) {
-    screen_w = w;
-    screen_h = h;
+    screen_x = 640.0f / w;
+    screen_y = 480.0f / h;
 }
 
 int nlSpriteLoadTextureOnce(const NLthd* thd, const int32_t* pal, int i) {
@@ -76,7 +77,7 @@ int nlSpriteFreeTexture(const NLthd* thd, const int32_t* pal) {
     (void)pal;
     for (i = 0; thd[i].type != -1; i++) {
         if (nl_tex_offset + i < NL_MAX_TEX) {
-            nl_tex[nl_tex_offset + i].loaded = 0;
+            nl_tex_free(&nl_tex[nl_tex_offset + i]);
         }
     }
     return 0;
@@ -101,12 +102,21 @@ static int has_alpha(const NL_TEX* t) {
     }
 }
 
+static int spr_put(const NLsprarg* a);
+
 int nlSprPut(const NLsprarg* a) {
+    PROF_START(t0);
+    int r = spr_put(a);
+    PROF_STOP(PZ_NL_SPRITE, t0);
+    return r;
+}
+
+static int spr_put(const NLsprarg* a) {
     static const float corner[4][2] = { { 1, 1 }, { 3, 1 }, { 3, 3 }, { 1, 3 } };
     const NL_TEX* t;
     RD_STATE s = { 0 };
     RD_VTX v[4];
-    float sx = 640.0f / screen_w, sy = 480.0f / screen_h;
+    float sx = screen_x, sy = screen_y;
     float hw, hh, ah, av, c, sn, trnsl, u0 = a->u0, v0 = a->v0, u1 = a->u1, v1 = a->v1, z;
     uint32_t base, offset = 0;
     int i, translucent, depth;
@@ -135,8 +145,13 @@ int nlSprPut(const NLsprarg* a) {
     } else {
         ah = av = 1.0f;
     }
-    c = cosf((a->ang & 0xffff) * (6.2831853f / 65536.0f));
-    sn = sinf((a->ang & 0xffff) * (6.2831853f / 65536.0f));
+    if ((a->ang & 0xffff) == 0) {
+        c = 1.0f;
+        sn = 0.0f;
+    } else {
+        c = cosf((a->ang & 0xffff) * (6.2831853f / 65536.0f));
+        sn = sinf((a->ang & 0xffff) * (6.2831853f / 65536.0f));
+    }
     if (a->attr & NLSPR_FLIP_H) {
         u0 = 1.0f - u0;
         u1 = 1.0f - u1;

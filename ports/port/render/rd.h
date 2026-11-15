@@ -28,13 +28,18 @@ enum { RD_DECAL, RD_MODULATE, RD_DECAL_ALPHA, RD_MODULATE_ALPHA };
 enum { RD_ARGB1555, RD_RGB565, RD_ARGB4444, RD_PAL4 = 5, RD_PAL8 = 6 };
 
 /* untwiddled, a byte a texel for the palette formats */
-typedef struct {
+typedef struct rd_texture {
     int width, height;
     int format;
     void* texels;
     uint32_t serial;    /* changes when its texels do */
     int levels;         /* mip[k], k from 1 to levels, is width >> k by height >> k */
     const void* mip[11];
+    const void* twiddled;   /* on the 3DS, a PAL4 square's source, which it converts from */
+    /* on the 3DS, a VQ square whose texels aren't kept (texels is its source): unpack makes them, and its mip levels
+       after, in the unpacked bytes at out->texels, and sets out's mip[] */
+    void (*unpack)(const struct rd_texture* t, struct rd_texture* out);
+    uint32_t unpacked;
 } RD_TEXTURE;
 
 typedef struct {
@@ -65,11 +70,64 @@ void rd_fog_color(uint32_t argb);
 void rd_fog_density(uint32_t reg);
 
 void rd_begin_frame(void);
+/* set by a front end for a frame it won't show: its strips are dropped, and the library's models not made */
+extern int rd_discard;
 /* three vertices whose plane covers the screen */
 void rd_background_plane(const RD_VTX* v);
 void rd_background(uint32_t argb);
 void rd_strip(const RD_STATE* s, const RD_VTX* v, int n);
 void rd_quad(const RD_STATE* s, const RD_VTX* v);              /* corners in order around it */
+
+/* Models the GPU turns and lights: a group's vertices and triangles made once into a mesh, then drawn
+   with a put's matrix (rows: w, x * w, y * w from the model's x, y, z, 1, the screen's x and y in pixels) */
+typedef struct {
+    float x, y, z, u, v;
+    float nx, ny, nz;   /* lit */
+    uint32_t argb;      /* vertex colours */
+} NL_MVTX;
+
+typedef struct {
+    uint16_t first, count;  /* triangles */
+    uint8_t cull, flat;     /* cull as RD_STATE's */
+} NL_MSPAN;
+
+enum { RD_GPU_UNLIT, RD_GPU_VTXCOL, RD_GPU_LIT };
+
+typedef struct {
+    int kind, nv, ntri, nspan;
+    const NL_MVTX* v;
+    const uint16_t* idx;    /* three a triangle */
+    const NL_MSPAN* span;
+    float lo[3], hi[3];
+} NL_MESH;
+
+typedef struct {
+    int mesh, kind;
+    float face[4];          /* ARGB, 0 to 1 */
+    uint32_t face_argb;
+    float l[3], ambient;    /* the light in the model's space */
+    float wlo, whi;         /* the group's w, from its bounds */
+    float key;              /* translucent: the 1/w it sorts at among its list's strips; not > 0: the middle of its bounds */
+    float key_far, key_near;    /* a deep one drawn in two passes: its back faces' 1/w, then its front faces' */
+    uint8_t two_sided;      /* a shell, none of its triangles culled, with faces seen facing each way: two passes */
+    uint8_t faces;          /* the renderer's: 0 all, 1 the back faces' pass, 2 the front faces' */
+} RD_GPU_GROUP;
+
+/* set by a back end that draws them; MVC2_GPU_TL=0 clears it */
+extern int rd_gpu_tl;
+extern int rd_gpu_tl_kinds, rd_gpu_tl_max;   /* the kinds taken, by bit, and the most groups a frame */
+extern int rd_gpu_tl_trans;                 /* translucent groups taken too */
+extern float rd_gpu_tl_trans_deep;          /* but not one whose farthest w is more than this times its nearest (0: any) */
+extern uint32_t rd_gpu_tl_deep_left;        /* those left to the caller for their depth, so far */
+extern int rd_gpu_tl_two_pass;              /* a deep two-sided one taken all the same, its back faces then its front */
+extern uint32_t rd_gpu_tl_two_passed;       /* those, so far */
+extern int rd_gpu_tl_nearclip;              /* none taken that may reach the near plane, for the caller to clip */
+extern uint32_t rd_gpu_tl_near_left;        /* those left to the caller, so far */
+int rd_gpu_mesh_make(const NL_MESH* m);     /* its id, or -1 for no room */
+void rd_gpu_mesh_free(int id);              /* kept while a frame drawing it may still be read */
+uint32_t rd_gpu_mesh_room(void);            /* bytes */
+int rd_gpu_put(const float m[16], float near_w);    /* its index, or -1 when there is no room */
+int rd_gpu_group(int put, const RD_STATE* s, const RD_GPU_GROUP* g);     /* 0: not taken, for the caller to draw */
 
 /* "exact" (or NULL), or words: fast, half, nofog, nosort */
 void rd_quality(const char* words);

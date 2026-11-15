@@ -140,7 +140,7 @@ void dm0d_menu_main( void )
 
 void menu_lobby( void )
 {
-	unk_8C212F1B = 0x80 ;
+	win_side_flag = 0x80 ;
 }
 
 void menu_entry( void )

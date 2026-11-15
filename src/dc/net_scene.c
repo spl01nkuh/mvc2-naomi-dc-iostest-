@@ -19,7 +19,7 @@ void net_scene_set( int no )
 		unk_8C2136FE = 0 ;
 		unk_8C2136FF = 0 ;
 		unk_8C213700 = 0 ;
-		unk_8C213705 = -9 ;
+		net_line_st = -9 ;
 		break ;
 	case 2 :
 		unk_8C2136FD = 9 ;

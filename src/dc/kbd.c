@@ -41,43 +41,43 @@ typedef struct KB_EDIT {
 	Sint16	max;		/* 000: as KB_SET's */
 	Sint16	num;		/* 002: the characters typed */
 	Sint16	pos;		/* 004: the cursor, before character pos */
-	Sint16	unk_06;		/* 006: the cursor the frame before */
-	Sint16	unk_08;		/* 008: its blink, in degrees */
-	Sint8	unk_0a;		/* 00a: the one-byte characters before the cursor */
-	Sint8	unk_0b;		/* 00b: the two-byte ones */
-	Sint16	unk_0c;		/* 00c: the first character shown */
+	Sint16	old_pos;	/* 006: the cursor the frame before */
+	Sint16	blink;		/* 008: the cursor's blink, in degrees */
+	Sint8	han_cnt;	/* 00a: the one-byte characters before the cursor */
+	Sint8	zen_cnt;	/* 00b: the two-byte ones */
+	Sint16	disp_top;	/* 00c: the first character shown */
 	Sint16	len;		/* 00e: the bytes it takes */
 	char	*str;		/* 010 */
 	KB_CHAR	ch[80];		/* 014 */
-	Sint8	unk_154;		/* 154: the bytes of the text being converted */
-	Sint8	unk_155;		/* 155: converting */
-	Uint8	unk_156;
-	Sint8	unk_157;
-	Sint32	unk_158;		/* 158: ASK.BIN's candidates */
-	Sint32	unk_15c;		/* 15c: the candidate shown, 255 for the kana */
+	Sint8	yomi_len;	/* 154: the bytes of the text being converted */
+	Sint8	henkan_flag;	/* 155: converting */
+	Uint8	kouho_flag;	/* 156: ASK.BIN has found candidates */
+	Sint8	henkan_len;	/* 157: the bytes of the conversion */
+	Sint32	kouho_cnt;	/* 158: ASK.BIN's candidates */
+	Sint32	kouho_no;	/* 15c: the candidate shown, 255 for the kana */
 	char	yomi[0xa0];		/* 160: the kana being converted */
 	char	kanji[0xa0];		/* 200: their conversion */
 	char	rest[0xa0];		/* 2a0: the part after the segment converted */
-	Sint16	unk_340;		/* 340: the first character converted */
-	Sint16	unk_342;
-	Sint16	unk_344;		/* 344: the characters of the conversion */
-	Sint8	unk_346;		/* 346: kb_henkan's command */
-	Sint8	unk_347;
+	Sint16	henkan_top;	/* 340: the first character converted */
+	Sint16	henkan_end;	/* 342: and the one after the last */
+	Sint16	henkan_num;	/* 344: the characters of the conversion */
+	Sint8	henkan_cmd;	/* 346: kb_henkan's command */
+	Sint8	unfix_len;	/* 347: the bytes not yet fixed */
 	char	buf[0xa4];	/* 348: the text as it is shown */
 } KB_EDIT;
 
 typedef struct KB_WORK {
-	Sint16	unk_00;
+	Sint16	rep_step;	/* 000: a held key is given again every rep_step frames */
 	Sint16	rep;		/* 002: how long a real key has been held */
-	Sint16	unk_04;
-	Uint16	unk_06;
-	Uint16	unk_08;
+	Sint16	rep_wait;	/* 004: once it has been held this long */
+	Uint16	mode;		/* 006: the input mode, as KB_SET's */
+	Uint16	mode_ok;	/* 008 */
 	Uint8	key[6];		/* 00a: the real keys held the frame before */
-	Uint8	unk_10[6];
-	Uint8	unk_16;
-	Uint8	unk_17;
-	Uint8	unk_18;
-	Uint8	unk_19;
+	Uint8	key_on[6];	/* 010: the real keys newly pressed */
+	Uint8	soft_flag;	/* 016: the software keyboard is up: the pad was used last */
+	Uint8	kana_flag;	/* 017: kana input */
+	Uint8	kana_mode;	/* 018: 1 hiragana, 2 katakana, 0 letters */
+	Uint8	roma_flag;	/* 019: kana typed as romaji */
 	Uint8	unk_1a;
 	VEC3	text_pos;	/* 01c: where the text is shown */
 	VEC3	key_pos;	/* 028: the software keyboard's keys */
@@ -88,10 +88,10 @@ typedef struct KB_WORK {
 typedef struct KB_KEY {
 	Sint8	pos[2];		/* the cursor: its column and row */
 	Sint8	old[2];		/* where it was */
-	Uint8	unk_04;
-	Uint8	unk_05;
-	Uint8	unk_06;
-	Uint8	unk_07;
+	Uint8	no;		/* the key the cursor is on */
+	Uint8	old_no;		/* and the one it was on */
+	Uint8	push_no;	/* the key shown pressed, 99 for none */
+	Uint8	push_timer;	/* the frames it is shown */
 	Uint16	unk_08;
 	struct {
 		Uint8	x, y;	/* its column and row */
@@ -129,7 +129,7 @@ void kb_spr_set( KB_SPR *s, NLsprarg *spr, Float zm ) ;
 void kb_disp_key( NLsprarg *spr ) ;
 void kb_disp_mode( NLsprarg *spr ) ;
 
-static Uint8 kb_unk_8C149874 = 0 ;
+static Uint8 kb_soft_old = 0 ;	/* soft_flag the frame before */
 
 /* the software keyboard's three panes, at each size */
 static VEC3 kb_pos_tbl[2][3] = {
@@ -158,7 +158,8 @@ static Uint8 kb_soft_tbl[6][15] = {
 	70, 70, 70, 70, 71, 71, 71, 71, 72, 72, 72, 73, 73, 73, 74
 } ;
 
-static Uint8 kb_unk_8C149953[75] = {
+/* each key's piece of kb_spr_tbl, and the keys whose piece the mode changes */
+static Uint8 kb_key_spr[75] = {
 	0, 0, 1, 1, 1, 1, 14, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
@@ -166,28 +167,29 @@ static Uint8 kb_unk_8C149953[75] = {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 2, 2, 0
 } ;
 
-static Uint8 kb_unk_8C14999E[16][2] = {
+static Uint8 kb_mode_key[16][2] = {
 	{ 0, 2 }, { 1, 3 }, { 2, 0 }, { 3, 0 }, { 4, 0 }, { 5, 0 }, { 11, 1 }, { 16, 1 },
 	{ 21, 1 }, { 26, 1 }, { 31, 1 }, { 36, 1 }, { 40, 1 }, { 45, 1 }, { 55, 1 }, { 60, 1 }
 } ;
 
-static Uint8 kb_unk_8C1499BE[15][2] = {
+/* the keys' tops, as a key and its piece of kb_top_tbl: in hiragana, katakana, letters and shifted letters */
+static Uint8 kb_kana_top0[15][2] = {
 	{ 0, 36 }, { 1, 37 }, { 2, 0 }, { 7, 1 }, { 11, 2 }, { 26, 3 }, { 39, 18 }, { 40, 4 },
 	{ 50, 19 }, { 55, 5 }, { 63, 20 }, { 70, 33 }, { 71, 31 }, { 74, 17 }, { 255, 0 }
 } ;
 
-static Uint8 kb_unk_8C1499DC[15][2] = {
+static Uint8 kb_kana_top1[15][2] = {
 	{ 0, 36 }, { 1, 37 }, { 2, 0 }, { 7, 1 }, { 11, 6 }, { 26, 7 }, { 39, 18 }, { 40, 8 },
 	{ 50, 19 }, { 55, 9 }, { 63, 20 }, { 70, 33 }, { 71, 31 }, { 74, 17 }, { 255, 0 }
 } ;
 
-static Uint8 kb_unk_8C1499FA[22][2] = {
+static Uint8 kb_alnum_top0[22][2] = {
 	{ 0, 36 }, { 1, 37 }, { 2, 0 }, { 7, 1 }, { 11, 10 }, { 26, 14 }, { 36, 21 }, { 39, 18 },
 	{ 40, 15 }, { 50, 22 }, { 52, 23 }, { 53, 24 }, { 55, 16 }, { 61, 25 }, { 65, 26 }, { 66, 27 },
 	{ 67, 28 }, { 68, 29 }, { 70, 32 }, { 71, 31 }, { 74, 17 }, { 255, 0 }
 } ;
 
-static Uint8 kb_unk_8C149A26[17][2] = {
+static Uint8 kb_alnum_top1[17][2] = {
 	{ 0, 36 }, { 1, 37 }, { 2, 0 }, { 7, 1 }, { 11, 10 }, { 26, 11 }, { 36, 21 }, { 39, 18 },
 	{ 40, 12 }, { 50, 35 }, { 51, 30 }, { 55, 13 }, { 61, 34 }, { 70, 32 }, { 71, 31 }, { 74, 17 },
 	{ 255, 0 }
@@ -606,19 +608,19 @@ void kb_init( KB_SET *set )
 	register Uint8 c2 ;
 	register Uint8 *p ;
 
-	kb_w.unk_00 = 4 ;
-	kb_w.unk_04 = 20 ;
-	kb_w.unk_06 = set->mode & set->mode_ok ;
-	kb_w.unk_08 = set->mode_ok ;
-	if( ( kb_w.unk_06 & 8 ) || ( kb_w.unk_08 & 0x100 ) ){
-		kb_w.unk_17 = 1 ;
-		kb_w.unk_06 |= 8 ;
-		kb_w.unk_18 = 1 ;
-		kb_w.unk_19 = 1 ;
+	kb_w.rep_step = 4 ;
+	kb_w.rep_wait = 20 ;
+	kb_w.mode = set->mode & set->mode_ok ;
+	kb_w.mode_ok = set->mode_ok ;
+	if( ( kb_w.mode & 8 ) || ( kb_w.mode_ok & 0x100 ) ){
+		kb_w.kana_flag = 1 ;
+		kb_w.mode |= 8 ;
+		kb_w.kana_mode = 1 ;
+		kb_w.roma_flag = 1 ;
 	} else {
-		kb_w.unk_17 = 0 ;
-		kb_w.unk_18 = ( kb_w.unk_06 & 2 ) ? 0 : 1 ;
-		kb_w.unk_19 = ( kb_w.unk_06 & 4 ) ? 1 : 0 ;
+		kb_w.kana_flag = 0 ;
+		kb_w.kana_mode = ( kb_w.mode & 2 ) ? 0 : 1 ;
+		kb_w.roma_flag = ( kb_w.mode & 4 ) ? 1 : 0 ;
 	}
 	kb_w.text_pos = kb_pos_tbl[set->size][0] ;
 	kb_w.key_pos = kb_pos_tbl[set->size][1] ;
@@ -631,27 +633,27 @@ void kb_init( KB_SET *set )
 	kb_w.mode_pos.y += option_w.adjust_y ;
 	kb_w.rep = 0 ;
 	kb_w.unk_1a = 4 ;
-	kb_w.unk_16 = 1 ;
-	kb_unk_8C149874 = 0 ;
+	kb_w.soft_flag = 1 ;
+	kb_soft_old = 0 ;
 	for( i = 0 ; i < 6 ; i ++ ){
 		if( kbd_data ){
 			kb_w.key[i] = kbd_data->key[i] ;
 		} else {
 			kb_w.key[i] = 0 ;
-			kb_w.unk_16 = 1 ;
+			kb_w.soft_flag = 1 ;
 		}
-		kb_w.unk_10[i] = 0 ;
+		kb_w.key_on[i] = 0 ;
 	}
 	kb_edit.max = set->max ;
 	kb_edit.str = set->str ;
 	kb_edit.pos = kb_edit.num = 0 ;
-	kb_edit.unk_06 = 99 ;
-	kb_edit.unk_0c = 0 ;
+	kb_edit.old_pos = 99 ;
+	kb_edit.disp_top = 0 ;
 	kb_edit.buf[0] = 0 ;
 	kb_edit.len = 0 ;
-	kb_edit.unk_155 = 0 ;
-	kb_edit.unk_156 = 0 ;
-	kb_edit.unk_347 = 0 ;
+	kb_edit.henkan_flag = 0 ;
+	kb_edit.kouho_flag = 0 ;
+	kb_edit.unfix_len = 0 ;
 	if( set->str ){
 		if( !*set->str ){
 			for( i = 0 ; i < 80 ; i ++ ){
@@ -714,9 +716,9 @@ void kb_key_init( void )
 	}
 	kb_key.pos[0] = kb_key.old[0] = 0 ;
 	kb_key.pos[1] = kb_key.old[1] = 0 ;
-	kb_key.unk_04 = kb_key.unk_05 = 0 ;
-	kb_key.unk_06 = 99 ;
-	kb_key.unk_07 = 0 ;
+	kb_key.no = kb_key.old_no = 0 ;
+	kb_key.push_no = 99 ;
+	kb_key.push_timer = 0 ;
 }
 
 /* the text entry each frame: 0 while it goes on, else how it ended */
@@ -726,29 +728,29 @@ int kb_main( void )
 	register int i ;
 
 	ret = 0 ;
-	if( !kb_w.unk_16 ){
-		if( kb_pad_get( 3 ) & 0x3ff0 ) kb_w.unk_16 = 1 ;
+	if( !kb_w.soft_flag ){
+		if( kb_pad_get( 3 ) & 0x3ff0 ) kb_w.soft_flag = 1 ;
 	}
 	if( kbd_data ) ret = kb_hard_move( kbd_data ) ;
-	if( kb_w.unk_16 ){
-		if( !kb_unk_8C149874 ){
+	if( kb_w.soft_flag ){
+		if( !kb_soft_old ){
 			na_req( 57 ) ;
 			kb_key.pos[0] = kb_key.old[0] = 0 ;
 			kb_key.pos[1] = kb_key.old[1] = 0 ;
-			kb_key.unk_04 = kb_key.unk_05 = 0 ;
-			kb_key.unk_06 = 99 ;
-			kb_key.unk_07 = 0 ;
+			kb_key.no = kb_key.old_no = 0 ;
+			kb_key.push_no = 99 ;
+			kb_key.push_timer = 0 ;
 		} else {
 			ret = kb_soft_move() ;
 		}
 	}
-	kb_unk_8C149874 = kb_w.unk_16 ;
+	kb_soft_old = kb_w.soft_flag ;
 	if( ( i = kb_fix_pos() ) >= 0 ){
-		kb_edit.unk_347 = 0 ;
+		kb_edit.unfix_len = 0 ;
 		for( ; i < kb_edit.num ; i ++ ){
 			if( kb_edit.ch[i].type & 16 ) break ;
-			kb_edit.unk_347 ++ ;
-			if( kb_edit.ch[i].type & 2 ) kb_edit.unk_347 ++ ;
+			kb_edit.unfix_len ++ ;
+			if( kb_edit.ch[i].type & 2 ) kb_edit.unfix_len ++ ;
 		}
 	}
 	kb_str_make( &kb_edit, kb_edit.buf, 1 ) ;
@@ -774,16 +776,16 @@ int kb_hard_move( const PDS_KEYBOARD *kbd )
 	if( same ) kb_w.rep = kb_w.rep + 1 ;
 	else kb_w.rep = 0 ;
 	for( i = 0, n = 0 ; i < 6 ; i ++ ){
-		kb_w.unk_10[i] = 0 ;
+		kb_w.key_on[i] = 0 ;
 		for( j = 0 ; j < 6 ; j ++ ){
 			if( kb_w.key[j] == kbd->key[i] && kbd->key[i] != 1 ) break ;
 		}
 		if( j == 6 ){
-			kb_w.unk_10[n ++] = kbd->key[i] ;
-			kb_w.unk_16 = 0 ;
-			if( kb_unk_8C149874 ){
-				if( kb_w.unk_08 & 4 ){
-					kb_w.unk_19 = 1 ;
+			kb_w.key_on[n ++] = kbd->key[i] ;
+			kb_w.soft_flag = 0 ;
+			if( kb_soft_old ){
+				if( kb_w.mode_ok & 4 ){
+					kb_w.roma_flag = 1 ;
 					kb_func_key() ;
 				}
 			}
@@ -801,36 +803,36 @@ int kb_hard_key( const PDS_KEYBOARD *kbd )
 	register int i ;
 
 	ret = 0 ;
-	if( kbd->ctrl == 0x22 || kbd->ctrl == 0x20 || kbd->ctrl == 0x02 ) kb_w.unk_06 |= 0x10 ;
-	else kb_w.unk_06 &= ~0x10 ;
-	if( kbd->ctrl == 0x44 || kbd->ctrl == 0x40 || kbd->ctrl == 0x04 ) kb_w.unk_06 |= 0x20 ;
-	else kb_w.unk_06 &= ~0x20 ;
-	if( ( kb_w.unk_06 & 0x10 ) && kb_w.unk_10[0] == 57 ) kb_w.unk_06 ^= 0x40 ;
-	else if( !( kb_w.unk_06 & 0x10 ) && kb_w.unk_10[0] == 57 && kb_w.unk_17 ) kb_w.unk_18 = 0 ;
-	if( kb_w.unk_10[0] == 73 ) kb_w.unk_06 ^= 0x80 ;
-	if( kbd->info->lang == 1 && ( kb_w.unk_08 & 8 ) ){
-		if( kb_w.unk_10[0] == 53 && !( kb_w.unk_08 & 0x100 ) ){
-			if( kb_w.unk_17 ^= 1 ){
-				kb_w.unk_19 = 1 ;
-				kb_w.unk_18 = 1 ;
+	if( kbd->ctrl == 0x22 || kbd->ctrl == 0x20 || kbd->ctrl == 0x02 ) kb_w.mode |= 0x10 ;
+	else kb_w.mode &= ~0x10 ;
+	if( kbd->ctrl == 0x44 || kbd->ctrl == 0x40 || kbd->ctrl == 0x04 ) kb_w.mode |= 0x20 ;
+	else kb_w.mode &= ~0x20 ;
+	if( ( kb_w.mode & 0x10 ) && kb_w.key_on[0] == 57 ) kb_w.mode ^= 0x40 ;
+	else if( !( kb_w.mode & 0x10 ) && kb_w.key_on[0] == 57 && kb_w.kana_flag ) kb_w.kana_mode = 0 ;
+	if( kb_w.key_on[0] == 73 ) kb_w.mode ^= 0x80 ;
+	if( kbd->info->lang == 1 && ( kb_w.mode_ok & 8 ) ){
+		if( kb_w.key_on[0] == 53 && !( kb_w.mode_ok & 0x100 ) ){
+			if( kb_w.kana_flag ^= 1 ){
+				kb_w.roma_flag = 1 ;
+				kb_w.kana_mode = 1 ;
 			} else {
-				kb_w.unk_19 = 0 ;
-				kb_w.unk_18 = 0 ;
+				kb_w.roma_flag = 0 ;
+				kb_w.kana_mode = 0 ;
 			}
 		}
-		if( kb_w.unk_17 ){
-			if( ( kb_w.unk_06 & 0x20 ) && kb_w.unk_10[0] == 0x88 ) kb_w.unk_19 ^= 1 ;
-			else if( ( kb_w.unk_06 & 0x10 ) && kb_w.unk_10[0] == 0x88 ) kb_w.unk_18 = 2 ;
-			else if( !( kb_w.unk_06 & 0x10 ) && kb_w.unk_10[0] == 0x88 ) kb_w.unk_18 = 1 ;
+		if( kb_w.kana_flag ){
+			if( ( kb_w.mode & 0x20 ) && kb_w.key_on[0] == 0x88 ) kb_w.roma_flag ^= 1 ;
+			else if( ( kb_w.mode & 0x10 ) && kb_w.key_on[0] == 0x88 ) kb_w.kana_mode = 2 ;
+			else if( !( kb_w.mode & 0x10 ) && kb_w.key_on[0] == 0x88 ) kb_w.kana_mode = 1 ;
 		}
 	}
-	kb_w.unk_06 &= kb_w.unk_08 ;
+	kb_w.mode &= kb_w.mode_ok ;
 	kb_func_key() ;
-	if( kbd->key[0] == kb_w.key[0] && kb_w.key[0] != 0 && kb_w.rep >= kb_w.unk_04 && !( kb_w.rep % kb_w.unk_00 ) ){
+	if( kbd->key[0] == kb_w.key[0] && kb_w.key[0] != 0 && kb_w.rep >= kb_w.rep_wait && !( kb_w.rep % kb_w.rep_step ) ){
 		ret = kb_cmd( kb_code_get( kbd->key[0], 0 ) ) ;
 	}
 	for( i = 0 ; i < 6 ; i ++ ){
-		if( !ret && kb_w.unk_10[i] ) ret = kb_cmd( kb_code_get( kb_w.unk_10[i], 0 ) ) ;
+		if( !ret && kb_w.key_on[i] ) ret = kb_cmd( kb_code_get( kb_w.key_on[i], 0 ) ) ;
 	}
 	return ret ;
 }
@@ -838,28 +840,28 @@ int kb_hard_key( const PDS_KEYBOARD *kbd )
 /* the input mode the mode switches make */
 void kb_func_key( void )
 {
-	if( !kb_w.unk_17 ){
-		kb_w.unk_06 &= ~0x0d ;
-		kb_w.unk_06 |= 0x02 ;
+	if( !kb_w.kana_flag ){
+		kb_w.mode &= ~0x0d ;
+		kb_w.mode |= 0x02 ;
 		if( kb_fix_pos() >= 0 ) kb_cmd( 100000 ) ;
-	} else if( !kb_w.unk_18 ){
-		kb_w.unk_06 &= ~0x05 ;
-		kb_w.unk_06 |= 0x0a ;
-	} else if( kb_w.unk_18 == 1 ){
-		if( kb_w.unk_19 ){
-			kb_w.unk_06 &= ~0x09 ;
-			kb_w.unk_06 |= 0x06 ;
+	} else if( !kb_w.kana_mode ){
+		kb_w.mode &= ~0x05 ;
+		kb_w.mode |= 0x0a ;
+	} else if( kb_w.kana_mode == 1 ){
+		if( kb_w.roma_flag ){
+			kb_w.mode &= ~0x09 ;
+			kb_w.mode |= 0x06 ;
 		} else {
-			kb_w.unk_06 &= ~0x07 ;
-			kb_w.unk_06 |= 0x08 ;
+			kb_w.mode &= ~0x07 ;
+			kb_w.mode |= 0x08 ;
 		}
 	} else {
-		if( kb_w.unk_19 ){
-			kb_w.unk_06 &= ~0x08 ;
-			kb_w.unk_06 |= 0x07 ;
+		if( kb_w.roma_flag ){
+			kb_w.mode &= ~0x08 ;
+			kb_w.mode |= 0x07 ;
 		} else {
-			kb_w.unk_06 &= ~0x06 ;
-			kb_w.unk_06 |= 0x09 ;
+			kb_w.mode &= ~0x06 ;
+			kb_w.mode |= 0x09 ;
 		}
 	}
 }
@@ -878,10 +880,10 @@ int kb_soft_move( void )
 		if( sw & KEY_UP ) kb_key.pos[1] -- ;
 		else if( sw & KEY_DOWN ) kb_key.pos[1] ++ ;
 		if( sw & KEY_LEFT ){
-			kb_key.pos[0] = kb_key.key[kb_key.unk_04].x ;
+			kb_key.pos[0] = kb_key.key[kb_key.no].x ;
 			kb_key.pos[0] -- ;
 		} else if( sw & KEY_RIGHT ){
-			kb_key.pos[0] = kb_key.key[kb_key.unk_04].x + kb_key.key[kb_key.unk_04].w ;
+			kb_key.pos[0] = kb_key.key[kb_key.no].x + kb_key.key[kb_key.no].w ;
 		}
 		kb_key.pos[0] = ( kb_key.pos[0] + 15 ) % 15 ;
 		kb_key.pos[1] = ( kb_key.pos[1] + 6 ) % 6 ;
@@ -891,23 +893,23 @@ int kb_soft_move( void )
 			else if( sw & KEY_LEFT ) kb_key.pos[0] = 9 ;
 			else kb_key.pos[0] = 11 ;
 		}
-		kb_key.unk_05 = kb_key.unk_04 ;
-		kb_key.unk_04 = kb_soft_key( kb_key.pos[0], kb_key.pos[1] ) ;
-		if( kb_key.pos[0] != kb_key.old[0] ) kb_key.pos[0] = kb_key.key[kb_key.unk_04].x ;
+		kb_key.old_no = kb_key.no ;
+		kb_key.no = kb_soft_key( kb_key.pos[0], kb_key.pos[1] ) ;
+		if( kb_key.pos[0] != kb_key.old[0] ) kb_key.pos[0] = kb_key.key[kb_key.no].x ;
 		na_req( 1 ) ;
 	}
-	if( kb_w.unk_06 & 4 ){
-		kb_w.unk_06 &= ~4 ;
-		kb_w.unk_19 = 0 ;
+	if( kb_w.mode & 4 ){
+		kb_w.mode &= ~4 ;
+		kb_w.roma_flag = 0 ;
 		kb_func_key() ;
 	}
-	if( kb_key.unk_07 ){
-		if( !-- kb_key.unk_07 ) kb_key.unk_06 = 99 ;
+	if( kb_key.push_timer ){
+		if( !-- kb_key.push_timer ) kb_key.push_no = 99 ;
 	}
 	if( sw & KEY_LK ){
-		kb_key.unk_06 = kb_key.unk_04 ;
-		kb_key.unk_07 = 10 ;
-		ret = kb_cmd( kb_code_get( kb_key.unk_04, 1 ) ) ;
+		kb_key.push_no = kb_key.no ;
+		kb_key.push_timer = 10 ;
+		ret = kb_cmd( kb_code_get( kb_key.no, 1 ) ) ;
 		if( ret ) na_req( 2 ) ;
 		else na_req( 4 ) ;
 	} else if( sw & KEY_HP ){
@@ -919,11 +921,11 @@ int kb_soft_move( void )
 	} else if( sw & KEY_LP ){
 		ret = kb_cmd( KB_CMD + 44 ) ;
 	} else if( sw & KEY_A1 ){
-		if( kb_w.unk_18 == 1 ) ret = kb_cmd( KB_CMD + 39 ) ;
-		else if( kb_w.unk_18 == 2 ) ret = kb_cmd( KB_CMD + 40 ) ;
-		else if( kb_w.unk_18 == 0 && !( kb_w.unk_06 & 0x40 ) ) ret = kb_cmd( KB_CMD + 41 ) ;
-		else if( kb_w.unk_18 == 0 && ( kb_w.unk_06 & 0x40 ) ){
-			if( kb_w.unk_08 & 8 ) ret = kb_cmd( KB_CMD + 38 ) ;
+		if( kb_w.kana_mode == 1 ) ret = kb_cmd( KB_CMD + 39 ) ;
+		else if( kb_w.kana_mode == 2 ) ret = kb_cmd( KB_CMD + 40 ) ;
+		else if( kb_w.kana_mode == 0 && !( kb_w.mode & 0x40 ) ) ret = kb_cmd( KB_CMD + 41 ) ;
+		else if( kb_w.kana_mode == 0 && ( kb_w.mode & 0x40 ) ){
+			if( kb_w.mode_ok & 8 ) ret = kb_cmd( KB_CMD + 38 ) ;
 			else ret = kb_cmd( KB_CMD + 40 ) ;
 		}
 		na_req( 4 ) ;
@@ -941,7 +943,7 @@ int kb_code_get( Uint8 key, int soft )
 {
 	int code ;
 
-	if( kb_w.unk_06 & 2 ){
+	if( kb_w.mode & 2 ){
 		if( !soft ) code = kb_hard_alnum( key ) ;
 		else code = kb_soft_alnum( key ) ;
 	} else {
@@ -950,7 +952,7 @@ int kb_code_get( Uint8 key, int soft )
 		if( code == KB_CMD + 49 ){
 			if( !soft ) code = kb_hard_alnum( key ) ;
 			else code = kb_soft_alnum( key ) ;
-		} else if( kb_w.unk_06 & 1 ){
+		} else if( kb_w.mode & 1 ){
 			if( code >= 0x829f && code <= 0x82dd ) code += 0xa1 ;
 			else if( code >= 0x82de && code <= 0x82f1 ) code += 0xa2 ;
 		}
@@ -963,16 +965,16 @@ int kb_hard_alnum( Uint8 key )
 {
 	char *p ;
 
-	if( kb_w.unk_06 & 8 ){
-		if( ( kb_w.unk_06 & 0x10 ) && ( kb_w.unk_06 & 0x40 ) ) p = kb_hard_str3[key] ;
-		else if( !( kb_w.unk_06 & 0x10 ) && ( kb_w.unk_06 & 0x40 ) ) p = kb_hard_str2[key] ;
-		else if( ( kb_w.unk_06 & 0x10 ) && !( kb_w.unk_06 & 0x40 ) ) p = kb_hard_str1[key] ;
+	if( kb_w.mode & 8 ){
+		if( ( kb_w.mode & 0x10 ) && ( kb_w.mode & 0x40 ) ) p = kb_hard_str3[key] ;
+		else if( !( kb_w.mode & 0x10 ) && ( kb_w.mode & 0x40 ) ) p = kb_hard_str2[key] ;
+		else if( ( kb_w.mode & 0x10 ) && !( kb_w.mode & 0x40 ) ) p = kb_hard_str1[key] ;
 		else p = kb_hard_str0[key] ;
 		if( p ) return ( Uint8 )p[0] << 8 | ( Uint8 )p[1] ;
 	}
-	if( ( kb_w.unk_06 & 0x10 ) && ( kb_w.unk_06 & 0x40 ) ) return kb_hard_code3[key] ;
-	else if( !( kb_w.unk_06 & 0x10 ) && ( kb_w.unk_06 & 0x40 ) ) return kb_hard_code2[key] ;
-	else if( ( kb_w.unk_06 & 0x10 ) && !( kb_w.unk_06 & 0x40 ) ) return kb_hard_code1[key] ;
+	if( ( kb_w.mode & 0x10 ) && ( kb_w.mode & 0x40 ) ) return kb_hard_code3[key] ;
+	else if( !( kb_w.mode & 0x10 ) && ( kb_w.mode & 0x40 ) ) return kb_hard_code2[key] ;
+	else if( ( kb_w.mode & 0x10 ) && !( kb_w.mode & 0x40 ) ) return kb_hard_code1[key] ;
 	else return kb_hard_code0[key] ;
 }
 
@@ -981,12 +983,12 @@ int kb_soft_alnum( Uint8 key )
 {
 	char *p ;
 
-	if( kb_w.unk_06 & 8 ){
-		if( ( ( kb_w.unk_06 & 0x10 ) && !( kb_w.unk_06 & 0x40 ) ) || ( ( kb_w.unk_06 & 0x40 ) && !( kb_w.unk_06 & 0x10 ) ) ) p = kb_soft_str1[key] ;
+	if( kb_w.mode & 8 ){
+		if( ( ( kb_w.mode & 0x10 ) && !( kb_w.mode & 0x40 ) ) || ( ( kb_w.mode & 0x40 ) && !( kb_w.mode & 0x10 ) ) ) p = kb_soft_str1[key] ;
 		else p = kb_soft_str0[key] ;
 		if( p ) return ( Uint8 )p[0] << 8 | ( Uint8 )p[1] ;
 	}
-	if( ( ( kb_w.unk_06 & 0x10 ) && !( kb_w.unk_06 & 0x40 ) ) || ( ( kb_w.unk_06 & 0x40 ) && !( kb_w.unk_06 & 0x10 ) ) ) return kb_soft_code1[key] ;
+	if( ( ( kb_w.mode & 0x10 ) && !( kb_w.mode & 0x40 ) ) || ( ( kb_w.mode & 0x40 ) && !( kb_w.mode & 0x10 ) ) ) return kb_soft_code1[key] ;
 	else return kb_soft_code0[key] ;
 }
 
@@ -996,7 +998,7 @@ int kb_hard_kana( Uint8 key )
 	int m ;
 	char *p ;
 
-	m = kb_w.unk_06 ;
+	m = kb_w.mode ;
 	if( ( ( m & 0x10 ) && !( m & 0x40 ) ) || ( ( m & 0x40 ) && !( m & 0x10 ) ) ) p = kb_hard_kana_str1[key] ;
 	else p = kb_hard_kana_str0[key] ;
 	if( p ) return ( Uint8 )p[0] << 8 | ( Uint8 )p[1] ;
@@ -1045,9 +1047,9 @@ int kb_cmd( int code )
 			ret = 1 ;
 		} else {
 			for( i = 0 ; i < kb_edit.pos ; i ++ ) kb_edit.ch[i].type = ( kb_edit.ch[i].type & 15 ) | 0x50 ;
-			if( kb_edit.unk_155 || kb_edit.unk_156 ) kb_edit.len -= kb_edit.unk_154 - kb_edit.unk_157 ;
-			kb_edit.unk_156 = kb_edit.unk_155 = 0 ;
-			kb_edit.unk_347 = 0 ;
+			if( kb_edit.henkan_flag || kb_edit.kouho_flag ) kb_edit.len -= kb_edit.yomi_len - kb_edit.henkan_len ;
+			kb_edit.kouho_flag = kb_edit.henkan_flag = 0 ;
+			kb_edit.unfix_len = 0 ;
 			while( kb_edit.pos < kb_edit.num && !( kb_edit.ch[kb_edit.pos].type & 16 ) ){
 				kb_edit.ch[kb_edit.pos].type = ( kb_edit.ch[kb_edit.pos].type & 15 ) | 0x50 ;
 				kb_edit.pos ++ ;
@@ -1066,19 +1068,19 @@ int kb_cmd( int code )
 			for( ; i < kb_edit.num - 1 ; i ++ ) kb_edit.ch[i] = kb_edit.ch[j + i] ;
 			kb_edit.ch[kb_edit.num - 1].type = 0 ;
 			kb_edit.num -= j ;
-			if( kb_edit.unk_155 || kb_edit.unk_156 ){
-				kb_edit.len -= kb_edit.unk_154 ;
-				kb_edit.unk_156 = kb_edit.unk_155 = 0 ;
+			if( kb_edit.henkan_flag || kb_edit.kouho_flag ){
+				kb_edit.len -= kb_edit.yomi_len ;
+				kb_edit.kouho_flag = kb_edit.henkan_flag = 0 ;
 			} else {
 				kb_edit.len -= w ;
 			}
 		}
 		break ;
 	case KB_CMD + 2 :
-		if( kb_edit.unk_155 ){
-			kb_edit.unk_346 = 6 ;
+		if( kb_edit.henkan_flag ){
+			kb_edit.henkan_cmd = 6 ;
 			kb_cmd( KB_CMD + 34 ) ;
-			kb_edit.unk_156 = kb_edit.unk_155 = 0 ;
+			kb_edit.kouho_flag = kb_edit.henkan_flag = 0 ;
 		} else {
 			if( ( i = kb_fix_pos() ) < 0 ) i = 0 ;
 			if( kb_edit.pos > i ){
@@ -1096,12 +1098,12 @@ int kb_cmd( int code )
 	case KB_CMD + 3 :
 		break ;
 	case KB_CMD + 4 :
-		if( kb_fix_pos() >= 0 && !kb_edit.unk_155 ){
-			kb_edit.unk_346 = 0 ;
+		if( kb_fix_pos() >= 0 && !kb_edit.henkan_flag ){
+			kb_edit.henkan_cmd = 0 ;
 			kb_cmd( KB_CMD + 34 ) ;
-		} else if( kb_edit.unk_155 ){
-			if( kb_w.unk_06 & 16 ) kb_edit.unk_346 = 2 ;
-			else kb_edit.unk_346 = 1 ;
+		} else if( kb_edit.henkan_flag ){
+			if( kb_w.mode & 16 ) kb_edit.henkan_cmd = 2 ;
+			else kb_edit.henkan_cmd = 1 ;
 			kb_cmd( KB_CMD + 34 ) ;
 		} else {
 			kb_char_ins( ' ' ) ;
@@ -1113,7 +1115,7 @@ int kb_cmd( int code )
 	case KB_CMD + 20 : case KB_CMD + 21 : case KB_CMD + 22 : case KB_CMD + 23 : case KB_CMD + 24 :
 		break ;
 	case KB_CMD + 25 :
-		if( kb_edit.unk_155 ) break ;
+		if( kb_edit.henkan_flag ) break ;
 		if( kb_fix_pos() >= 0 ){
 			if( kb_edit.ch[kb_edit.pos].type & 16 ) break ;
 		}
@@ -1132,8 +1134,8 @@ int kb_cmd( int code )
 	case KB_CMD + 27 :
 		break ;
 	case KB_CMD + 28 :
-		if( kb_edit.unk_155 ){
-			kb_edit.unk_346 = 4 ;
+		if( kb_edit.henkan_flag ){
+			kb_edit.henkan_cmd = 4 ;
 			kb_cmd( KB_CMD + 34 ) ;
 		} else {
 			if( kb_edit.pos < kb_edit.num ) kb_edit.pos ++ ;
@@ -1143,8 +1145,8 @@ int kb_cmd( int code )
 		}
 		break ;
 	case KB_CMD + 29 :
-		if( kb_edit.unk_155 ){
-			kb_edit.unk_346 = 3 ;
+		if( kb_edit.henkan_flag ){
+			kb_edit.henkan_cmd = 3 ;
 			kb_cmd( KB_CMD + 34 ) ;
 		} else {
 			if( kb_edit.pos > 0 ) kb_edit.pos -- ;
@@ -1154,11 +1156,11 @@ int kb_cmd( int code )
 		}
 		break ;
 	case KB_CMD + 30 :
-		if( kb_edit.unk_155 ) kb_edit.unk_346 = 1 ;
+		if( kb_edit.henkan_flag ) kb_edit.henkan_cmd = 1 ;
 		kb_cmd( KB_CMD + 34 ) ;
 		break ;
 	case KB_CMD + 31 :
-		if( kb_edit.unk_155 ) kb_edit.unk_346 = 2 ;
+		if( kb_edit.henkan_flag ) kb_edit.henkan_cmd = 2 ;
 		kb_cmd( KB_CMD + 34 ) ;
 		break ;
 	case KB_CMD + 32 :
@@ -1169,11 +1171,11 @@ int kb_cmd( int code )
 		break ;
 	case KB_CMD + 35 :
 		if( kb_fix_pos() >= 0 ){
-			if( !kb_edit.unk_155 ){
+			if( !kb_edit.henkan_flag ){
 				kb_cmd( KB_CMD ) ;
 				break ;
 			} else {
-				kb_edit.unk_346 = 5 ;
+				kb_edit.henkan_cmd = 5 ;
 				kb_cmd( KB_CMD + 34 ) ;
 			}
 		}
@@ -1189,39 +1191,39 @@ int kb_cmd( int code )
 		else if( ( Uint16 )kb_edit.ch[kb_edit.pos - 1].code.w == 0x8396 ) kb_edit.ch[kb_edit.pos - 1].code.w = 0x8350 ;
 		break ;
 	case KB_CMD + 38 :
-		if( kb_w.unk_08 & 8 ){
-			kb_w.unk_17 = 1 ;
-			kb_w.unk_19 = 0 ;
-			kb_w.unk_18 = 1 ;
+		if( kb_w.mode_ok & 8 ){
+			kb_w.kana_flag = 1 ;
+			kb_w.roma_flag = 0 ;
+			kb_w.kana_mode = 1 ;
 			kb_func_key() ;
 		}
 		break ;
 	case KB_CMD + 39 :
-		if( kb_w.unk_08 & 8 ){
-			kb_w.unk_17 = 1 ;
-			kb_w.unk_19 = 0 ;
-			kb_w.unk_18 = 2 ;
+		if( kb_w.mode_ok & 8 ){
+			kb_w.kana_flag = 1 ;
+			kb_w.roma_flag = 0 ;
+			kb_w.kana_mode = 2 ;
 			kb_func_key() ;
 		}
 		break ;
 	case KB_CMD + 40 :
-		kb_w.unk_06 &= ~0x51 ;
-		kb_w.unk_06 |= 0x02 ;
-		kb_w.unk_18 = 0 ;
+		kb_w.mode &= ~0x51 ;
+		kb_w.mode |= 0x02 ;
+		kb_w.kana_mode = 0 ;
 		kb_func_key() ;
 		break ;
 	case KB_CMD + 41 :
-		kb_w.unk_06 &= ~0x51 ;
-		kb_w.unk_06 |= 0x42 ;
-		kb_w.unk_18 = 0 ;
+		kb_w.mode &= ~0x51 ;
+		kb_w.mode |= 0x42 ;
+		kb_w.kana_mode = 0 ;
 		kb_func_key() ;
 		break ;
 	case KB_CMD + 43 :
-		if( kb_fix_pos() >= 0 && !kb_edit.unk_155 ){
-			kb_edit.unk_346 = 0 ;
+		if( kb_fix_pos() >= 0 && !kb_edit.henkan_flag ){
+			kb_edit.henkan_cmd = 0 ;
 			kb_cmd( KB_CMD + 34 ) ;
-		} else if( kb_edit.unk_155 ){
-			kb_edit.unk_346 = 2 ;
+		} else if( kb_edit.henkan_flag ){
+			kb_edit.henkan_cmd = 2 ;
 			kb_cmd( KB_CMD + 34 ) ;
 		} else {
 			kb_cmd( KB_CMD + 2 ) ;
@@ -1229,34 +1231,34 @@ int kb_cmd( int code )
 		if( 1 ) na_req( 4 ) ;	/* the ROM's shared kb_func_key call needs the test */
 		break ;
 	case KB_CMD + 44 :
-		if( kb_fix_pos() >= 0 && !kb_edit.unk_155 ){
-			kb_edit.unk_346 = 0 ;
+		if( kb_fix_pos() >= 0 && !kb_edit.henkan_flag ){
+			kb_edit.henkan_cmd = 0 ;
 			kb_cmd( KB_CMD + 34 ) ;
 			na_req( 4 ) ;
-		} else if( kb_edit.unk_155 ){
-			kb_edit.unk_346 = 1 ;
+		} else if( kb_edit.henkan_flag ){
+			kb_edit.henkan_cmd = 1 ;
 			kb_cmd( KB_CMD + 34 ) ;
 			na_req( 4 ) ;
 		}
 		break ;
 	case KB_CMD + 47 :
-		if( kb_w.unk_08 & 8 ){
-			kb_w.unk_17 = 1 ;
+		if( kb_w.mode_ok & 8 ){
+			kb_w.kana_flag = 1 ;
 			kb_func_key() ;
 		}
 		break ;
 	case KB_CMD + 48 :
-		if( !( kb_w.unk_08 & 0x100 ) ){
+		if( !( kb_w.mode_ok & 0x100 ) ){
 			if( kb_fix_pos() >= 0 ) kb_cmd( KB_CMD ) ;
-			kb_w.unk_17 = 0 ;
-			kb_w.unk_18 = 0 ;
+			kb_w.kana_flag = 0 ;
+			kb_w.kana_mode = 0 ;
 			kb_func_key() ;
 		}
 		break ;
 	case KB_CMD + 49 :
 		break ;
 	default :
-		if( kb_fix_pos() >= 0 && kb_edit.unk_155 ) kb_cmd( KB_CMD ) ;
+		if( kb_fix_pos() >= 0 && kb_edit.henkan_flag ) kb_cmd( KB_CMD ) ;
 		if( code == 0x814a ){
 			for( i = 0 ; i < sizeof( daku ) / sizeof( daku[0] ) ; i ++ ){
 				if( ( Uint16 )kb_edit.ch[kb_edit.pos - 1].code.w == daku[i] ) kb_edit.ch[kb_edit.pos - 1].code.w ++ ;
@@ -1279,8 +1281,8 @@ int kb_char_ins( int code )
 {
 	register int i ;
 
-	if( kb_edit.unk_347 >= 36 || kb_edit.len > 156 ) return 0 ;
-	if( kb_w.unk_06 & 0x80 ){
+	if( kb_edit.unfix_len >= 36 || kb_edit.len > 156 ) return 0 ;
+	if( kb_w.mode & 0x80 ){
 		if( kb_edit.pos < kb_edit.num ){
 			for( i = kb_edit.num - 1 ; i >= kb_edit.pos ; i -- ){
 				kb_edit.ch[i + 1] = kb_edit.ch[i] ;
@@ -1288,15 +1290,15 @@ int kb_char_ins( int code )
 			}
 		}
 	}
-	if( code == ' ' && kb_w.unk_17 ){
+	if( code == ' ' && kb_w.kana_flag ){
 		kb_edit.ch[kb_edit.pos].code.w = 0x8140 ;
 		kb_edit.ch[kb_edit.pos].type = 0x52 ;
 		kb_edit.len += 2 ;
-	} else if( !( kb_w.unk_06 & 8 ) || ( kb_w.unk_06 & 4 ) ){
+	} else if( !( kb_w.mode & 8 ) || ( kb_w.mode & 4 ) ){
 		kb_edit.ch[kb_edit.pos].type = 0x51 ;
 		kb_edit.len ++ ;
 		kb_edit.ch[kb_edit.pos].code.w = code ;
-		if( kb_w.unk_06 & 4 && code != ' ' ){
+		if( kb_w.mode & 4 && code != ' ' ){
 			kb_edit.ch[kb_edit.pos].type &= ~0x10 ;
 			kb_edit.ch[kb_edit.pos].type |= 0x20 ;
 		}
@@ -1307,7 +1309,7 @@ int kb_char_ins( int code )
 		kb_edit.ch[kb_edit.pos].type |= 0x40 ;
 	}
 	kb_edit.ch[kb_edit.pos].type |= 0x40 ;
-	if( kb_w.unk_06 & 0x80 || kb_edit.pos == kb_edit.num ) kb_edit.num ++ ;
+	if( kb_w.mode & 0x80 || kb_edit.pos == kb_edit.num ) kb_edit.num ++ ;
 	kb_edit.pos ++ ;
 	return 1 ;
 }
@@ -1321,42 +1323,42 @@ void kb_str_make( KB_EDIT *ed, char *str, int all )
 
 	kb_kouho() ;
 	i = 0 ;
-	ed->unk_0b = 0 ;
-	ed->unk_0a = 0 ;
+	ed->zen_cnt = 0 ;
+	ed->han_cnt = 0 ;
 	num = ed->num ;
 	if( !num ){
 		*str = 0 ;
 		return ;
 	}
 	if( all ){
-		if( ed->unk_0c > ed->pos - 2 ){
-			if( ( ed->unk_0c = ed->pos - 2 ) < 0 ) ed->unk_0c = 0 ;
+		if( ed->disp_top > ed->pos - 2 ){
+			if( ( ed->disp_top = ed->pos - 2 ) < 0 ) ed->disp_top = 0 ;
 		}
 		lim = 440.0f ;
-		for( i = ed->unk_0c, w = 0.0f ; i < ed->pos - 1 ; i ++ ){
+		for( i = ed->disp_top, w = 0.0f ; i < ed->pos - 1 ; i ++ ){
 			if( ed->ch[i].type & 2 ) w += 20.0f ;
 			else if( ed->ch[i].type & 1 ) w += 12.0f ;
 			if( w >= lim ){
-				if( ed->ch[ed->unk_0c].type & 2 ) w -= 20.0f ;
+				if( ed->ch[ed->disp_top].type & 2 ) w -= 20.0f ;
 				else w -= 12.0f ;
-				ed->unk_0c ++ ;
+				ed->disp_top ++ ;
 			}
 		}
-		i = ed->unk_0c ;
+		i = ed->disp_top ;
 	}
 	for( w = 0.0f, n = 0, c = '*' ; i < num ; i ++ ){
 		if( ed->ch[i].type & 2 ){
 			if( !all && n > kb_edit.max - 2 ) break ;
 			*str++ = SJIS_HI( ed->ch[i] ) ;
 			*str++ = SJIS_LO( ed->ch[i] ) ;
-			if( ed->pos > i ) ed->unk_0b ++ ;
+			if( ed->pos > i ) ed->zen_cnt ++ ;
 			w += 20.0f ;
 			n += 2 ;
 		} else if( ed->ch[i].type & 1 ){
 			if( !all && n > kb_edit.max - 1 ) break ;
-			if( all && ( kb_w.unk_06 & 0x200 ) ) *str++ = c ;
+			if( all && ( kb_w.mode & 0x200 ) ) *str++ = c ;
 			else *str++ = SJIS_LO( ed->ch[i] ) ;
-			if( ed->pos > i ) ed->unk_0a ++ ;
+			if( ed->pos > i ) ed->han_cnt ++ ;
 			w += 12.0f ;
 			n ++ ;
 		}
@@ -1366,7 +1368,7 @@ void kb_str_make( KB_EDIT *ed, char *str, int all )
 	*str = 0 ;
 }
 
-/* the conversion of the text not yet fixed: a command of kb_edit.unk_346 to ASK.BIN */
+/* the conversion of the text not yet fixed: a command of kb_edit.henkan_cmd to ASK.BIN */
 void kb_henkan( int no )
 {
 	KB_CHAR ch[80] ;
@@ -1383,8 +1385,8 @@ void kb_henkan( int no )
 		if( !( kb_edit.ch[i].type & 16 ) ) break ;
 	}
 	if( i == kb_edit.num ) return ;
-	if( !kb_edit.unk_155 ){
-		kb_edit.unk_340 = i ;
+	if( !kb_edit.henkan_flag ){
+		kb_edit.henkan_top = i ;
 		p = kb_edit.yomi ;
 		n = 0 ;
 		for( ; i < kb_edit.num ; i ++ ){
@@ -1399,54 +1401,54 @@ void kb_henkan( int no )
 			}
 		}
 		*p = 0 ;
-		kb_edit.unk_342 = i ;
-		kb_edit.unk_155 = 1 ;
-		kb_edit.unk_154 = n ;
-		kb_edit.unk_346 = 0 ;
-		kb_edit.unk_344 = kb_edit.unk_342 - kb_edit.unk_340 ;
+		kb_edit.henkan_end = i ;
+		kb_edit.henkan_flag = 1 ;
+		kb_edit.yomi_len = n ;
+		kb_edit.henkan_cmd = 0 ;
+		kb_edit.henkan_num = kb_edit.henkan_end - kb_edit.henkan_top ;
 	}
 	p = kb_edit.yomi ;
-	if( !kb_edit.unk_156 ){
-		if( ( kb_edit.unk_158 = ASK_HENKAN( p, kb_edit.kanji, kb_edit.rest ) ) > 0 ){
-			kb_edit.unk_156 = 1 ;
-			kb_edit.unk_15c = 1 ;
+	if( !kb_edit.kouho_flag ){
+		if( ( kb_edit.kouho_cnt = ASK_HENKAN( p, kb_edit.kanji, kb_edit.rest ) ) > 0 ){
+			kb_edit.kouho_flag = 1 ;
+			kb_edit.kouho_no = 1 ;
 		} else {
-			kb_edit.unk_155 = 0 ;
+			kb_edit.henkan_flag = 0 ;
 			return ;
 		}
 	} else {
-		switch( q = kb_edit.rest, kb_edit.unk_346 ){	/* the ROM loads q after the old count */
+		switch( q = kb_edit.rest, kb_edit.henkan_cmd ){	/* the ROM loads q after the old count */
 		case 1 :
-			if( kb_edit.unk_15c != 255 && ++ kb_edit.unk_15c == kb_edit.unk_158 + 1 ){
+			if( kb_edit.kouho_no != 255 && ++ kb_edit.kouho_no == kb_edit.kouho_cnt + 1 ){
 				ASK_YOMI( kb_edit.kanji, kb_edit.rest ) ;
-				kb_edit.unk_15c = 255 ;
+				kb_edit.kouho_no = 255 ;
 			} else {
 				ASK_NEXT( kb_edit.kanji, kb_edit.rest ) ;
 			}
 			break ;
 		case 2 :
-			if( kb_edit.unk_15c != 255 && !-- kb_edit.unk_15c ){
+			if( kb_edit.kouho_no != 255 && !-- kb_edit.kouho_no ){
 				ASK_YOMI( kb_edit.kanji, kb_edit.rest ) ;
-				kb_edit.unk_15c = 255 ;
+				kb_edit.kouho_no = 255 ;
 			} else {
 				ASK_PREV( kb_edit.kanji, kb_edit.rest ) ;
 			}
 			break ;
 		case 3 :
-			old = kb_edit.unk_158 ;
+			old = kb_edit.kouho_cnt ;
 			s = kb_edit.kanji ;	/* through a local in these two cases: the ROM keeps q in r5 */
-			if( kb_edit.unk_158 = ASK_SHORT( s, q ) ) kb_edit.unk_15c = 1 ;
-			else kb_edit.unk_158 = old ;
+			if( kb_edit.kouho_cnt = ASK_SHORT( s, q ) ) kb_edit.kouho_no = 1 ;
+			else kb_edit.kouho_cnt = old ;
 			break ;
 		case 4 :
-			old = kb_edit.unk_158 ;
+			old = kb_edit.kouho_cnt ;
 			s = kb_edit.kanji ;
-			if( kb_edit.unk_158 = ASK_LONG( s, q ) ) kb_edit.unk_15c = 1 ;
-			else kb_edit.unk_158 = old ;
+			if( kb_edit.kouho_cnt = ASK_LONG( s, q ) ) kb_edit.kouho_no = 1 ;
+			else kb_edit.kouho_cnt = old ;
 			break ;
 		case 5 :
-			kb_edit.unk_15c = 1 ;
-			kb_edit.unk_158 = ASK_CANCEL( kb_edit.kanji, kb_edit.rest ) ;
+			kb_edit.kouho_no = 1 ;
+			kb_edit.kouho_cnt = ASK_CANCEL( kb_edit.kanji, kb_edit.rest ) ;
 			len = sjis_strlen( kb_edit.kanji ) ;
 			q = kb_edit.kanji ;
 			p = kb_edit.yomi ;
@@ -1464,7 +1466,7 @@ void kb_henkan( int no )
 		}
 	}
 	len = sjis_strlen( kb_edit.kanji ) ;
-	kb_edit.pos = kb_edit.unk_340 + len ;
+	kb_edit.pos = kb_edit.henkan_top + len ;
 	sprintf( str, kb_edit.kanji ) ;
 	if( kb_edit.rest[0] ) strcat( str, kb_edit.rest ) ;
 	p = str ;
@@ -1482,34 +1484,34 @@ void kb_henkan( int no )
 			ch[n].type = 0x41 ;
 			SJIS_LO( ch[n] ) = *p++ ;
 		}
-		kb_edit.unk_157 = len ;
+		kb_edit.henkan_len = len ;
 		n ++ ;
 	}
-	d = kb_edit.unk_344 - n ;
-	kb_edit.unk_344 = n ;
-	if( 0 ){ if( kb_edit.unk_344 ) if( kb_edit.unk_344 ) ; }	/* left out of the build */
+	d = kb_edit.henkan_num - n ;
+	kb_edit.henkan_num = n ;
+	if( 0 ){ if( kb_edit.henkan_num ) if( kb_edit.henkan_num ) ; }	/* left out of the build */
 	if( !d ){
-		for( i = 0 ; i < n ; i ++ ) kb_edit.ch[kb_edit.unk_340 + i] = ch[i] ;
+		for( i = 0 ; i < n ; i ++ ) kb_edit.ch[kb_edit.henkan_top + i] = ch[i] ;
 	} else if( d > 0 ){
-		for( i = kb_edit.unk_340 + n ; i <= kb_edit.num - d - 1 ; i ++ ){
+		for( i = kb_edit.henkan_top + n ; i <= kb_edit.num - d - 1 ; i ++ ){
 			kb_edit.ch[i] = kb_edit.ch[i + d] ;
 			kb_edit.ch[i].type |= 0x50 ;
 		}
 		for( i = 0 ; i < d ; i ++ ) kb_edit.ch[kb_edit.num - i - 1].type = 0 ;
 		for( i = 0 ; i < n ; i ++ ){
-			kb_edit.ch[kb_edit.unk_340 + i] = ch[i] ;
-			kb_edit.ch[kb_edit.unk_340 + i].type |= 0x40 ;
+			kb_edit.ch[kb_edit.henkan_top + i] = ch[i] ;
+			kb_edit.ch[kb_edit.henkan_top + i].type |= 0x40 ;
 		}
 		kb_edit.num -= d ;
 	} else if( d < 0 ){
-		for( i = kb_edit.num - 1 ; i >= kb_edit.unk_342 - 1 ; i -- ){
+		for( i = kb_edit.num - 1 ; i >= kb_edit.henkan_end - 1 ; i -- ){
 			kb_edit.ch[i - d].type = kb_edit.ch[i].type | 0x40 ;
 			kb_edit.ch[i - d].code.w = kb_edit.ch[i].code.w ;
 		}
-		for( i = 0 ; i < n ; i ++ ) kb_edit.ch[kb_edit.unk_340 + i] = ch[i] ;
+		for( i = 0 ; i < n ; i ++ ) kb_edit.ch[kb_edit.henkan_top + i] = ch[i] ;
 		kb_edit.num -= d ;
 	}
-	kb_edit.unk_342 = kb_edit.pos ;
+	kb_edit.henkan_end = kb_edit.pos ;
 }
 
 /* romaji typed before the cursor, made kana */
@@ -1525,7 +1527,7 @@ void kb_kouho( void )
 	char *q ;
 
 	if( !kb_edit.num ) return ;
-	if( !( kb_w.unk_06 & 4 ) ) return ;
+	if( !( kb_w.mode & 4 ) ) return ;
 	n = 0 ;
 	while( kb_edit.ch[kb_edit.pos - n - 1].type & 0x20 && kb_edit.pos - n - 1 >= 0 ) n ++ ;
 	if( !n ) return ;
@@ -1538,7 +1540,7 @@ void kb_kouho( void )
 	}
 	p[n] = 0 ;
 	q = out ;
-	d = ( kb_w.unk_06 & 1 ) ? ASK_KATAKANA( p, q ) : ASK_HIRAGANA( p, q ) ;
+	d = ( kb_w.mode & 1 ) ? ASK_KATAKANA( p, q ) : ASK_HIRAGANA( p, q ) ;
 	if( d ) return ;
 	i = 0 ;
 	p = q ;
@@ -1621,21 +1623,21 @@ void kb_disp( void )
 	spr.y = kw->text_pos.y ;
 	spr.z = kw->text_pos.z ;
 	nlSprPut( &spr ) ;
-	if( kb_edit.pos != kb_edit.unk_06 ){
-		kb_edit.unk_06 = kb_edit.pos ;
-		kb_edit.unk_08 = 0 ;
+	if( kb_edit.pos != kb_edit.old_pos ){
+		kb_edit.old_pos = kb_edit.pos ;
+		kb_edit.blink = 0 ;
 	}
-	kb_edit.unk_08 = ( kb_edit.unk_08 + 9 ) % 360 ;
+	kb_edit.blink = ( kb_edit.blink + 9 ) % 360 ;
 	kb_spr_set( &kb_spr_tbl[5], &spr, 1.0f ) ;
-	spr.x = kw->text_pos.x + kb_edit.unk_0a * 12.0f + kb_edit.unk_0b * 20.0f + -10.0f ;
+	spr.x = kw->text_pos.x + kb_edit.han_cnt * 12.0f + kb_edit.zen_cnt * 20.0f + -10.0f ;
 	spr.y = kw->text_pos.y ;
 	spr.z = kw->text_pos.z + -0.2f ;
-	spr.trnsl = nlCos( DEG_ANG( kb_edit.unk_08 ) ) * 0.5f + 0.5f ;
+	spr.trnsl = nlCos( DEG_ANG( kb_edit.blink ) ) * 0.5f + 0.5f ;
 	nlSprPut( &spr ) ;
 	spr.trnsl = 1.0f ;
 	if( kb_fix_pos() >= 0 ){
 		n = 0 ;
-		for( i = kb_edit.unk_0c ; i < kb_edit.num ; i ++ ){
+		for( i = kb_edit.disp_top ; i < kb_edit.num ; i ++ ){
 			if( !( kb_edit.ch[i].type & 16 ) ) break ;
 			if( kb_edit.ch[i].type & 2 ) n += 20.0f ;
 			else n += 12.0f ;
@@ -1654,7 +1656,7 @@ void kb_disp( void )
 				spr.z = kb_w.text_pos.z + -0.3f ;
 				spr.zm_x = spr.zm_x / 32.0f * w ;
 				nlSprPut( &spr ) ;
-				if( kb_edit.unk_155 ){
+				if( kb_edit.henkan_flag ){
 					kb_spr_set( &kb_spr_tbl[29], &spr, 1.0f ) ;
 					spr.x = kb_w.text_pos.x + n + 8.0f ;
 					spr.y = kb_w.text_pos.y + 0.0f ;
@@ -1665,7 +1667,7 @@ void kb_disp( void )
 			}
 		}
 	}
-	if( kw->unk_16 ) kb_disp_key( &spr ) ;
+	if( kw->soft_flag ) kb_disp_key( &spr ) ;
 	else kb_disp_mode( &spr ) ;
 }
 
@@ -1695,24 +1697,24 @@ void kb_disp_key( NLsprarg *spr )
 	for( i = 0 ; i < 75 ; i ++ ){
 		spr->x = kb_w.key_pos.x + kb_key.key[i].x * zm * 32.0f ;
 		spr->y = kb_w.key_pos.y + kb_key.key[i].y * zm * 32.0f ;
-		k = kb_unk_8C149953[i] ;
-		for( j = 0 ; j < sizeof( kb_unk_8C14999E ) / sizeof( kb_unk_8C14999E[0] ) ; j ++ ){
-			if( i == kb_unk_8C14999E[j][0] ){
-				switch( kb_unk_8C14999E[j][1] ){
+		k = kb_key_spr[i] ;
+		for( j = 0 ; j < sizeof( kb_mode_key ) / sizeof( kb_mode_key[0] ) ; j ++ ){
+			if( i == kb_mode_key[j][0] ){
+				switch( kb_mode_key[j][1] ){
 				case 0 :
 					switch( i ){
 					case 2 :
-						if( ( kb_w.unk_08 & 8 ) == 8 ){
-							if( kb_w.unk_18 == 1 ) k = 31 ;
+						if( ( kb_w.mode_ok & 8 ) == 8 ){
+							if( kb_w.kana_mode == 1 ) k = 31 ;
 						} else k = 15 ;
 						break ;
 					case 3 :
-						if( ( kb_w.unk_08 & 8 ) != 8 ) k = 15 ;
-						else if( kb_w.unk_18 == 2 ) k = 31 ;
+						if( ( kb_w.mode_ok & 8 ) != 8 ) k = 15 ;
+						else if( kb_w.kana_mode == 2 ) k = 31 ;
 						break ;
 					default :
-						if( !kb_w.unk_18 ){
-							if( !( kb_w.unk_06 & 0x40 ) ){
+						if( !kb_w.kana_mode ){
+							if( !( kb_w.mode & 0x40 ) ){
 								if( i == 4 ) k = 31 ;
 							} else {
 								if( i == 5 ) k = 31 ;
@@ -1722,15 +1724,15 @@ void kb_disp_key( NLsprarg *spr )
 					}
 					break ;
 				case 1 :
-					if( kb_w.unk_18 ) k = 4 ;
+					if( kb_w.kana_mode ) k = 4 ;
 					break ;
 				case 2 :
-					if( kb_w.unk_17 ) k = 30 ;
-					else if( !( kb_w.unk_08 & 8 ) ) k = 14 ;
+					if( kb_w.kana_flag ) k = 30 ;
+					else if( !( kb_w.mode_ok & 8 ) ) k = 14 ;
 					break ;
 				case 3 :
-					if( !kb_w.unk_17 ) k = 30 ;
-					else if( kb_w.unk_08 & 0x100 ) k = 14 ;
+					if( !kb_w.kana_flag ) k = 30 ;
+					else if( kb_w.mode_ok & 0x100 ) k = 14 ;
 					break ;
 				}
 			}
@@ -1738,12 +1740,12 @@ void kb_disp_key( NLsprarg *spr )
 		kb_spr_set( &kb_spr_tbl[k], spr, zm ) ;
 		nlSprPut( spr ) ;
 	}
-	if( kb_w.unk_06 & 2 ){
-		p = kb_unk_8C1499FA ;
-		if( ( kb_w.unk_06 & 16 ) && !( kb_w.unk_06 & 0x40 ) || ( kb_w.unk_06 & 0x40 ) && !( kb_w.unk_06 & 16 ) ) p = kb_unk_8C149A26 ;
+	if( kb_w.mode & 2 ){
+		p = kb_alnum_top0 ;
+		if( ( kb_w.mode & 16 ) && !( kb_w.mode & 0x40 ) || ( kb_w.mode & 0x40 ) && !( kb_w.mode & 16 ) ) p = kb_alnum_top1 ;
 	} else {
-		p = kb_unk_8C1499BE ;
-		if( kb_w.unk_06 & 1 ) p = kb_unk_8C1499DC ;
+		p = kb_kana_top0 ;
+		if( kb_w.mode & 1 ) p = kb_kana_top1 ;
 	}
 	spr->z -= 0.2f ;
 	for( i = 0 ; i < 75 ; i ++ ){
@@ -1751,16 +1753,16 @@ void kb_disp_key( NLsprarg *spr )
 		spr->x = kb_w.key_pos.x + kb_key.key[i].x * zm * 32.0f ;
 		spr->y = kb_w.key_pos.y + kb_key.key[i].y * zm * 32.0f ;
 		k = ( *p )[1] ;
-		if( i == 70 && k == 32 ) k += kb_w.unk_17 ;
+		if( i == 70 && k == 32 ) k += kb_w.kana_flag ;
 		kb_spr_set( &kb_top_tbl[k], spr, zm ) ;
 		p ++ ;
 		nlSprPut( spr ) ;
 	}
 	spr->z += 0.1f ;
-	spr->x = kb_w.key_pos.x + kb_key.key[kb_key.unk_04].x * zm * 32.0f ;
-	spr->y = kb_w.key_pos.y + kb_key.key[kb_key.unk_04].y * zm * 32.0f ;
-	if( kb_key.unk_06 != kb_key.unk_04 ) k = kb_key.key[kb_key.unk_04].w + 5 ;
-	else k = kb_key.key[kb_key.unk_04].w + 9 ;
+	spr->x = kb_w.key_pos.x + kb_key.key[kb_key.no].x * zm * 32.0f ;
+	spr->y = kb_w.key_pos.y + kb_key.key[kb_key.no].y * zm * 32.0f ;
+	if( kb_key.push_no != kb_key.no ) k = kb_key.key[kb_key.no].w + 5 ;
+	else k = kb_key.key[kb_key.no].w + 9 ;
 	kb_spr_set( &kb_spr_tbl[k], spr, zm ) ;
 	nlSprPut( spr ) ;
 }
@@ -1776,21 +1778,21 @@ void kb_disp_mode( NLsprarg *spr )
 	spr->z = kb_w.mode_pos.z ;
 	nlSprPut( spr ) ;
 	k = 20 ;
-	if( !kb_w.unk_17 ) k ++ ;
+	if( !kb_w.kana_flag ) k ++ ;
 	kb_spr_set( &kb_spr_tbl[k], spr, 1.0f ) ;
 	spr->x = kb_w.mode_pos.x ;
 	spr->y = kb_w.mode_pos.y ;
 	spr->z -= 0.1f ;
 	nlSprPut( spr ) ;
-	if( kb_w.unk_18 == 1 ) k = 22 ;
-	else if( kb_w.unk_18 == 2 ) k = 23 ;
-	else if( !( kb_w.unk_06 & 0x40 ) ) k = 24 ;
+	if( kb_w.kana_mode == 1 ) k = 22 ;
+	else if( kb_w.kana_mode == 2 ) k = 23 ;
+	else if( !( kb_w.mode & 0x40 ) ) k = 24 ;
 	else k = 25 ;
 	kb_spr_set( &kb_spr_tbl[k], spr, 1.0f ) ;
 	spr->x = kb_w.mode_pos.x + 32.0f ;
 	nlSprPut( spr ) ;
-	if( kb_w.unk_17 ){
-		if( kb_w.unk_19 ) k = 27 ;
+	if( kb_w.kana_flag ){
+		if( kb_w.roma_flag ) k = 27 ;
 		else k = 26 ;
 		kb_spr_set( &kb_spr_tbl[k], spr, 1.0f ) ;
 		spr->x = kb_w.mode_pos.x + 64.0f ;

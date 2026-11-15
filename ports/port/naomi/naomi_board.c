@@ -21,6 +21,8 @@
 #include "naomi_host.h"
 #include "naomi_input.h"
 #include "coro.h"
+#include "prof.h"
+#include "host_sections.h"
 #include "nl_port.h"
 #include "snd.h"
 #ifdef HOST_NATIVE64
@@ -41,10 +43,20 @@ static void (*stop_fn)(void);
 static void (*frame_fn)(void);
 static unsigned frame_polls, polls_frame;
 static int imask;
+#ifdef __3DS__
+static int arcade;              /* the cartridge's program, not the Dreamcast's */
+int ctr_log_line(const char* fmt, va_list ap);  /* port/ctr/ctr_log.c: queued for a thread to write */
+#endif
 
 void host_log(const char* fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
+#ifdef __3DS__
+    if (ctr_log_line(fmt, ap)) {
+        va_end(ap);
+        return;
+    }
+#endif
     vfprintf(stderr, fmt, ap);
     va_end(ap);
     fputc('\n', stderr);
@@ -183,6 +195,14 @@ static void game_entry(void* arg) {
     }
 }
 
+/* The full native port keeps its own same-thread stack; the 3DS release uses
+ * its measured smaller stack. */
+#ifdef __3DS__
+#define GAME_STACK (256u << 10)
+#else
+#define GAME_STACK (1u << 20)
+#endif
+
 #ifdef HOST_NATIVE64
 static int native_program_valid(const HOST_PROGRAM* prog) {
     return prog && prog->main && (!prog->reloc || !prog->reloc[0].at);
@@ -204,7 +224,7 @@ void board_start(const HOST_PROGRAM* prog) {
     program = prog;
     init_data();
     host_coro = coro_self();
-    game_coro = coro_create(game_entry, NULL, 1 << 20);
+    game_coro = coro_create(game_entry, NULL, GAME_STACK);
 #ifdef HOST_NATIVE64
     return 1;
 #endif
@@ -244,6 +264,9 @@ void board_stop(void) {
 #else
     memset((void*)(uintptr_t)NAOMI_RAM_BASE, 0, NAOMI_RAM_SIZE);
 #endif
+#ifdef __3DS__
+    arcade = 0;
+#endif
 }
 
 int naomi_init(const HOST_PROGRAM* prog, const char* rom_path) {
@@ -256,6 +279,9 @@ int naomi_init(const HOST_PROGRAM* prog, const char* rom_path) {
 #endif
         return 0;
     }
+#ifdef __3DS__
+    arcade = 1;
+#endif
 #ifdef HOST_NATIVE64
     return board_start(prog);
 #else
@@ -268,19 +294,23 @@ void naomi_run_frame(void) {
 #ifdef HOST_NATIVE64
     if (!game_coro) return;
 #endif
+    PROF_START(t0);
     frames++;
     render_done = 0;
     nla_frame_input();
     if (frame_fn != NULL) {
         frame_fn();
     }
+    PROF_STOP(PZ_GAME_SETUP, t0);
     if (intr[1] != NULL) {
+        PROF_START(t1);
         intr[1]();                  /* vertical blank in */
+        PROF_STOP(PZ_GAME_IRQ, t1);
     }
     coro_switch(game_coro);
 }
 
-unsigned host_frame(void) {
+__attribute__((section(MVC2_NL_HOT_SECTION))) unsigned host_frame(void) {
     return frames;
 }
 
@@ -289,13 +319,16 @@ void host_poll(void) {
     if (!render_done) {
         render_done = 1;
         if (intr[0] != NULL) {
+            PROF_START(t0);
             intr[0]();
+            PROF_STOP(PZ_GAME_IRQ, t0);
         }
     }
 }
 
 void nlWaitVSync(void) {
     x87_check();
+    nl_tex_frame();
     host_present();
     coro_switch(host_coro);
 }
@@ -350,11 +383,25 @@ void cache_purge(void* p, int size) {
     (void)size;
 }
 
+static int trace_rom(void) {
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("MVC2_TRACE_ROM") != NULL;
+    }
+    return on;
+}
+
 int nlaReadROMDMA(uint32_t offset, char* dst, uint32_t size, int wait) {
     (void)wait;
-    if (getenv("MVC2_TRACE_ROM")) {
+    if (trace_rom()) {
         host_log("rom %08X -> %08X %X", offset, (uint32_t)(uintptr_t)dst, size);
     }
+    host_fills++;
+#ifdef __3DS__
+    if (ctr_rom_dma(offset, dst, size)) {
+        return 0;
+    }
+#endif
     if (!naomi_rom_read(offset, dst, size)) {
         host_log("ROM read past the end: %08X + %X", offset, size);
         return -1;
@@ -365,12 +412,41 @@ int nlaReadROMDMA(uint32_t offset, char* dst, uint32_t size, int wait) {
 /* the cartridge unpacks it on the way */
 void nlaNRSDecodeRead(uint32_t offset, char* dst, uint32_t size, int wait) {
     (void)wait;
-    if (getenv("MVC2_TRACE_ROM")) {
+    if (trace_rom()) {
         host_log("packed %08X -> %08X %X", offset, (uint32_t)(uintptr_t)dst, size);
     }
+    host_fills++;
+#ifdef __3DS__
+    if (ctr_rom_packed(offset, dst, size)) {
+        return;
+    }
+#endif
     naomi_m1_read(offset, (uint8_t*)dst, size);
 }
 
 int nlaCheckWaitROMDMA(void) {
     return 1;
 }
+
+/* The frame's CPU time so far, in microseconds: the load queue reads (15000 - it) / 256 blocks of 2 KB a frame, 116 KB
+   at 0. MVC2_LOAD_KB=n gives the time that reads n KB, so a stream from the SD card keeps behind its read-ahead. Its
+   value never changes, so the game's measure of the ROM's speed still comes out 0 and the queue's divisor 256.
+   The Dreamcast's program reads its disc apart from it and paces only copies by it, so it is given 0. On the PC,
+   which reads the ROM from memory, the programs' own stubs stay. */
+#ifdef __3DS__
+int32_t nlSysMetricsCpuPowerGet(void) {
+    static int32_t used = -1;
+    if (!arcade) {
+        return 0;
+    }
+    if (used < 0) {
+        const char* e = getenv("MVC2_LOAD_KB");
+        int32_t blocks = e != NULL ? atoi(e) / 2 : 0;
+        used = blocks <= 0 || blocks >= 15000 / 256 ? 0 : 15000 - blocks * 256;
+        if (used > 0) {
+            host_log("load queue: %ld KB a frame (MVC2_LOAD_KB)", (long)blocks * 2);
+        }
+    }
+    return used;
+}
+#endif

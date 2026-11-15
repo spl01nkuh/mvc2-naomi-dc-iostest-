@@ -368,7 +368,7 @@ void rec_item_turn( PLAYER_WORK *w )
 	w->routine_1 ++ ;
 	w->rot[1] = 0 ;
 	w->obj = obj_dm0d->obj[145] ;
-	unk_8C212F20 = 0 ;
+	net_wait = 0 ;
 }
 
 void rec_item_chosen( PLAYER_WORK *w )
@@ -512,7 +512,7 @@ void rec_flow_run( PLAYER_WORK *w )
 {
 	w->disp_flag = 1 ;
 	rec_flow_uv( w ) ;
-	if( unk_8C212F20 == 0 ){
+	if( net_wait == 0 ){
 		w->disp_flag = 0 ;
 		w->routine_1 ++ ;
 	}
@@ -520,7 +520,7 @@ void rec_flow_run( PLAYER_WORK *w )
 
 void rec_flow_stop( PLAYER_WORK *w )
 {
-	if( unk_8C212F20 == 1 ) w->routine_1 = 1 ;
+	if( net_wait == 1 ) w->routine_1 = 1 ;
 }
 
 /* the strip's texture runs a step each frame, four steps round */
@@ -681,7 +681,7 @@ void rec_msg_move( PLAYER_WORK *w )
 void rec_msg_init( PLAYER_WORK *w )
 {
 	w->routine_0 ++ ;
-	if( !w->sub_no ) unk_8C212F20 = 1 ;
+	if( !w->sub_no ) net_wait = 1 ;
 }
 
 void rec_msg_main( PLAYER_WORK *w )
@@ -689,7 +689,7 @@ void rec_msg_main( PLAYER_WORK *w )
 	if( w->timer0 ) w->timer0 -- ;
 	if( !w->timer0 ){
 		w->routine_0 ++ ;
-		if( !w->sub_no ) unk_8C212F20 = 0 ;
+		if( !w->sub_no ) net_wait = 0 ;
 	}
 }
 
@@ -710,7 +710,7 @@ void rec_info_put( void )
 	n = ( Uint16 )( unk_8C213B0C >> 16 ) ;
 	sprintf( buf, "%8d", n ) ;
 	str_put( 400.0f, 121.0f, 11.91f, 0xffffffff, buf ) ;
-	n = unk_8C213AF8 ;
+	n = net_entry_num2 ;
 	sprintf( buf, "%7d", n ) ;
 	str_put( 220.0f, 395.0f, 11.91f, 0xffffffff, buf ) ;
 	n = net_entry_num ;

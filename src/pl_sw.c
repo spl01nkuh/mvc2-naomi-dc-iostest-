@@ -392,7 +392,7 @@ void pause_init( void )
 	case 2 :
 		w->page = 2 ;
 		w->side = Sys->entry_side ;
-		training_work.unk_1c = 0 ;
+		training_work.menu_disp = 0 ;
 		break ;
 	case 7 :
 		w->side = Sys->entry_side ;
@@ -556,7 +556,7 @@ static void pause_quit( PAUSE_WORK *w, int side )
 	if( old != w->cursor ) na_req( 1 ) ;
 	if( sw_work[side].on & decide_sw_get( side ) ){
 		if( !w->cursor ){
-			Sys->unk_50 = 1 ;
+			Sys->quit_flag = 1 ;
 			soft_reset( 0 ) ;
 			Sys->ended_mode = Sys->home_mode ;
 		} else {
@@ -900,8 +900,8 @@ void training_init( void )
 	tw->page = 0 ;
 	tw->cursor = 0 ;
 	tw->cursor2 = 0 ;
-	tw->unk_03 = 0 ;
-	tw->unk_04 = 0 ;
+	tw->cursor3 = 0 ;
+	tw->dummy_mode = 0 ;
 	tw->stance = 0 ;
 	tw->dummy_guard = 0 ;
 	tw->dummy_air_recover = 0 ;
@@ -977,7 +977,7 @@ static void training_menu_0( TRAINING_WORK *tw, int side )
 			na_req( 2 ) ;
 			if( tw->step[1] ) fade_set( 0xff000000, 10, 1 ) ;
 		} else if( sw_work[side].on & KEY_HK ){
-			tw->unk_1c = 0 ;
+			tw->menu_disp = 0 ;
 			training_rule_set( tw ) ;
 			tw->step[0] = tw->step[1] = 0 ;
 			na_req( 3 ) ;
@@ -987,37 +987,37 @@ static void training_menu_0( TRAINING_WORK *tw, int side )
 		if( fade_cnt() ) break ;
 		switch( tw->step[1] ){
 		case 0 :
-			tw->unk_1c = 0 ;
+			tw->menu_disp = 0 ;
 			training_rule_set( tw ) ;
 			tw->step[0] = tw->step[1] = 0 ;
 			vs_sys_work.game_stop = pause_work.stop_keep ;
 			break ;
 		case 1 :
-			tw->unk_1c = 3 ;
+			tw->menu_disp = 3 ;
 			tw->page = tw->cursor ;
-			tw->cursor2 = tw->unk_04 ;
-			tw->unk_03 = 0 ;
+			tw->cursor2 = tw->dummy_mode ;
+			tw->cursor3 = 0 ;
 			pause_sub_win_set() ;
 			pause_sub_cursor_set() ;
 			break ;
 		case 2 :
 			pause_cfg_set() ;
-			tw->unk_1c = 3 ;
+			tw->menu_disp = 3 ;
 			tw->page = tw->cursor ;
-			tw->unk_03 = tw->cursor2 = 0 ;
+			tw->cursor3 = tw->cursor2 = 0 ;
 			break ;
 		case 3 :
 			Sys->play_side = 0 ;
 			Sys->new_side = Sys->entry_side ;
 			Sys->join_side = Sys->entry_side ;
-			tw->unk_1c = 0 ;
+			tw->menu_disp = 0 ;
 			training_restart() ;
 			break ;
 		case 4 :
 			tw->page = 3 ;
 			tw->cursor2 = 1 ;
-			tw->unk_03 = 0 ;
-			tw->unk_1c = 5 ;
+			tw->cursor3 = 0 ;
+			tw->menu_disp = 5 ;
 			pause_yn_win_set() ;
 			pause_yn_cursor_set() ;
 			break ;
@@ -1064,8 +1064,8 @@ static void training_menu_1( TRAINING_WORK *tw, int side )
 		if( fade_cnt() ) break ;
 		switch( tw->step[1] ){
 		case 0 :
-			if( tw->unk_04 ){
-				tw->unk_04 = 0 ;
+			if( tw->dummy_mode ){
+				tw->dummy_mode = 0 ;
 				tw->side = 1 << side ;
 				tw->stance = 0 ;
 				tw->dummy_guard = 0 ;
@@ -1077,13 +1077,13 @@ static void training_menu_1( TRAINING_WORK *tw, int side )
 				Sys->join_side = Sys->entry_side ;
 				training_restart() ;
 			} else {
-				tw->unk_1c = 4 ;
+				tw->menu_disp = 4 ;
 				tw->page = 4 ;
 				pause_opt_set() ;
 			}
 			break ;
 		case 1 :
-			tw->unk_04 = 1 ;
+			tw->dummy_mode = 1 ;
 			tw->side = -1 ;
 			tw->stance = 0 ;
 			tw->dummy_guard = 0 ;
@@ -1096,7 +1096,7 @@ static void training_menu_1( TRAINING_WORK *tw, int side )
 			training_restart() ;
 			break ;
 		case 2 :
-			tw->unk_04 = 2 ;
+			tw->dummy_mode = 2 ;
 			tw->side = 0 ;
 			tw->stance = 0 ;
 			tw->dummy_guard = 0 ;
@@ -1110,7 +1110,7 @@ static void training_menu_1( TRAINING_WORK *tw, int side )
 			break ;
 		case 3 :
 			tw->page = 0 ;
-			tw->unk_1c = 1 ;
+			tw->menu_disp = 1 ;
 			break ;
 		}
 		tw->step[0] = tw->step[1] = 0 ;
@@ -1204,7 +1204,7 @@ static void training_menu_2( TRAINING_WORK *tw, int side )
 	case 3 :
 		if( !fade_cnt() ){
 			tw->page = 0 ;
-			tw->unk_1c = 1 ;
+			tw->menu_disp = 1 ;
 			tw->step[0] = tw->step[1] = 0 ;
 		}
 		break ;
@@ -1247,12 +1247,12 @@ static void training_menu_3( TRAINING_WORK *tw, int side )
 	case 3 :
 		if( !fade_cnt() ){
 			if( !tw->step[1] ){
-				Sys->unk_50 = 1 ;
+				Sys->quit_flag = 1 ;
 				soft_reset( 0 ) ;
 				Sys->ended_mode = Sys->home_mode ;
 			} else {
 				tw->page = 0 ;
-				tw->unk_1c = 1 ;
+				tw->menu_disp = 1 ;
 			}
 			tw->step[0] = tw->step[1] = 0 ;
 		}
@@ -1278,18 +1278,18 @@ static void training_menu_4( TRAINING_WORK *tw, int side )
 		if( !fade_cnt() ) tw->step[0] ++ ;
 		break ;
 	case 2 :
-		old = tw->unk_03 ;
-		if( ( sw_work[side].on | sw_work[side].rep ) & KEY_UP ) tw->unk_03 -- ;
-		if( ( sw_work[side].on | sw_work[side].rep ) & KEY_DOWN ) tw->unk_03 ++ ;
-		tw->unk_03 = ( tw->unk_03 + 6 ) % 6 ;
-		if( old != tw->unk_03 ) na_req( 1 ) ;
+		old = tw->cursor3 ;
+		if( ( sw_work[side].on | sw_work[side].rep ) & KEY_UP ) tw->cursor3 -- ;
+		if( ( sw_work[side].on | sw_work[side].rep ) & KEY_DOWN ) tw->cursor3 ++ ;
+		tw->cursor3 = ( tw->cursor3 + 6 ) % 6 ;
+		if( old != tw->cursor3 ) na_req( 1 ) ;
 		if( sw_work[side].on & KEY_HK ){
 			tw->step[0] ++ ;
 			fade_set( 0xff000000, 10, 1 ) ;
 			na_req( 3 ) ;
 			return ;
 		}
-		switch( tw->unk_03 ){
+		switch( tw->cursor3 ){
 		case 0 :
 			max = 4 ;
 			item = &tw->stance ;
@@ -1327,11 +1327,11 @@ static void training_menu_4( TRAINING_WORK *tw, int side )
 		break ;
 	case 3 :
 		if( !fade_cnt() ){
-			tw->unk_1c = 3 ;
+			tw->menu_disp = 3 ;
 			tw->step[0] = tw->step[1] = 0 ;
 			tw->page = 1 ;
-			tw->cursor2 = tw->unk_04 ;
-			tw->unk_03 = 0 ;
+			tw->cursor2 = tw->dummy_mode ;
+			tw->cursor3 = 0 ;
 			pause_sub_win_set() ;
 			pause_sub_cursor_set() ;
 		}
@@ -1385,14 +1385,14 @@ void pause_main( void )
 		return ;
 	}
 	if( tw->menu_on ){
-		switch( tw->unk_1c ){
+		switch( tw->menu_disp ){
 		case 0 :
-			tw->unk_1c = 1 ;
+			tw->menu_disp = 1 ;
 			pause_bg_set() ;
 			tw->step[0] = tw->step[1] = 0 ;
 			break ;
 		case 1 :
-			tw->unk_1c = 2 ;
+			tw->menu_disp = 2 ;
 			pause_win_set() ;
 			pause_cursor_set() ;
 			break ;

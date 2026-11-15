@@ -136,8 +136,7 @@ static VEC3 gauge_team_pos_tbl[6] = {
 
 /* the object numbers the gauges use, by place */
 static Uint8 gauge_team_idx_tbl[6] = { 0, 2, 4, 1, 3, 5 } ;
-static Uint8 gauge_bar_obj_tbl[2] = { 62, 71 } ;
-static Uint8 gauge_unk_85C[4] = { 0x74, 0x76, 0x75, 0x77 } ;
+static Uint8 gauge_bar_obj_tbl[6] = { 62, 71, 0x74, 0x76, 0x75, 0x77 } ;
 static Uint8 gauge_timer_icon_obj_tbl[2] = { 0x70, 0x71 } ;
 static Uint8 gauge_timer_obj_tbl[2] = { 0x72, 0x73 } ;
 static Uint8 gauge_team_obj_tbl[2] = { 0x78, 0x79 } ;

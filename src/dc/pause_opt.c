@@ -1,4 +1,4 @@
-/* The training menu's sub-menu (shown while training_work.unk_1c is 3) and its settings page
+/* The training menu's sub-menu (shown while training_work.menu_disp is 3) and its settings page
    (while it is 4): six lines, four with a setting drawn beside them, and the cursor. */
 #include "player.h"
 #include "nl.h"
@@ -98,8 +98,8 @@ void pause_opt_set( void )
 	if( !( w = work_get2( 0, W_PAUSE, LIST_TOP ) ) ) return ;
 	w->disp_flag = 1 ;
 	w->work_func = pause_opt_cursor_move ;
-	w->pos = pause_opt_cursor_pos[training_work.unk_03] ;
-	w->scale = pause_scale[pause_opt_cursor_scale[training_work.unk_03]] ;
+	w->pos = pause_opt_cursor_pos[training_work.cursor3] ;
+	w->scale = pause_scale[pause_opt_cursor_scale[training_work.cursor3]] ;
 	w->obj_flag = OBJ_POS | OBJ_SCALE | OBJ_TRNSL | OBJ_FADE ;
 	w->fade = pause_opt_fade ;
 	w->work2 = 0 ;
@@ -249,12 +249,12 @@ void pause_opt_set( void )
 
 void pause_sub_win_move( PLAYER_WORK *w )
 {
-	if( training_work.unk_1c != 3 ) work_free( w ) ;
+	if( training_work.menu_disp != 3 ) work_free( w ) ;
 }
 
 void pause_sub_cursor_move( PLAYER_WORK *w )
 {
-	if( training_work.unk_1c != 3 ){
+	if( training_work.menu_disp != 3 ){
 		work_free( w ) ;
 		return ;
 	}
@@ -271,17 +271,17 @@ void pause_sub_cursor_move( PLAYER_WORK *w )
 
 void pause_opt_win_move( PLAYER_WORK *w )
 {
-	if( training_work.unk_1c != 4 ) work_free( w ) ;
+	if( training_work.menu_disp != 4 ) work_free( w ) ;
 }
 
 /* a line's label: white on the cursor's line, grey on the others */
 void pause_opt_label_move( PLAYER_WORK *w )
 {
-	if( training_work.unk_1c != 4 ){
+	if( training_work.menu_disp != 4 ){
 		work_free( w ) ;
 		return ;
 	}
-	w->fade.r = w->fade.g = w->fade.b = training_work.unk_03 != w->sub_type ? 0.7f : 1.0f ;
+	w->fade.r = w->fade.g = w->fade.b = training_work.cursor3 != w->sub_type ? 0.7f : 1.0f ;
 }
 
 /* a line's setting, its model by the setting's value */
@@ -289,11 +289,11 @@ void pause_opt_value_move( PLAYER_WORK *w )
 {
 	Sint8 obj ;
 
-	if( training_work.unk_1c != 4 ){
+	if( training_work.menu_disp != 4 ){
 		work_free( w ) ;
 		return ;
 	}
-	if( training_work.unk_03 != w->sub_type ){
+	if( training_work.cursor3 != w->sub_type ){
 		w->fade.g = w->fade.b = 0.7f ;
 		w->fade.r = 0.0f ;
 	} else w->fade.r = w->fade.g = w->fade.b = 1.0f ;
@@ -321,17 +321,17 @@ void pause_opt_value_move( PLAYER_WORK *w )
 /* the cursor glows, on the line or on the last one */
 void pause_opt_cursor_move( PLAYER_WORK *w )
 {
-	if( training_work.unk_1c != 4 ){
+	if( training_work.menu_disp != 4 ){
 		work_free( w ) ;
 		return ;
 	}
 	w->timer1 += 9 ;
 	if( w->timer1 >= 360 ) w->timer1 = 0 ;
 	w->fade.trnsl = nlCos( DEG_ANG( w->timer1 ) ) * 0.5f + 0.5f ;
-	if( training_work.unk_03 != 5 ){
+	if( training_work.cursor3 != 5 ){
 		w->obj = obj_stg->obj[49] ;
-		w->pos = pause_opt_cursor_pos[training_work.unk_03] ;
-		w->scale = pause_scale[pause_opt_cursor_scale[training_work.unk_03]] ;
+		w->pos = pause_opt_cursor_pos[training_work.cursor3] ;
+		w->scale = pause_scale[pause_opt_cursor_scale[training_work.cursor3]] ;
 	} else {
 		w->obj = obj_stg->obj[48] ;
 		w->pos.x = pause_opt_end[0].pos.x ;

@@ -39,7 +39,7 @@ AccessControlInfo:
   IdealProcessor                : 0
   AffinityMask                  : 3             # cores 0 and 1: the sound and the ROM's read-ahead run on 1
   Priority                      : 16
-  MaxCpu                        : 0x9E
+  MaxCpu                        : 0xD0          # 80% of core 1 at most (bit 7: the app sets its share)
   HandleTableSize               : 0x200
   DisableDebug                  : false
   EnableForceDebug              : false
@@ -54,7 +54,7 @@ AccessControlInfo:
   IORegisterMapping:
    - 1ff00000-1ff7ffff
   MemoryMapping:
-   - 1f000000-1f5fffff:r
+   - 1f000000-1f5fffff
   SystemCallAccess:
     ArbitrateAddress: 34
     Backdoor: 123
@@ -76,6 +76,7 @@ AccessControlInfo:
     DuplicateHandle: 39
     ExitProcess: 3
     ExitThread: 9
+    FlushProcessDataCache: 84
     GetCurrentProcessorNumber: 17
     GetHandleInfo: 41
     GetProcessId: 53

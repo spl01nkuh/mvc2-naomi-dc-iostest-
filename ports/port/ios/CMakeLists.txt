@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.29)
-project(MVC2Development LANGUAGES C Swift)
+project(MVC2Development LANGUAGES C Swift ASM)
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     message(FATAL_ERROR "Use build-development-ipa.sh on macOS with the full Xcode app")
@@ -15,21 +15,22 @@ if(NOT IOS_APP)
     message(FATAL_ERROR "The development app sources are missing")
 endif()
 
-# This explicitly requested device-test app hosts real import/input/display
-# components. It does not substitute a demo for the unfinished native engine.
+# Compile the complete linked native arcade program from upstream 0.2.1.
+# The original 32-bit desktop/3DS build remains a separate CMake project.
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../native64/engine" native-engine)
 add_executable(MVC2Development MACOSX_BUNDLE ${IOS_COMPONENTS} ${IOS_APP}
     assets/mvc2_rom.c assets/zip_reader.c input/input.c display/viewport.c)
 target_include_directories(MVC2Development PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../include")
-target_link_libraries(MVC2Development PRIVATE z
+target_link_libraries(MVC2Development PRIVATE mvc2_native_engine z
     "-framework UIKit" "-framework SwiftUI" "-framework Foundation"
     "-framework Metal" "-framework MetalKit" "-framework QuartzCore"
-    "-framework UniformTypeIdentifiers")
+    "-framework UniformTypeIdentifiers" "-framework AVFoundation")
 set_target_properties(MVC2Development PROPERTIES
     OUTPUT_NAME MVC2Development
     MACOSX_BUNDLE_BUNDLE_NAME MVC2Development
     MACOSX_BUNDLE_GUI_IDENTIFIER com.spl01nkuh.mvc2.native.dev
-    MACOSX_BUNDLE_SHORT_VERSION_STRING 0.1.0
+    MACOSX_BUNDLE_SHORT_VERSION_STRING 0.2.1
     MACOSX_BUNDLE_BUNDLE_VERSION "${MVC2_DEV_BUILD_NUMBER}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/app/Info.plist.in"
     XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.spl01nkuh.mvc2.native.dev

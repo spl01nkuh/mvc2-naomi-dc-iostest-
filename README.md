@@ -41,8 +41,8 @@ sections below say where to find them.
 To build a port, which plays the game on another machine:
 
 - PC (Windows): [ports/README.md](ports/README.md)
-- Nintendo 3DS: [ports/3DS.md](ports/3DS.md). A work in progress: it runs both versions, but on an Old 3DS
-  fights are only about 10 fps so far.
+- Nintendo 3DS: [ports/3DS.md](ports/3DS.md). Both versions run at full speed, 60 fps, on every 3DS and 2DS,
+  the original models too.
 
 These need only GCC, CMake, Python 3 and SDL3, or devkitPro for the 3DS. The releases have them ready to play.
 

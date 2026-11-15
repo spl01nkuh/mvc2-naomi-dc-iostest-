@@ -173,8 +173,13 @@ void vib_move( void )
 	}
 	for( i = 0 ; i < 2 ; i ++ ){
 		if( vib_w[i].cnt < 0 ){
+#ifdef HOST_PORT
+			/* the board's no is still a pointer from the loop above, so it reads past vib_tbl; a ready pack's time replaces it */
+			vib_w[i].cnt = vib_tbl[vib_w[i].no].time ;
+#else
 			/* no is still the last side's here, as in the arcade's code */
 			vib_w[i].cnt = vib_tbl[no].time ;
+#endif
 #ifdef TARGET_DC
 			if( ( Sys->task_no == 2 && !pl_work[i].cpu_flag ) || Sys->task_no == 3 || pause_work.pause_flag ){
 #else

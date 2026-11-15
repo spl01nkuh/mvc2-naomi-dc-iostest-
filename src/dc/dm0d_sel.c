@@ -38,8 +38,8 @@ PLAYER_WORK *dm0d_sel_set( void )
 
 	mw = 0 ;
 	if( work_rest_cnt >= 7 ){
-		unk_8C2143C2 = -1 ;
-		unk_8C2143C4 = 0 ;
+		sel_on = -1 ;
+		sel_ans = 0 ;
 		mw = work_get( 0, W_SYS, LIST_END ) ;
 		mw->be_flag = 1 ;
 		mw->work_func = sel_move ;
@@ -200,17 +200,17 @@ void sel_ctrl_main( PLAYER_WORK *w )
 		if( w->pos.y >= 0.0f ){
 			w->pos.y = 0.0f ;
 			w->master_w->sub_no = 1 ;
-		} else if( cancel_ck() || unk_8C21429C ){
+		} else if( cancel_ck() || sel_close_flag ){
 			w->master_w->sub_no = 3 ;
 		}
 		break ;
 	case 1 :
-		if( cancel_ck() || unk_8C21429C ){
+		if( cancel_ck() || sel_close_flag ){
 			w->master_w->sub_no = 3 ;
 		} else if( decide_ck() ){
 			w->timer0 = 30 ;
 			w->master_w->sub_no = 2 ;
-			unk_8C2143C4 = w->master_w->dir + 1 ;
+			sel_ans = w->master_w->dir + 1 ;
 		} else {
 			w->master_w->dir = lr_select_loop( menu_sw_get( 3 ), w->master_w->dir, 2 ) ;
 		}
@@ -221,7 +221,7 @@ void sel_ctrl_main( PLAYER_WORK *w )
 	case 3 :
 		if( ( w->pos.y -= 0.4f ) <= -3.0f ){
 			w->routine_0 ++ ;
-			unk_8C2143C2 = 0 ;
+			sel_on = 0 ;
 		}
 		break ;
 	}

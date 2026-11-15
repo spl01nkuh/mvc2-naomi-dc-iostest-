@@ -1,13 +1,23 @@
 /* The textures of the select scene and the rankings: faces, names and numbers built in work RAM
    from the texture file, and the requests that send them to the texture memory. */
 #include "player.h"
+#ifdef HOST_NATIVE64
+#include "host_memory.h"
+/* These are byte buffers. Dynamic references stay 32-bit until the checked
+   boundary; native pointers never pass through the serialized address math. */
+#define SELECT_RAM_AT( address ) HOST_NATIVE64_RAM_AT( address )
+#define SELECT_RAM_RANGE( address, size ) host_native64_ram_pointer( address, size )
+#else
+#define SELECT_RAM_AT( address ) address
+#define SELECT_RAM_RANGE( address, size ) address
+#endif
 
-#define FACE_TEX	( ( Uint8 * )0x0cdb0000 )	/* two 256 x 256 textures of 16 faces */
-#define FACE2_TEX	( ( Uint8 * )0x0cdf0000 )	/* each side's big face */
+#define FACE_TEX	( ( Uint8 * )SELECT_RAM_AT( 0x0cdb0000 ) )	/* two 256 x 256 textures of 16 faces */
+#define FACE2_TEX	( ( Uint8 * )SELECT_RAM_AT( 0x0cdf0000 ) )	/* each side's big face */
 #ifndef TARGET_DC
 #define NAME_PIC_TBL	( stream_tbl + 141 )	/* the files of the name pictures */
 #else
-#define NAME_PIC_FILE	( ( Sint32 * )0x0c520000 )	/* the name pictures' file: each one's offset, then the pictures */
+#define NAME_PIC_FILE	( ( Sint32 * )SELECT_RAM_AT( 0x0c520000 ) )	/* the name pictures' file: each one's offset, then the pictures */
 #endif
 
 
@@ -172,8 +182,8 @@ void name_pic_set( int side, int no )
 
 	if( no >= 27 ) n -= 3 ;
 	tbl = NAME_PIC_TBL ;
-	src = ( Sint16 * )( tbl[n].adrs - tbl[0].adrs + 0x0c520000 ) ;
-	dst = ( Uint16 * )( side * 0x20000 + 0x0c720000 ) ;
+	src = ( Sint16 * )( SELECT_RAM_RANGE( tbl[n].adrs - tbl[0].adrs + 0x0c520000, tbl[n].size ) ) ;
+	dst = ( Uint16 * )( SELECT_RAM_RANGE( side * 0x20000 + 0x0c720000, 0x20000 ) ) ;
 	lz_unpack16( src, dst ) ;
 }
 #else
@@ -188,7 +198,7 @@ void name_pic_set( int side, int no )
 	if( no >= 27 ) n -= 3 ;
 	tbl = NAME_PIC_FILE ;
 	src = ( Sint16 * )( tbl[n] + ( Uint8 * )tbl ) ;
-	dst = ( Uint16 * )( side * 0x20000 + 0x0c720000 ) ;
+	dst = ( Uint16 * )( SELECT_RAM_RANGE( side * 0x20000 + 0x0c720000, 0x20000 ) ) ;
 	lz_unpack16( src, dst ) ;
 }
 #endif
@@ -361,16 +371,16 @@ copy :
 void face_tex_send( void )
 {
 	nlSetCommonTextureOffset( 0 ) ;
-	nlCommonTextureReloadA( 0x810, ( Uint32 * )0x0cdb0000 ) ;
-	nlCommonTextureReloadA( 0x81c, ( Uint32 * )0x0cdf0000 ) ;
+	nlCommonTextureReloadA( 0x810, ( Uint32 * )SELECT_RAM_AT( 0x0cdb0000 ) ) ;
+	nlCommonTextureReloadA( 0x81c, ( Uint32 * )SELECT_RAM_AT( 0x0cdf0000 ) ) ;
 }
 
 /****************************************************************/
 void face_tex_send_2p( void )
 {
 	nlSetCommonTextureOffset( 0 ) ;
-	nlCommonTextureReloadA( 0x811, ( Uint32 * )0x0cdd0000 ) ;
-	nlCommonTextureReloadA( 0x81d, ( Uint32 * )0x0cdf4800 ) ;
+	nlCommonTextureReloadA( 0x811, ( Uint32 * )SELECT_RAM_AT( 0x0cdd0000 ) ) ;
+	nlCommonTextureReloadA( 0x81d, ( Uint32 * )SELECT_RAM_AT( 0x0cdf4800 ) ) ;
 }
 
 /****************************************************************/
@@ -381,9 +391,9 @@ void pl_pic_send( PLAYER_WORK *pl_w )
 {
 	Sint16 *src = ( Sint16 * )( pl_w->pic_adrs[1] + ( Uint8 * )pl_w->pic_adrs ) ;
 
-	lz_unpack16( src, ( Uint16 * )0x0ce60000 ) ;
+	lz_unpack16( src, ( Uint16 * )SELECT_RAM_AT( 0x0ce60000 ) ) ;
 	nlSetCommonTextureOffset( 0 ) ;
-	nlCommonTextureReloadA( 0xc99, ( Uint32 * )0x0ce60000 ) ;
+	nlCommonTextureReloadA( 0xc99, ( Uint32 * )SELECT_RAM_AT( 0x0ce60000 ) ) ;
 }
 
 /****************************************************************/
@@ -391,9 +401,9 @@ void pl_pic_send2( PLAYER_WORK *pl_w )
 {
 	Sint16 *src = ( Sint16 * )( pl_w->pic_adrs[2] + ( Uint8 * )pl_w->pic_adrs ) ;
 
-	lz_unpack16( src, ( Uint16 * )0x0ce60000 ) ;
+	lz_unpack16( src, ( Uint16 * )SELECT_RAM_AT( 0x0ce60000 ) ) ;
 	nlSetCommonTextureOffset( 0 ) ;
-	nlCommonTextureReloadA( ( pl_w->work_no >> 1 ) + 0xca6, ( Uint32 * )0x0ce60000 ) ;
+	nlCommonTextureReloadA( ( pl_w->work_no >> 1 ) + 0xca6, ( Uint32 * )SELECT_RAM_AT( 0x0ce60000 ) ) ;
 }
 
 /****************************************************************/
@@ -417,7 +427,7 @@ void tex_req_send( void )
 		case 4 :
 		case 5 :
 			nlSetCommonTextureOffset( 0 ) ;
-			nlCommonTextureReloadA( 0x81c, ( Uint32 * )( ( tex_req_no - 4 ) * 0x80000 + 0x0c420000 ) ) ;
+			nlCommonTextureReloadA( 0x81c, ( Uint32 * )( SELECT_RAM_RANGE( ( tex_req_no - 4 ) * 0x80000 + 0x0c420000, 0x80000 ) ) ) ;
 			break ;
 		case 6 :
 		case 7 :
@@ -425,7 +435,7 @@ void tex_req_send( void )
 		case 9 :
 		case 10 :
 			nlSetCommonTextureOffset( 0 ) ;
-			nlCommonTextureReloadA( tex_req_no + 0x817, ( Uint32 * )( ( tex_req_no - 6 ) * 0x20000 + 0x0c720000 ) ) ;
+			nlCommonTextureReloadA( tex_req_no + 0x817, ( Uint32 * )( SELECT_RAM_RANGE( ( tex_req_no - 6 ) * 0x20000 + 0x0c720000, 0x20000 ) ) ) ;
 			break ;
 		case 11 :
 		case 12 :
@@ -457,7 +467,7 @@ void tex_req_send( void )
 			break ;
 		case 29 :
 			nlSetCommonTextureOffset( 0 ) ;
-			nlCommonTextureReloadA( 0x914, ( Uint32 * )( stage_no * 0x8000 + 0x0cc60000 ) ) ;
+			nlCommonTextureReloadA( 0x914, ( Uint32 * )( SELECT_RAM_RANGE( stage_no * 0x8000 + 0x0cc60000, 0x8000 ) ) ) ;
 			break ;
 		}
 	}

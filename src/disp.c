@@ -93,7 +93,7 @@ static void obj_calc( PLAYER_WORK *w, Uint8 list )
 	if( w->obj_flag & OBJ_MTX ) nlMultiMatrix( &w->obj_mtx ) ;
 #ifdef TARGET_DC
 	/* a screen that shows every line: the front's models are made to fit */
-	if( option_w.unk_18 == 1 && ( w->obj_flag & OBJ_FIT ) && list == 11 && !w->base_mtx ){
+	if( option_w.adjust_size == 1 && ( w->obj_flag & OBJ_FIT ) && list == 11 && !w->base_mtx ){
 		nlScale( 1.0f, 0.93f, 1.0f ) ;
 	}
 #endif

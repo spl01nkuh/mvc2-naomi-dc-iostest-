@@ -213,11 +213,20 @@ void nlaGetBackupData(NLA_BACKUP_BANK* bank) {
     bank->userdata = (Uint32*)user_backup;
 }
 
-/* a test run's MVC2_CLOCK (seconds from 1970, UTC) fixes it */
+/* a test run's MVC2_CLOCK (seconds from 1970, UTC) fixes it; read once */
 void host_clock(struct tm* out) {
-    const char* fixed = getenv("MVC2_FRAMES") != NULL ? getenv("MVC2_CLOCK") : NULL;
-    time_t t = fixed != NULL ? (time_t)strtoll(fixed, NULL, 10) : time(NULL);
-    struct tm* tm = fixed != NULL ? gmtime(&t) : localtime(&t);
+    static int looked, fixed;
+    static time_t fixed_t;
+    time_t t;
+    struct tm* tm;
+    if (!looked) {
+        const char* e = getenv("MVC2_FRAMES") != NULL ? getenv("MVC2_CLOCK") : NULL;
+        fixed = e != NULL;
+        fixed_t = fixed ? (time_t)strtoll(e, NULL, 10) : 0;
+        looked = 1;
+    }
+    t = fixed ? fixed_t : time(NULL);
+    tm = fixed ? gmtime(&t) : localtime(&t);
     *out = *tm;
 }
 

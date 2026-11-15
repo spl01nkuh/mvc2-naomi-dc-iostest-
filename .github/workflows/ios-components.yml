@@ -2,7 +2,7 @@ name: Native iOS components
 
 on:
   push:
-    branches: [native-ios-port]
+    branches: [native-ios-port, native-ios-gameplay]
   pull_request:
     paths:
       - ports/port/ios/**

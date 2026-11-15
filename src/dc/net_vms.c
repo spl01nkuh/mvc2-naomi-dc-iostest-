@@ -13,7 +13,7 @@ extern int decide_ck( void ) ;
 extern int cancel_ck( void ) ;
 extern int decide_cancel_ck( void ) ;
 extern void d_point_get( void ) ;
-extern void n_point_get( void ) ;
+extern void v_point_get( void ) ;
 extern int vms_card_ck( int port ) ;
 extern int vms_card_sys_ck( int port ) ;
 extern int vms_check_unit( void ) ;
@@ -265,7 +265,7 @@ char *html_cnt_put( char *p )
 		sprintf( name, "NE_PL%02d", n ) ;
 		p = html_hidden_dec( p, name, pc->ne_pl[n] ) ;
 	}
-	q = html_hidden_dec( p, "N_LINK", sw->unk_08 ) ;
+	q = html_hidden_dec( p, "N_LINK", sw->n_link ) ;
 	name[7] = 0 ;
 	for( i = 0 ; i < PL_TYPE_MAX ; i ++ ){
 		sprintf( name, "KA_PL%02d", i ) ;
@@ -473,7 +473,7 @@ int net_vms_00( Uint16 sw )
 		vms_work.net_cnt_flag = 0 ;
 		CS_Secret_Work.unk_0a = 0 ;
 		CS_Secret_Work.unk_0c = 0 ;
-		CS_Secret_Work.unk_10 = 0 ;
+		CS_Secret_Work.net_cnt = 0 ;
 		for( i = 0 ; i < 14 ; i ++ ) unk_8C21385C[i] = 0 ;
 		break ;
 	case 1 :
@@ -967,7 +967,7 @@ int net_vms_06( Uint16 sw )
 		work_init() ;
 		vms_work.vm_msg[0] = 7 ;
 		if( vms_work.d_point ) d_point_get() ;
-		if( vms_work.n_point ) n_point_get() ;
+		if( vms_work.v_point ) v_point_get() ;
 		break ;
 	case 1 :
 		vms_work.card_task_step[1][0] ++ ;

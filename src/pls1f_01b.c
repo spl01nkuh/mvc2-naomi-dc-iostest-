@@ -11,22 +11,6 @@ extern Float pls1f_01_spd_tbl0[200] ;
 extern Float pls1f_01_spd_tbl1[200] ;
 extern Float pls1f_01_spd_tbl2[200] ;
 
-/* an effect's animation frame: the first eight bytes of a player's */
-typedef struct EF_CHAR_DATA {
-	Sint32	unk_00;		/* the frame's codes; after a last frame, where the animation goes on */
-	Uint8	unk_04[0x08 - 0x04];
-} EF_CHAR_DATA;
-
-/* what an effect's frame leaves in cg_prm */
-typedef struct EF_CHAR_WORK {
-	EF_CHAR_DATA data;
-	Sint32	unk_08;
-	Sint32	unk_0c;
-	Sint32	unk_10;
-} EF_CHAR_WORK;
-
-#define EF_CG( w )	( *( EF_CHAR_WORK * )&( w )->cg_prm )
-
 /* the effect's own work */
 typedef struct PLS1F_01_LOCAL_W {
 	Float	*spd_tbl;	/* its type's table: x and y speed, by kind and phase */
@@ -336,11 +320,11 @@ static void pls1f_01_char_move( PLAYER_WORK *ew )
 	if( !--ew->cg_ctr ){
 		do {
 			ew->cg_adrs = ew->cg_adrs + sizeof( EF_CHAR_DATA ) ;
-			if( ew->cg_end_flag & CG_END ) ew->cg_adrs = ( Sint8 * )( ew->char_adrs + ( ( EF_CHAR_DATA * )ew->cg_adrs )->unk_00 ) ;
+			if( ew->cg_end_flag & CG_END ) ew->cg_adrs = ( Sint8 * )( ew->char_adrs + ( ( EF_CHAR_DATA * )ew->cg_adrs )->loop_ofs ) ;
 			EF_CG( ew ).data = *( EF_CHAR_DATA * )ew->cg_adrs ;
-			EF_CG( ew ).unk_08 = 0 ;
-			EF_CG( ew ).unk_0c = 0 ;
-			EF_CG( ew ).unk_10 = 0 ;
+			EF_CG( ew ).prio_l = 0 ;
+			EF_CG( ew ).se_l = 0 ;
+			EF_CG( ew ).rival_l = 0 ;
 			ew->cg_ctr = pls1f_01_cg_ctr[ew->routine_2] ;
 		} while( !ew->cg_ctr ) ;
 	}

@@ -1,5 +1,5 @@
 /* The training menu's backdrop: obj_stg's model 1 on the pause's list, its picture scrolled while
-   training_work.unk_1c is set. */
+   training_work.menu_disp is set. */
 #include "player.h"
 #include "dm.h"
 
@@ -25,7 +25,7 @@ void pause_bg_move( PLAYER_WORK *w )
 {
 	Float v, u ;
 
-	if( !training_work.unk_1c ){
+	if( !training_work.menu_disp ){
 		work_free( w ) ;
 		return ;
 	}

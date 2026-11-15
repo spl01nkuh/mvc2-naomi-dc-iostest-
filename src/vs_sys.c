@@ -230,8 +230,8 @@ static int ko_ck( VS_SYS_WORK *vs_w )
 
 #ifdef TARGET_DC	/* a home rule: one character a side */
 	if( Sys->one_char ){
-		vital0 = pl_work[vs_w->unk_8a[0]].vital_new ;
-		vital1 = pl_work[vs_w->unk_8a[1]].vital_new ;
+		vital0 = pl_work[vs_w->one_char_no[0]].vital_new ;
+		vital1 = pl_work[vs_w->one_char_no[1]].vital_new ;
 	} else {
 		vital0 = pl_work[0].vital_new + pl_work[2].vital_new + pl_work[4].vital_new ;
 		vital1 = pl_work[1].vital_new + pl_work[3].vital_new + pl_work[5].vital_new ;
@@ -257,8 +257,8 @@ static void time_over_ck( VS_SYS_WORK *vs_w )
 	vs_w->time_over = 1 ;
 #ifdef TARGET_DC
 	if( Sys->one_char ){
-		vital0 = pl_work[vs_w->unk_8a[0]].vital_new ;
-		vital1 = pl_work[vs_w->unk_8a[1]].vital_new ;
+		vital0 = pl_work[vs_w->one_char_no[0]].vital_new ;
+		vital1 = pl_work[vs_w->one_char_no[1]].vital_new ;
 	} else {
 		vital0 = pl_work[0].vital_new + pl_work[2].vital_new + pl_work[4].vital_new ;
 		vital1 = pl_work[1].vital_new + pl_work[3].vital_new + pl_work[5].vital_new ;
@@ -386,7 +386,7 @@ static void round_end_set( VS_SYS_WORK *vs_w )
 		if( vs_w->time_over ) kind = 6 ;
 	}
 #ifdef TARGET_DC
-	vs_w->unk_8c = kind ;
+	vs_w->end_kind = kind ;
 	win_pts_add( kind ) ;
 #endif
 	Sys->entry_stop = 1 ;
@@ -913,8 +913,8 @@ void naomi_level_disp( void )
 			int n ;
 
 			n = !Sys->cpu_level_type ? 0 : 2 ;
-			STrPrint( 6, Sys->disp_line + 25, 55, pl_name_tbl[n][pl_work[vs_sys_w->unk_8a[0]].pl_type] ) ;
-			STrPrint( 105, Sys->disp_line + 25, 55, pl_name_tbl[n + 1][pl_work[vs_sys_w->unk_8a[1]].pl_type] ) ;
+			STrPrint( 6, Sys->disp_line + 25, 55, pl_name_tbl[n][pl_work[vs_sys_w->one_char_no[0]].pl_type] ) ;
+			STrPrint( 105, Sys->disp_line + 25, 55, pl_name_tbl[n + 1][pl_work[vs_sys_w->one_char_no[1]].pl_type] ) ;
 		}
 #endif
 	}

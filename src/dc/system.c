@@ -49,7 +49,7 @@ int vms_boot_card_ck( void ) ;
 int vms_boot_state_ck( Sint8 st ) ;
 void secret_work_init( void ) ;
 void d_point_get( void ) ;
-void n_point_get( void ) ;
+void v_point_get( void ) ;
 int decide_ck_nose( void ) ;
 int cancel_ck( void ) ;
 int cancel_ck_nose( void ) ;
@@ -592,7 +592,7 @@ void soft_reset_point( int trans )
 	}
 	if( trans ){
 		vms_work.d_point = 0 ;
-		vms_work.n_point = 0 ;
+		vms_work.v_point = 0 ;
 	}
 }
 
@@ -891,12 +891,12 @@ void vms_point_save( void )
 		Sys->timer0 = 120 ;
 		vms_work.card_task_step[0][0] = vms_work.card_task_step[0][1] = 0 ;
 		vms_work.card_task_step[1][0] = vms_work.card_task_step[1][1] = 0 ;
-		if( vms_work.d_point && vms_work.n_point ) vms_work.vm_msg[0] = 3 ;
+		if( vms_work.d_point && vms_work.v_point ) vms_work.vm_msg[0] = 3 ;
 		else if( vms_work.d_point ) {
 			vms_work.vm_msg[0] = 1 ;
 			if( 0 ) vms_work.vm_msg[0] = 1 ;	/* left out of the build */
 		}
-		else if( !vms_work.n_point ) goto none ;
+		else if( !vms_work.v_point ) goto none ;
 		else vms_work.vm_msg[0] = 2 ;
 		dm0c_vm_msg_set() ;
 		vms_work.vm_msg[1] = 1 ;
@@ -917,7 +917,7 @@ void vms_point_save( void )
 		if( cancel_ck() ) Sys->timer0 = 1 ;
 		if( Sys->timer0 -- == 0 ){
 			if( vms_work.d_point ) d_point_get() ;
-			if( vms_work.n_point ) n_point_get() ;
+			if( vms_work.v_point ) v_point_get() ;
 			if( vms_work.file_flag == 1 ){
 				Sys->scene_no ++ ;
 				vms_work.vm_msg[0] = 4 ;
@@ -1011,12 +1011,12 @@ void secret_work_init( void )
 	CS_Secret_Work.vm_level = 1 ;
 	CS_Secret_Work.vm_exp = 0 ;
 	CS_Secret_Work.d_pts = 0 ;
-	CS_Secret_Work.unk_04 = 0 ;
 	CS_Secret_Work.n_pts = 0 ;
-	CS_Secret_Work.unk_08 = 0 ;
+	CS_Secret_Work.v_pts = 0 ;
+	CS_Secret_Work.n_link = 0 ;
 	CS_Secret_Work.unk_0a = 0 ;
 	CS_Secret_Work.unk_0c = 0 ;
-	CS_Secret_Work.unk_10 = 0 ;
+	CS_Secret_Work.net_cnt = 0 ;
 	CS_Secret_Work.unk_11 = 2 ;
 	CS_Secret_Work.play_hour = 0 ;
 	CS_Secret_Work.play_min = 0 ;
@@ -1059,27 +1059,27 @@ void d_point_get( void )
 }
 
 /****************************************************************/
-/*			Points of the second kind							*/
+/*			Points of the third kind								*/
 /****************************************************************/
-void n_point_add( int pt )
+void v_point_add( int pt )
 {
-	vms_work.n_point += pt ;
-	if( vms_work.n_point < 0 ) vms_work.n_point = 0 ;
-	if( vms_work.n_point > 9999 ) vms_work.n_point = 9999 ;
+	vms_work.v_point += pt ;
+	if( vms_work.v_point < 0 ) vms_work.v_point = 0 ;
+	if( vms_work.v_point > 9999 ) vms_work.v_point = 9999 ;
 }
 
 /****************************************************************/
 /*			And they go to the secret factor: a quarter of		*/
 /*			them raises the level								*/
 /****************************************************************/
-void n_point_get( void )
+void v_point_get( void )
 {
 	int exp ;
 
-	CS_Secret_Work.n_pts += vms_work.n_point ;
-	if( CS_Secret_Work.n_pts > 9999 ) CS_Secret_Work.n_pts = 9999 ;
+	CS_Secret_Work.v_pts += vms_work.v_point ;
+	if( CS_Secret_Work.v_pts > 9999 ) CS_Secret_Work.v_pts = 9999 ;
 	exp = CS_Secret_Work.vm_exp ;
-	exp += vms_work.n_point / 4 ;
+	exp += vms_work.v_point / 4 ;
 	while( exp >= 100 ){
 		CS_Secret_Work.vm_level ++ ;
 		exp -= 100 ;
@@ -1089,7 +1089,7 @@ void n_point_get( void )
 		}
 	}
 	CS_Secret_Work.vm_exp = exp ;
-	vms_work.n_point = 0 ;
+	vms_work.v_point = 0 ;
 }
 
 /****************************************************************/

@@ -28,16 +28,20 @@ typedef struct NLCLIPRECT {
 
 /* what kmGetSystemMetrics fills in */
 typedef struct KMSYSTEMMETRICS {
-	Sint32	unk_00;
-	Sint32	time[9];	/* 04; the last render at 0, the last TA at 8 */
-	Sint32	unk_28[8];
+	Sint32	flags;		/* 00 */
+	Sint32	render_time[8];	/* 04: the last renders */
+	Sint32	ta_time[8];	/* 24: and the last TA transfers, a pass each */
+	Sint32	time_out_count;	/* 44 */
 	Sint32	vertex_timeout;	/* 48 */
 	Sint32	render_timeout;	/* 4c */
-	Sint32	unk_50[2];
+	Sint32	obj_overflow;	/* 50 */
+	Sint32	native_overflow;	/* 54 */
 	Sint32	native_use_size;	/* 58 */
-	Sint32	unk_5c[2];
+	Sint32	obj_use_size;	/* 5c */
+	Sint32	obj_max_size;	/* 60 */
 	Sint32	native_max_size;	/* 64 */
-	Sint32	unk_68[80];
+	Sint32	vertex_size[8][5];	/* 68: each pass's lists */
+	Sint32	vertex_max_size[8][5];	/* 108 */
 	Sint32	fb_index;	/* 1a8 */
 	Sint32	unk_1ac[17];
 } KMSYSTEMMETRICS;
@@ -62,9 +66,9 @@ extern KMIEXTENSION kmiExtension;
 
 extern char nl_date_libnaomi_[];
 extern KMVERTEXBUFFDESC nl_vertex_buffer;
-extern KMSTRIPCONTEXT nl_back_context;
-extern KMSTRIPCONTEXT nl_vertex_context[8];
-extern KMSTRIPCONTEXT *nl_vertex_context_ptr;
+extern KMVERTEXCONTEXT nl_back_context;
+extern KMVERTEXCONTEXT nl_vertex_context[8];
+extern KMVERTEXCONTEXT *nl_vertex_context_ptr;
 extern Sint32 nl_vertex_context_depth;
 extern Sint32 nl_set_txt_num;
 extern Sint32 nl_vertex_mode;
@@ -100,9 +104,9 @@ extern void kmSetTexOverflowCallback( void (*func)( void * ), void *arg );
 extern void kmSetStripOverRunCallback( void (*func)( void * ), void *arg );
 extern void kmSetPALEXTCallback( void (*func)( Sint32 * ), void *arg );
 extern void kmSetFatalErrorCallback( void (*func)( Sint32 ), void *arg );
-extern void kmProcessVertexRenderState( KMSTRIPCONTEXT *ctx );
-extern void kmSetVertexRenderState( KMVERTEXBUFFDESC *buff, KMSTRIPCONTEXT *ctx );
-extern void kmSetBackGroundRenderState( KMSTRIPCONTEXT *ctx );
+extern void kmProcessVertexRenderState( KMVERTEXCONTEXT *ctx );
+extern void kmSetVertexRenderState( KMVERTEXBUFFDESC *buff, KMVERTEXCONTEXT *ctx );
+extern void kmSetBackGroundRenderState( KMVERTEXCONTEXT *ctx );
 extern void kmBeginScene( KMSYSTEMCONFIGSTRUCT *config );
 extern void kmEndScene( KMSYSTEMCONFIGSTRUCT *config );
 extern void kmBeginPass( KMVERTEXBUFFDESC *buff );
@@ -351,35 +355,35 @@ void nlSetFilterMode( Sint32 mode )
 	nl_vertex_context_ptr->tsp = val;
 }
 
-static void init_vertex_context( KMSTRIPCONTEXT *ctx )
+static void init_vertex_context( KMVERTEXCONTEXT *ctx )
 {
 	ctx->state = 0x03F3FFFF;
-	ctx->unk_04 = 0;
+	ctx->param_type = 0;
 	ctx->list_type = 0;
 	ctx->color_type = 1;
 	ctx->specular = 0;
-	ctx->unk_10 = 0;
+	ctx->uv_format = 0;
 	ctx->depth_mode = 4;
-	ctx->unk_18 = 0;
+	ctx->culling_mode = 0;
 	ctx->shading = 1;
-	ctx->unk_24 = 0;
-	ctx->unk_28 = 0;
+	ctx->select_modifier = 0;
+	ctx->zwrite_disable = 0;
 	ctx->src_blend = 8;
 	ctx->dst_blend = 6;
-	ctx->unk_34 = 0;
-	ctx->unk_38 = 0;
+	ctx->src_select = 0;
+	ctx->dst_select = 0;
 	ctx->fog_mode = 2;
 	ctx->specular = 0;
 	ctx->use_alpha = 0;
 	ctx->ignore_tex_alpha = 0;
-	ctx->unk_4c = 0;
-	ctx->unk_50 = 0;
+	ctx->clamp_uv = 0;
+	ctx->flip_uv = 0;
 	ctx->filter = 0;
-	ctx->unk_58 = 0;
+	ctx->super_sample = 0;
 	ctx->mipmap_adjust = 4;
 	ctx->tex_shading = 3;
 	ctx->texture = 0;
-	ctx->unk_64 = 0;
+	ctx->color_clamp = 0;
 	ctx->palette_bank = 0;
 	ctx->face_a = 1.0f;
 	ctx->face_r = 1.0f;
@@ -393,35 +397,35 @@ static void init_vertex_context( KMSTRIPCONTEXT *ctx )
 	kmSetVertexRenderState( &nl_vertex_buffer, ctx );
 }
 
-static void init_back_context( KMSTRIPCONTEXT *ctx )
+static void init_back_context( KMVERTEXCONTEXT *ctx )
 {
 	ctx->state = 0x03F3FFFF;
-	ctx->unk_04 = 0;
+	ctx->param_type = 0;
 	ctx->list_type = 0;
 	ctx->color_type = 0;
 	ctx->specular = 0;
-	ctx->unk_10 = 0;
+	ctx->uv_format = 0;
 	ctx->depth_mode = 4;
-	ctx->unk_18 = 0;
+	ctx->culling_mode = 0;
 	ctx->shading = 1;
-	ctx->unk_24 = 0;
-	ctx->unk_28 = 0;
+	ctx->select_modifier = 0;
+	ctx->zwrite_disable = 0;
 	ctx->src_blend = 10;
 	ctx->dst_blend = 11;
-	ctx->unk_34 = 0;
-	ctx->unk_38 = 0;
+	ctx->src_select = 0;
+	ctx->dst_select = 0;
 	ctx->fog_mode = 2;
 	ctx->specular = 0;
 	ctx->use_alpha = 0;
 	ctx->ignore_tex_alpha = 1;
-	ctx->unk_4c = 0;
-	ctx->unk_50 = 0;
+	ctx->clamp_uv = 0;
+	ctx->flip_uv = 0;
 	ctx->filter = 0;
-	ctx->unk_58 = 0;
+	ctx->super_sample = 0;
 	ctx->mipmap_adjust = 4;
 	ctx->tex_shading = 1;
 	ctx->texture = 0;
-	ctx->unk_64 = 0;
+	ctx->color_clamp = 0;
 	ctx->palette_bank = 0;
 	ctx->face_a = 1.0f;
 	ctx->face_r = 1.0f;
@@ -939,7 +943,7 @@ void nlSysMetricsInit( void )
 	*(Sint8 *)TMU_TSTR = tstr | 1;
 	nl_TimerMicrosecFactor0 = 1.28f;
 	set_imask( 0 );
-	nl_metrics_debug.unk_00 = 30;
+	nl_metrics_debug.flags = 30;
 }
 
 /* the same at one of the timer's five clocks */
@@ -959,7 +963,7 @@ void nlSysMetricsInitSetClock( Sint32 clock )
 	*(Sint8 *)TMU_TSTR = tstr | 1;
 	nl_TimerMicrosecFactor0 = timer_factor[clock];
 	set_imask( 0 );
-	nl_metrics_debug.unk_00 = 14;
+	nl_metrics_debug.flags = 14;
 }
 
 void nlSysMetricsStart( void )
@@ -969,12 +973,12 @@ void nlSysMetricsStart( void )
 
 Sint32 nlSysMetricsGetLastTATime( void )
 {
-	return nl_metrics_debug.time[8];
+	return nl_metrics_debug.ta_time[0];
 }
 
 Sint32 nlSysMetricsGetLastRenderTime( void )
 {
-	return nl_metrics_debug.time[0];
+	return nl_metrics_debug.render_time[0];
 }
 
 Sint32 nlSysMetricsGetNativeUseSize( void )

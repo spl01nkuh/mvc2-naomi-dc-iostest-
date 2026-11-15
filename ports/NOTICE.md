@@ -12,7 +12,7 @@ copyright-holders: Olivier Galibert).
 
 ## port/render/rd_gpu_shaders.h
 
-Compiled from `rd_gpu.hlsl` by Microsoft's fxc and dxc (`port/tools/gpu_shaders.sh`); nothing else.
+Compiled from `rd_gpu.hlsl` and `rd_gpu_resolve.hlsl` by Microsoft's fxc and dxc (`port/tools/gpu_shaders.sh`); nothing else.
 
 ## Libraries
 

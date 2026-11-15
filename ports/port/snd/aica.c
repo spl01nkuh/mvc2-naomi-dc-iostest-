@@ -4,21 +4,31 @@
  */
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__ARM_FEATURE_SAT) || defined(__ARM_FEATURE_DSP)
+#include <arm_acle.h>
+#endif
+
+#include "naomi_host.h"
 #include "aica.h"
 #include "arm7.h"
 #include "prof.h"
+#include "snd_drv.h"
 
 #ifdef MVC2_PROF
 static int game_side;               /* aica_run_cpu: the game's thread runs the CPU, the sound's waiting */
 #define IO_COUNT() do { if (!game_side) PROF_COUNT(PZ_SND_IO, 1); } while (0)
+void (*aica_perf)(int at);
+#define PERF(at) do { if (aica_perf) aica_perf(at); } while (0)
 #else
 #define IO_COUNT() ((void)0)
+#define PERF(at) ((void)0)
 #endif
 
-#define CHUNK 16
+#define CHUNK 256                   /* the most samples mixed at once */
 #define CPU_CYCLES_PER_SAMPLE 64    /* 2.8224 MHz: the ARM7's 45 MHz with the sound RAM's waits */
 static int cpu_cycles = CPU_CYCLES_PER_SAMPLE;
 
@@ -30,6 +40,8 @@ static uint8_t reg[0x8000];         /* as written; 0x800000-0x807FFF to the soun
 static int cpu_reset = 1;
 static int cpu_debt;                /* cycles the CPU ran past its share */
 static int dsp_on = 1, filter_on = 1;
+static int chunk = 16;              /* MVC2_SNDCHUNK: the samples mixed at once, the registers as they are */
+static int half;                    /* MVC2_SNDHALF: the plain chunks' samples made at half the rate, each held */
 
 static inline uint32_t reg16(uint32_t off) {
     return (uint32_t)reg[off] | (uint32_t)reg[off + 1] << 8;
@@ -98,24 +110,24 @@ static void make_tables(void) {
 enum { EG_ATTACK, EG_DECAY1, EG_DECAY2, EG_RELEASE };
 
 typedef struct {
-    int on;                 /* sounding: keyed on, or releasing */
     uint32_t pos;           /* the sample s0 is, from SA */
     uint32_t frac;          /* between s0 and s1, 16 bits */
     int32_t s0, s1;
     int32_t ad_prev, ad_step;       /* the ADPCM decoder after s1 */
     int32_t ad_loop_prev, ad_loop_step;
-    int ad_loop_saved;
-    int eg_state;
     int32_t eg;             /* attenuation << 16, 0 loudest */
-    int feg_state;
     int32_t flv;            /* the filter's cutoff << 16 */
     int32_t y1, y2;
     uint32_t lfo;           /* phase << 16 */
     uint32_t noise;
-    int lp;                 /* passed the loop end since read */
-} CHANNEL;
+    uint8_t ad_loop_saved;
+    uint8_t eg_state;
+    uint8_t feg_state;
+    uint8_t lp;             /* passed the loop end since read */
+} CHANNEL;                  /* two cache lines */
 
-static CHANNEL ch[64];
+static _Alignas(32) CHANNEL ch[64];
+static uint8_t ch_on[64];           /* sounding: keyed on, or releasing */
 
 #define CR(c, r) reg16((uint32_t)(c) * 0x80 + (r))
 
@@ -136,28 +148,58 @@ static int eff_rate(int c, int r) {
     return rate < 0 ? 0 : rate > 63 ? 63 : rate;
 }
 
-static int32_t fetch(int c, uint32_t i) {
-    uint32_t sa = (CR(c, 0x00) & 0x7F) << 16 | CR(c, 0x04);
-    int pcms = (CR(c, 0x00) >> 7) & 3;
+/* the source of a channel's samples, read once a chunk */
+typedef struct {
+    const uint8_t* ram;
+    uint32_t mask, sa, lsa, lea;
+    int loop;
+} SOURCE;
+
+/* the sample at index i, when it comes after the one before (as the ADPCM decoder needs) */
+static inline int32_t source_at(const SOURCE* src, int pcms, CHANNEL* v, uint32_t i, int looped) {
+    int n;
+    int32_t d, s;
     if (pcms == 0) {
-        uint32_t a = (sa + i * 2) & aica_ram_mask & ~1u;
-        return (int16_t)(ram[a] | ram[a + 1] << 8);
+        uint32_t a = (src->sa + i * 2) & src->mask & ~1u;
+        return (int16_t)(src->ram[a] | src->ram[a + 1] << 8);
     }
-    return (int8_t)ram[(sa + i) & aica_ram_mask] << 8;
+    if (pcms == 1) {
+        return (int8_t)src->ram[(src->sa + i) & src->mask] << 8;
+    }
+    if (i == src->lsa) {
+        if (looped && pcms == 2 && v->ad_loop_saved) {
+            v->ad_prev = v->ad_loop_prev;
+            v->ad_step = v->ad_loop_step;
+        } else if (!v->ad_loop_saved) {
+            v->ad_loop_prev = v->ad_prev;
+            v->ad_loop_step = v->ad_step;
+            v->ad_loop_saved = 1;
+        }
+    }
+    n = src->ram[(src->sa + (i >> 1)) & src->mask] >> ((i & 1) * 4) & 15;
+    d = v->ad_step * ((n & 7) * 2 + 1) >> 3;
+    d = d > 32767 ? 32767 : d;
+    s = n & 8 ? v->ad_prev - d : v->ad_prev + d;
+    s = s > 32767 ? 32767 : s < -32768 ? -32768 : s;
+    v->ad_prev = s;
+    v->ad_step = v->ad_step * adpcm_scale[n & 7] >> 8;
+    v->ad_step = v->ad_step < 127 ? 127 : v->ad_step > 24576 ? 24576 : v->ad_step;
+    return s;
 }
 
-static int32_t adpcm_decode(int c, uint32_t i) {
-    CHANNEL* h = &ch[c];
-    uint32_t sa = (CR(c, 0x00) & 0x7F) << 16 | CR(c, 0x04);
-    int n = ram[(sa + (i >> 1)) & aica_ram_mask] >> ((i & 1) * 4) & 15;
-    int32_t d = h->ad_step * ((n & 7) * 2 + 1) >> 3, s;
-    d = d > 32767 ? 32767 : d;      /* a big step's largest deltas are held to 16 bits */
-    s = n & 8 ? h->ad_prev - d : h->ad_prev + d;
-    s = s > 32767 ? 32767 : s < -32768 ? -32768 : s;
-    h->ad_prev = s;
-    h->ad_step = h->ad_step * adpcm_scale[n & 7] >> 8;
-    h->ad_step = h->ad_step < 127 ? 127 : h->ad_step > 24576 ? 24576 : h->ad_step;
-    return s;
+static void source_of(int c, SOURCE* src) {
+    src->ram = ram;
+    src->mask = aica_ram_mask;
+    src->sa = (CR(c, 0x00) & 0x7F) << 16 | CR(c, 0x04);
+    src->lsa = CR(c, 0x08);
+    src->lea = CR(c, 0x0C);
+    src->loop = CR(c, 0x00) & 0x200;
+}
+
+static int32_t sample_at(int c, uint32_t i, int looped) {
+    SOURCE src;
+    source_of(c, &src);
+    return source_at(&src, (CR(c, 0x00) >> 7) & 3, &ch[c], i, looped);
 }
 
 /* the sample after i, and whether the channel goes on: a loop goes back to LSA, else it ends at LEA */
@@ -176,29 +218,9 @@ static int next_index(int c, uint32_t i, uint32_t* next, int* looped) {
     return 1;
 }
 
-/* the sample at index i, when it comes after the one before (as the ADPCM decoder needs) */
-static int32_t sample_at(int c, uint32_t i, int looped) {
-    CHANNEL* h = &ch[c];
-    int pcms = (CR(c, 0x00) >> 7) & 3;
-    if (pcms < 2) {
-        return fetch(c, i);
-    }
-    if (i == CR(c, 0x08)) {
-        if (looped && pcms == 2 && h->ad_loop_saved) {
-            h->ad_prev = h->ad_loop_prev;
-            h->ad_step = h->ad_loop_step;
-        } else if (!h->ad_loop_saved) {
-            h->ad_loop_prev = h->ad_prev;
-            h->ad_loop_step = h->ad_step;
-            h->ad_loop_saved = 1;
-        }
-    }
-    return adpcm_decode(c, i);
-}
-
 /* a channel that has ended: its KYONB goes too, so the next KYONEX does not start it again */
 static void channel_stop(int c) {
-    ch[c].on = 0;
+    ch_on[c] = 0;
     reg[c * 0x80 + 1] &= (uint8_t)~0x40;
 }
 
@@ -206,11 +228,11 @@ static void key_on(int c) {
     CHANNEL* h = &ch[c];
     uint32_t nx;
     int looped;
-    if (h->on && h->eg_state != EG_RELEASE) {
+    if (ch_on[c] && h->eg_state != EG_RELEASE) {
         return;
     }
     memset(h, 0, sizeof *h);
-    h->on = 1;
+    ch_on[c] = 1;
     h->ad_step = 127;
     h->eg_state = EG_ATTACK;
     h->eg = 0x3FF << 16;
@@ -224,7 +246,7 @@ static void key_on(int c) {
 }
 
 static void key_off(int c) {
-    if (ch[c].on) {
+    if (ch_on[c]) {
         ch[c].eg_state = EG_RELEASE;
         ch[c].feg_state = EG_RELEASE;
     }
@@ -304,6 +326,8 @@ static int32_t mix_l[CHUNK], mix_r[CHUNK];
 static int32_t mixs[CHUNK][16];     /* the DSP's inputs a sample, 20 bits */
 static int32_t sends[CHUNK];        /* all the inputs' sum, 16 bits, for the reverb in the DSP's place */
 static int sends_on, sent;          /* sends is wanted; something was sent in this chunk */
+static int mixs_on = 1;             /* mixs is wanted: the DSP runs (or MVC2_MIXFAST=0) */
+static int mix_fast = 1;            /* MVC2_MIXFAST: no work the output doesn't use */
 
 /* the LFO's waves, 0 to 255: saw, square, triangle, noise */
 static int lfo_wave(int ws, int ph, uint32_t noise) {
@@ -315,28 +339,576 @@ static int lfo_wave(int ws, int ph, uint32_t noise) {
     }
 }
 
+/* the envelope's change a sample in a state */
+static int32_t eg_rate(int c, int state) {
+    uint32_t r1 = CR(c, 0x10), r2 = CR(c, 0x14);
+    switch (state) {
+    case EG_ATTACK: return -(int32_t)attack_step[eff_rate(c, r1 & 31)];
+    case EG_DECAY1: return (int32_t)decay_step[eff_rate(c, (r1 >> 6) & 31)];
+    case EG_DECAY2: return (int32_t)decay_step[eff_rate(c, (r1 >> 11) & 31)];
+    default: return (int32_t)decay_step[eff_rate(c, r2 & 31)];
+    }
+}
+
+static inline int32_t clamp16(int32_t v) {
+#ifdef __ARM_FEATURE_SAT
+    return __ssat(v, 16);
+#else
+    return v > 32767 ? 32767 : v < -32768 ? -32768 : v;
+#endif
+}
+
+/* the chunk's samples, before the envelope: source_at's work with the source and the decoder in locals; flat,
+   from a source that doesn't wrap at the end of the RAM */
+static inline __attribute__((always_inline)) void quick_samples(const SOURCE* src, int pcms, int flat, int halved,
+                                                                CHANNEL* v, int32_t* smp, int n, uint32_t step) {
+    const uint8_t* ram = flat ? src->ram + src->sa : src->ram;
+    uint32_t mask = flat ? ~0u : src->mask, sa = flat ? 0 : src->sa, lsa = src->lsa, lea = src->lea;
+    uint32_t frac = v->frac, pos = v->pos;
+    int32_t s0 = v->s0, s1 = v->s1, prev = v->ad_prev, ad = v->ad_step;
+    int loop = src->loop, i;
+    if (halved) {
+        step *= 2;
+    }
+    for (i = 0; i < n; i += 1 + halved) {
+        smp[i] = s0 + ((s1 - s0) * (int32_t)(frac >> 1) >> 15);
+        frac += step;
+        while (frac >= 0x10000) {
+            uint32_t at;
+            int k, looped = 0;
+            int32_t d;
+            frac -= 0x10000;
+            pos++;
+            if (pos >= lea) {
+                pos = lsa;
+                v->lp = 1;
+            }
+            s0 = s1;
+            at = pos + 1;
+            if (at >= lea) {
+                if (!loop) {
+                    s1 = 0;
+                    continue;
+                }
+                at = lsa;
+                looped = 1;
+            }
+            if (pcms == 0) {
+                uint32_t a = (sa + at * 2) & mask & ~1u;
+                s1 = (int16_t)(ram[a] | ram[a + 1] << 8);
+                continue;
+            }
+            if (pcms == 1) {
+                s1 = (int8_t)ram[(sa + at) & mask] << 8;
+                continue;
+            }
+            if (at == lsa) {
+                if (looped && pcms == 2 && v->ad_loop_saved) {
+                    prev = v->ad_loop_prev;
+                    ad = v->ad_loop_step;
+                } else if (!v->ad_loop_saved) {
+                    v->ad_loop_prev = prev;
+                    v->ad_loop_step = ad;
+                    v->ad_loop_saved = 1;
+                }
+            }
+            k = ram[(sa + (at >> 1)) & mask] >> ((at & 1) * 4) & 15;
+            d = ad * ((k & 7) * 2 + 1) >> 3;
+#ifdef __ARM_FEATURE_SAT
+            d = __usat(d, 15);
+#else
+            d = d > 32767 ? 32767 : d;
+#endif
+            prev = clamp16(k & 8 ? prev - d : prev + d);
+            s1 = prev;
+            ad = ad * adpcm_scale[k & 7] >> 8;
+            ad = ad < 127 ? 127 : ad > 24576 ? 24576 : ad;
+        }
+    }
+    v->frac = frac;
+    v->pos = pos;
+    v->s0 = s0;
+    v->s1 = s1;
+    v->ad_prev = prev;
+    v->ad_step = ad;
+}
+
+/* each kind its own copy, apart from the rest of the mix, so its state stays in registers */
+#define QUICK(name, pcms, flat, halved)                                                                  \
+    static __attribute__((noinline)) void name(const SOURCE* src, CHANNEL* v, int32_t* smp, int n,       \
+                                               uint32_t step) {                                         \
+        quick_samples(src, pcms, flat, halved, v, smp, n, step);                                         \
+    }
+QUICK(quick_pcm16, 0, 0, 0)
+QUICK(quick_pcm8, 1, 0, 0)
+QUICK(quick_adpcm, 2, 0, 0)
+QUICK(quick_adpcm_long, 3, 0, 0)
+QUICK(flat_pcm16, 0, 1, 0)
+QUICK(flat_pcm8, 1, 1, 0)
+QUICK(flat_adpcm, 2, 1, 0)
+QUICK(flat_adpcm_long, 3, 1, 0)
+QUICK(half_pcm16, 0, 0, 1)
+QUICK(half_pcm8, 1, 0, 1)
+QUICK(half_adpcm, 2, 0, 1)
+QUICK(half_adpcm_long, 3, 0, 1)
+QUICK(half_flat_pcm16, 0, 1, 1)
+QUICK(half_flat_pcm8, 1, 1, 1)
+QUICK(half_flat_adpcm, 2, 1, 1)
+QUICK(half_flat_adpcm_long, 3, 1, 1)
+
+/* a chunk that reaches no loop end or start: its source samples, s0 and s1 then one a step on, apart from the
+   mix; quick_samples without the checks that can't pass */
+static inline __attribute__((always_inline)) void plain_source(const SOURCE* src, int pcms, int flat, CHANNEL* v,
+                                                               int32_t* buf, uint32_t m) {
+    const uint8_t* ram = flat ? src->ram + src->sa : src->ram;
+    uint32_t mask = flat ? ~0u : src->mask, sa = flat ? 0 : src->sa;
+    uint32_t at = v->pos + 2, end = at + m;
+    int32_t prev = v->ad_prev, ad = v->ad_step;
+    buf[0] = v->s0;
+    buf[1] = v->s1;
+    buf += 2;
+    for (; at != end; at++) {
+        if (pcms == 0) {
+            uint32_t a = (sa + at * 2) & mask & ~1u;
+            *buf++ = (int16_t)(ram[a] | ram[a + 1] << 8);
+        } else if (pcms == 1) {
+            *buf++ = (int8_t)ram[(sa + at) & mask] << 8;
+        } else {
+            int k = ram[(sa + (at >> 1)) & mask] >> ((at & 1) * 4) & 15;
+            int32_t d = ad * ((k & 7) * 2 + 1) >> 3;
+#ifdef __ARM_FEATURE_SAT
+            d = __usat(d, 15);
+#else
+            d = d > 32767 ? 32767 : d;
+#endif
+            prev = clamp16(k & 8 ? prev - d : prev + d);
+            *buf++ = prev;
+            ad = ad * adpcm_scale[k & 7] >> 8;
+            ad = ad < 127 ? 127 : ad > 24576 ? 24576 : ad;
+        }
+    }
+    v->ad_prev = prev;
+    v->ad_step = ad;
+}
+
+/* MVC2_MIXSIMD: plain_source's ADPCM a byte at a time, its two samples in turn: the same samples */
+static inline int32_t adpcm_next(int k, int32_t* prev, int32_t* ad) {
+    int32_t d = *ad * ((k & 7) * 2 + 1) >> 3;
+#ifdef __ARM_FEATURE_SAT
+    d = __usat(d, 15);
+#else
+    d = d > 32767 ? 32767 : d;
+#endif
+    *prev = clamp16(k & 8 ? *prev - d : *prev + d);
+    *ad = *ad * adpcm_scale[k & 7] >> 8;
+    *ad = *ad < 127 ? 127 : *ad > 24576 ? 24576 : *ad;
+    return *prev;
+}
+
+static inline __attribute__((always_inline)) void pair_adpcm(const SOURCE* src, int flat, CHANNEL* v, int32_t* buf,
+                                                             uint32_t m) {
+    const uint8_t* ram = flat ? src->ram + src->sa : src->ram;
+    uint32_t mask = flat ? ~0u : src->mask, sa = flat ? 0 : src->sa;
+    uint32_t at = v->pos + 2, end = at + m;
+    int32_t prev = v->ad_prev, ad = v->ad_step;
+    buf[0] = v->s0;
+    buf[1] = v->s1;
+    buf += 2;
+    if (at != end && (at & 1)) {
+        *buf++ = adpcm_next(ram[(sa + (at >> 1)) & mask] >> 4, &prev, &ad);
+        at++;
+    }
+    for (; end - at >= 2; at += 2) {
+        int b = ram[(sa + (at >> 1)) & mask];
+        *buf++ = adpcm_next(b & 15, &prev, &ad);
+        *buf++ = adpcm_next(b >> 4, &prev, &ad);
+    }
+    if (at != end) {
+        *buf++ = adpcm_next(ram[(sa + (at >> 1)) & mask] & 15, &prev, &ad);
+    }
+    v->ad_prev = prev;
+    v->ad_step = ad;
+}
+
+static __attribute__((noinline)) void pair_adpcm_wrap(const SOURCE* src, CHANNEL* v, int32_t* buf, uint32_t m) {
+    pair_adpcm(src, 0, v, buf, m);
+}
+
+static __attribute__((noinline)) void pair_adpcm_flat(const SOURCE* src, CHANNEL* v, int32_t* buf, uint32_t m) {
+    pair_adpcm(src, 1, v, buf, m);
+}
+
+#define PLAIN(name, pcms, flat)                                                                          \
+    static __attribute__((noinline)) void name(const SOURCE* src, CHANNEL* v, int32_t* buf, uint32_t m) { \
+        plain_source(src, pcms, flat, v, buf, m);                                                        \
+    }
+PLAIN(plain_pcm16, 0, 0)
+PLAIN(plain_pcm8, 1, 0)
+PLAIN(plain_adpcm, 2, 0)
+PLAIN(flat_plain_pcm16, 0, 1)
+PLAIN(flat_plain_pcm8, 1, 1)
+PLAIN(flat_plain_adpcm, 2, 1)
+
+/* the plain chunk's samples from its source samples, at frac (16 bits) a step on, mixed at one gain or each its own */
+static inline __attribute__((always_inline)) void plain_mix(const int32_t* buf, uint32_t frac, uint32_t step, int n,
+                                                            int32_t g, const int32_t* gain, int32_t gl, int32_t gr) {
+    int i;
+    for (i = 0; i < n; i++, frac += step) {
+        const int32_t* b = &buf[frac >> 16];
+        int32_t s = b[0] + ((b[1] - b[0]) * (int32_t)((frac & 0xFFFF) >> 1) >> 15);
+        s = s * (gain ? gain[i] : g) >> 15;
+        mix_l[i] += s * gl >> 15;
+        mix_r[i] += s * gr >> 15;
+    }
+}
+
+static __attribute__((noinline)) void plain_one(const int32_t* buf, uint32_t frac, uint32_t step, int n, int32_t g,
+                                                int32_t gl, int32_t gr) {
+    plain_mix(buf, frac, step, n, g, NULL, gl, gr);
+}
+
+static __attribute__((noinline)) void plain_each(const int32_t* buf, uint32_t frac, uint32_t step, int n,
+                                                 const int32_t* gain, int32_t gl, int32_t gr) {
+    plain_mix(buf, frac, step, n, 0, gain, gl, gr);
+}
+
+/* MVC2_MIXSIMD=1: the plain chunk's two gains made one before the mix, and its math in ARMv6's 32x16 multiplies:
+   close to the exact mix, not the same; these give the same results where there are no such instructions */
+static int mix_simd;
+
+static inline int32_t mul_wb(int32_t a, int32_t b) {
+#ifdef __ARM_FEATURE_DSP
+    int32_t r;
+    __asm__("smulwb %0, %1, %2" : "=r"(r) : "r"(a), "r"(b));
+    return r;
+#else
+    return (int32_t)(((int64_t)a * (int16_t)b) >> 16);
+#endif
+}
+
+static inline int32_t mul_wt(int32_t a, int32_t b) {
+#ifdef __ARM_FEATURE_DSP
+    int32_t r;
+    __asm__("smulwt %0, %1, %2" : "=r"(r) : "r"(a), "r"(b));
+    return r;
+#else
+    return (int32_t)(((int64_t)a * (int16_t)(b >> 16)) >> 16);
+#endif
+}
+
+static inline int32_t mla_wb(int32_t a, int32_t b, int32_t acc) {
+#ifdef __ARM_FEATURE_DSP
+    return __smlawb(a, b, acc);
+#else
+    return acc + mul_wb(a, b);
+#endif
+}
+
+/* the source sample at frac, doubled: b[0] + (b[1] - b[0]) * f / 32768 as plain_mix has it */
+static inline int32_t simd_at(const int32_t* buf, uint32_t frac) {
+    const int32_t* b = &buf[frac >> 16];
+    return mla_wb((b[1] - b[0]) * 2, (int32_t)((frac & 0xFFFF) >> 1), b[0]) * 2;
+}
+
+static __attribute__((noinline)) void simd_one(const int32_t* buf, uint32_t frac, uint32_t step, int n, int32_t g,
+                                               int32_t gl, int32_t gr) {
+    int32_t l = g * gl >> 15, r = g * gr >> 15, i;
+    uint32_t lr;
+    l = l > 32767 ? 32767 : l;
+    r = r > 32767 ? 32767 : r;
+    lr = ((uint32_t)l & 0xFFFF) | (uint32_t)r << 16;
+    for (i = 0; i < n; i++, frac += step) {
+        int32_t s = simd_at(buf, frac);
+        mix_l[i] += mul_wb(s, (int32_t)lr);
+        mix_r[i] += mul_wt(s, (int32_t)lr);
+    }
+}
+
+/* the same with each sample's own gain (an envelope moving) */
+static __attribute__((noinline)) void simd_each(const int32_t* buf, uint32_t frac, uint32_t step, int n,
+                                                const int32_t* gain, int32_t gl, int32_t gr) {
+    uint32_t lr;
+    int i;
+    gl = gl > 32767 ? 32767 : gl;
+    gr = gr > 32767 ? 32767 : gr;
+    lr = ((uint32_t)gl & 0xFFFF) | (uint32_t)gr << 16;
+    for (i = 0; i < n; i++, frac += step) {
+        int32_t g = gain[i] > 32767 ? 32767 : gain[i];
+        int32_t s = mul_wb(simd_at(buf, frac), g) * 2;
+        mix_l[i] += mul_wb(s, (int32_t)lr);
+        mix_r[i] += mul_wt(s, (int32_t)lr);
+    }
+}
+
+/* MVC2_MIXSIMD=2: plain_one's own math in the 32x16 multiplies, so the same results: a gain of 0x8000 (one) is
+   left out, the others are below it and fit the multiply's 16 bits */
+static inline __attribute__((always_inline)) void exact_mix(const int32_t* buf, uint32_t frac, uint32_t step, int n,
+                                                            int32_t g, int32_t gl, int32_t gr, int one_g,
+                                                            int one_l, int one_r) {
+    uint32_t lr = (one_l ? 0 : (uint32_t)gl & 0xFFFF) | (one_r ? 0 : (uint32_t)gr << 16);
+    int i;
+    for (i = 0; i < n; i++, frac += step) {
+        int32_t s = simd_at(buf, frac), t = one_g ? s >> 1 : mul_wb(s, g);
+        mix_l[i] += one_l ? t : mul_wb(t * 2, (int32_t)lr);
+        mix_r[i] += one_r ? t : mul_wt(t * 2, (int32_t)lr);
+    }
+}
+
+#define EXACT(k)                                                                                               static __attribute__((noinline)) void exact_##k(const int32_t* buf, uint32_t frac, uint32_t step, int n,                                                     int32_t g, int32_t gl, int32_t gr) {                           exact_mix(buf, frac, step, n, g, gl, gr, (k) & 1, (k) >> 1 & 1, (k) >> 2);                           }
+EXACT(0)
+EXACT(1)
+EXACT(2)
+EXACT(3)
+EXACT(4)
+EXACT(5)
+EXACT(6)
+EXACT(7)
+
+static void (*const exact_kind[8])(const int32_t*, uint32_t, uint32_t, int, int32_t, int32_t, int32_t) = {
+    exact_0, exact_1, exact_2, exact_3, exact_4, exact_5, exact_6, exact_7,
+};
+
+/* the exact_ copy for these gains, or NULL if one is past 0x8000 */
+static int exact_one(const int32_t* buf, uint32_t frac, uint32_t step, int n, int32_t g, int32_t gl, int32_t gr) {
+    if ((uint32_t)g > 0x8000 || (uint32_t)gl > 0x8000 || (uint32_t)gr > 0x8000) {
+        return 0;
+    }
+    exact_kind[(g == 0x8000) | (gl == 0x8000) << 1 | (gr == 0x8000) << 2](buf, frac, step, n, g, gl, gr);
+    return 1;
+}
+
+#define PLAIN_STEP 0x20000          /* the plain path's most source samples a sample */
+static int32_t plain_buf[CHUNK * (PLAIN_STEP >> 16) + 2];
+
+/* what a channel's registers say, made again after one of them is written */
+typedef struct {
+    SOURCE src;
+    uint32_t step;
+    int32_t gl, gr, gs, tl, qf, d1;
+    int32_t eg_add[4];              /* the envelope's change a sample in each state */
+    uint32_t r1c;
+    uint8_t pcms, voff, lpoff, isel, plfos, alfos, plfows, alfows, hold;
+    uint8_t flat;                   /* the source can't wrap at the end of the RAM */
+} PARAMS;
+
+static PARAMS par[64];
+static uint8_t par_ok[64];
+
+static const PARAMS* params(int c) {
+    PARAMS* p = &par[c];
+    uint32_t r18, r20, r24, r28, r2;
+    int oct, disdl, dipan, i;
+    uint32_t base;
+    if (par_ok[c]) {
+        return p;
+    }
+    r18 = CR(c, 0x18);
+    r20 = CR(c, 0x20);
+    r24 = CR(c, 0x24);
+    r28 = CR(c, 0x28);
+    r2 = CR(c, 0x14);
+    p->r1c = CR(c, 0x1C);
+    oct = oct_of(c);
+    base = 0x400 | (r18 & 0x3FF);
+    p->step = oct + 6 >= 0 ? base << (oct + 6) : base >> -(oct + 6);
+    disdl = (r24 >> 8) & 15;
+    dipan = r24 & 31;
+    p->gl = p->gr = level_gain[disdl];
+    if (dipan & 0x10) {
+        p->gr = p->gr * pan_gain[dipan & 15] >> 15;
+    } else {
+        p->gl = p->gl * pan_gain[dipan & 15] >> 15;
+    }
+    p->gs = level_gain[(r20 >> 4) & 15];
+    p->isel = r20 & 15;
+    p->tl = (int32_t)((r28 >> 8) & 0xFF) << 2;
+    p->voff = (r28 & 0x40) != 0;
+    p->lpoff = (r28 & 0x20) != 0;
+    p->qf = (int32_t)(r28 & 31) * 1024 / 32 * 7 / 8;    /* resonance, Q12 */
+    p->plfos = (p->r1c >> 5) & 7;
+    p->alfos = p->r1c & 7;
+    p->plfows = (p->r1c >> 8) & 3;
+    p->alfows = (p->r1c >> 3) & 3;
+    p->pcms = (CR(c, 0x00) >> 7) & 3;
+    p->hold = (r2 & 0x4000) != 0;
+    p->d1 = (int32_t)(((r2 >> 5) & 31) << 5) << 16;
+    for (i = 0; i < 4; i++) {
+        p->eg_add[i] = eg_rate(c, i);
+    }
+    source_of(c, &p->src);
+    {
+        uint32_t last = p->src.lsa > p->src.lea ? p->src.lsa : p->src.lea;     /* no index read is past it */
+        uint32_t end = p->pcms == 0 ? last * 2 + 1 : p->pcms == 1 ? last : last >> 1;
+        p->flat = !(p->src.sa & 1) && p->src.sa + end <= p->src.mask;
+    }
+    par_ok[c] = 1;
+    return p;
+}
+
+/* render_quick's chunk of one gain at half the rate, each sample held for two: the channel's state the same */
+static int quick_half(int c, int n, const PARAMS* p, int32_t g) {
+    CHANNEL* v = &ch[c];
+    int32_t smp[CHUNK], gl = p->gl, gr = p->gr, gs = p->gs;
+    int i;
+    switch (p->pcms | p->flat << 2) {
+    case 0: half_pcm16(&p->src, v, smp, n, p->step); break;
+    case 1: half_pcm8(&p->src, v, smp, n, p->step); break;
+    case 2: half_adpcm(&p->src, v, smp, n, p->step); break;
+    case 3: half_adpcm_long(&p->src, v, smp, n, p->step); break;
+    case 4: half_flat_pcm16(&p->src, v, smp, n, p->step); break;
+    case 5: half_flat_pcm8(&p->src, v, smp, n, p->step); break;
+    case 6: half_flat_adpcm(&p->src, v, smp, n, p->step); break;
+    default: half_flat_adpcm_long(&p->src, v, smp, n, p->step); break;
+    }
+    for (i = 0; i < n; i += 2) {
+        int32_t s = smp[i] * g >> 15, l = s * gl >> 15, r = s * gr >> 15;
+        mix_l[i] += l;
+        mix_l[i + 1] += l;
+        mix_r[i] += r;
+        mix_r[i + 1] += r;
+        smp[i] = smp[i + 1] = s;
+    }
+    if (gs && (mixs_on || sends_on)) {
+        int isel = p->isel;
+        for (i = 0; i < n; i++) {
+            if (mixs_on) {
+                mixs[i][isel] += (smp[i] * gs >> 15) << 4;
+            }
+            if (sends_on) {
+                sends[i] += smp[i] * gs >> 15;
+            }
+        }
+    }
+    return 1;
+}
+
+/* a chunk with no LFO and no filter in which the channel can't end: the envelope, the samples and the mix done
+   apart, or 0 when the chunk is not like that */
+static int render_quick(int c, int n, const PARAMS* p) {
+    CHANNEL* v = &ch[c];
+    int32_t add, gain[CHUNK], smp[CHUNK], gl = p->gl, gr = p->gr, gs = p->gs, g = -1;
+    int i;
+    if (v->eg_state == EG_ATTACK && p->hold) {
+        return 0;   /* the attack may end at the loop's start */
+    }
+    if (!p->src.loop && v->pos + ((v->frac + n * p->step) >> 16) >= p->src.lea) {
+        return 0;
+    }
+    add = p->eg_add[v->eg_state];
+    if (v->eg_state == EG_RELEASE && (int64_t)v->eg + (int64_t)add * n >= 0x3FF << 16) {
+        return 0;
+    }
+
+    if (add == 0 && (v->eg_state >= EG_DECAY2 || (v->eg_state == EG_DECAY1 ? v->eg < p->d1 : v->eg > 0))) {
+        int att = (v->eg >> 16) + p->tl;
+        g = p->voff ? 0x8000 : att >= 1024 ? 0 : att_gain[att];
+    } else {
+        for (i = 0; i < n; i++) {
+            int att;
+            v->eg += p->eg_add[v->eg_state];
+            if (v->eg_state == EG_ATTACK) {
+                if (v->eg <= 0) {
+                    v->eg = 0;
+                    v->eg_state = EG_DECAY1;
+                }
+            } else if (v->eg_state == EG_DECAY1 && v->eg >= p->d1) {
+                v->eg_state = EG_DECAY2;
+            }
+            if (v->eg >= 0x3FF << 16) {
+                v->eg = 0x3FF << 16;
+            }
+            att = (v->eg >> 16) + p->tl;
+            gain[i] = p->voff ? 0x8000 : att >= 1024 ? 0 : att_gain[att];
+        }
+    }
+
+    if (half && g >= 0 && !(n & 1)) {
+        return quick_half(c, n, p, g);
+    }
+    if (mix_fast && !(gs && (mixs_on || sends_on)) && p->step <= PLAIN_STEP && v->frac < 0x10000) {
+        uint32_t m = (v->frac + (uint32_t)n * p->step) >> 16;     /* the steps on in the source */
+        uint32_t last = v->pos + m + 1;                         /* the last index read */
+        if (last < p->src.lea && (p->pcms < 2 || p->src.lsa < v->pos + 2 || p->src.lsa > last)) {
+            switch ((p->pcms < 2 ? p->pcms : 2) | p->flat << 2) {
+            case 0: plain_pcm16(&p->src, v, plain_buf, m); break;
+            case 1: plain_pcm8(&p->src, v, plain_buf, m); break;
+            case 2: (mix_simd ? pair_adpcm_wrap : plain_adpcm)(&p->src, v, plain_buf, m); break;
+            case 4: flat_plain_pcm16(&p->src, v, plain_buf, m); break;
+            case 5: flat_plain_pcm8(&p->src, v, plain_buf, m); break;
+            default: (mix_simd ? pair_adpcm_flat : flat_plain_adpcm)(&p->src, v, plain_buf, m); break;
+            }
+            if (g >= 0 && mix_simd == 1) {
+                simd_one(plain_buf, v->frac, p->step, n, g, gl, gr);
+            } else if (g >= 0) {
+                if (mix_simd != 2 || !exact_one(plain_buf, v->frac, p->step, n, g, gl, gr)) {
+                    plain_one(plain_buf, v->frac, p->step, n, g, gl, gr);
+                }
+            } else if (mix_simd == 1) {
+                simd_each(plain_buf, v->frac, p->step, n, gain, gl, gr);
+            } else {
+                plain_each(plain_buf, v->frac, p->step, n, gain, gl, gr);
+            }
+            v->frac = (v->frac + (uint32_t)n * p->step) & 0xFFFF;
+            v->pos += m;
+            v->s0 = plain_buf[m];
+            v->s1 = plain_buf[m + 1];
+            return 1;
+        }
+    }
+    switch (p->pcms | p->flat << 2) {
+    case 0: quick_pcm16(&p->src, v, smp, n, p->step); break;
+    case 1: quick_pcm8(&p->src, v, smp, n, p->step); break;
+    case 2: quick_adpcm(&p->src, v, smp, n, p->step); break;
+    case 3: quick_adpcm_long(&p->src, v, smp, n, p->step); break;
+    case 4: flat_pcm16(&p->src, v, smp, n, p->step); break;
+    case 5: flat_pcm8(&p->src, v, smp, n, p->step); break;
+    case 6: flat_adpcm(&p->src, v, smp, n, p->step); break;
+    default: flat_adpcm_long(&p->src, v, smp, n, p->step); break;
+    }
+
+    if (g >= 0) {
+        for (i = 0; i < n; i++) {
+            int32_t s = smp[i] * g >> 15;
+            mix_l[i] += s * gl >> 15;
+            mix_r[i] += s * gr >> 15;
+            smp[i] = s;
+        }
+    } else {
+        for (i = 0; i < n; i++) {
+            int32_t s = smp[i] * gain[i] >> 15;
+            mix_l[i] += s * gl >> 15;
+            mix_r[i] += s * gr >> 15;
+            smp[i] = s;
+        }
+    }
+    if (gs && (mixs_on || sends_on)) {
+        int isel = p->isel;
+        for (i = 0; i < n; i++) {
+            if (mixs_on) {
+                mixs[i][isel] += (smp[i] * gs >> 15) << 4;
+            }
+            if (sends_on) {
+                sends[i] += smp[i] * gs >> 15;
+            }
+        }
+    }
+    return 1;
+}
+
 static void render_channel(int c, int n) {
     CHANNEL* h = &ch[c];
-    uint32_t r18 = CR(c, 0x18), r1c = CR(c, 0x1C), r20 = CR(c, 0x20), r24 = CR(c, 0x24), r28 = CR(c, 0x28);
-    int oct = oct_of(c);
-    uint32_t base = 0x400 | (r18 & 0x3FF), step;
-    int32_t gl, gr, gs, tl = (int32_t)((r28 >> 8) & 0xFF) << 2;
-    int disdl = (r24 >> 8) & 15, dipan = r24 & 31, imxl = (r20 >> 4) & 15, isel = r20 & 15;
-    int voff = r28 & 0x40, lpoff = (r28 & 0x20) || !filter_on, q = r28 & 31;
-    int plfos = (r1c >> 5) & 7, alfos = r1c & 7, plfows = (r1c >> 8) & 3, alfows = (r1c >> 3) & 3;
-    int32_t qf = q * 1024 / 32 * 7 / 8;     /* resonance, Q12 */
+    const PARAMS* p = params(c);
+    uint32_t step = p->step, r1c = p->r1c;
+    int32_t gl = p->gl, gr = p->gr, gs = p->gs, tl = p->tl, qf = p->qf;
+    int voff = p->voff, lpoff = p->lpoff || !filter_on, isel = p->isel;
+    int plfos = p->plfos, alfos = p->alfos, plfows = p->plfows, alfows = p->alfows;
     int i;
-    step = oct + 6 >= 0 ? base << (oct + 6) : base >> -(oct + 6);
-    gl = gr = level_gain[disdl];
-    if (dipan & 0x10) {
-        gr = gr * pan_gain[dipan & 15] >> 15;
-    } else {
-        gl = gl * pan_gain[dipan & 15] >> 15;
-    }
-    gs = level_gain[imxl];
     sent |= gs != 0;
     if (r1c & 0x8000) {
         h->lfo = 0;
+    }
+    if (!plfos && !alfos && lpoff && render_quick(c, n, p)) {
+        return;
     }
     if (!lpoff) {
         feg_step(c, h, n);
@@ -377,8 +949,10 @@ static void render_channel(int c, int n) {
         }
         mix_l[i] += s * gl >> 15;
         mix_r[i] += s * gr >> 15;
-        if (gs) {
+        if (gs && mixs_on) {
             mixs[i][isel] += (s * gs >> 15) << 4;
+        }
+        if (gs) {
             if (sends_on) {
                 sends[i] += s * gs >> 15;
             }
@@ -401,7 +975,7 @@ static void render_channel(int c, int n) {
             }
             h->s1 = next_index(c, nx, &nx2, &looped) ? sample_at(c, nx2, looped) : 0;
         }
-        if (!h->on) {
+        if (!ch_on[c]) {
             break;
         }
     }
@@ -564,6 +1138,7 @@ static void dsp_sample(const int32_t* mix) {
                 uint16_t w = f & DF_NOFL ? (uint16_t)(shifted >> 8) : dsp_pack(shifted);
                 ram[addr] = (uint8_t)w;
                 ram[addr + 1] = (uint8_t)(w >> 8);
+                arm7_code_written(addr, 2);
             }
         }
         if (f & DF_ADRL) {
@@ -582,6 +1157,7 @@ static uint32_t scipd, mcipd, intreq;
 static int timer_count[3], timer_sub[3];
 static int timer_load[3] = { -1, -1, -1 };  /* written by the CPU in its run: set once the timers reach that time */
 static int in_cpu;
+static int timer_fast = 1;          /* MVC2_TIMERFAST=0: the timers counted a step at a time */
 
 static void update_irq(void) {
     uint32_t p = reg16(0x289C) & scipd & 0x7FF;
@@ -599,11 +1175,26 @@ static void update_irq(void) {
     arm7_set_fiq(intreq != 0);
 }
 
+static FILE* trace;                 /* MVC2_SNDTRACE: each register write, with the sample it came at */
+static uint32_t trace_time;
+
 static int timers_tick(int n) {
     int t, raised = 0;
+    trace_time += (uint32_t)n;
     for (t = 0; t < 3; t++) {
-        int prescale = 1 << ((reg16(0x2890 + t * 4) >> 8) & 7);
+        int shift = (reg16(0x2890 + t * 4) >> 8) & 7, prescale = 1 << shift;
         timer_sub[t] += n;
+        if (timer_fast) {
+            timer_count[t] += timer_sub[t] >> shift;   /* from at most 0xFF, each overflow back to 0 */
+            timer_sub[t] &= prescale - 1;
+            if (timer_count[t] > 0xFF) {
+                timer_count[t] &= 0xFF;
+                scipd |= 0x40u << t;
+                mcipd |= 0x40u << t;
+                raised = 1;
+            }
+            continue;
+        }
         while (timer_sub[t] >= prescale) {
             timer_sub[t] -= prescale;
             if (++timer_count[t] > 0xFF) {
@@ -641,7 +1232,10 @@ static void run_cpu(int len) {
         int seg = timers_next(len - done), reached;
         if (!cpu_reset && cycles < (done + seg) * cpu_cycles) {
             in_cpu = 1;
-            int ran = arm7_run((done + seg) * cpu_cycles - cycles);
+            int ran = snd_drv_main((done + seg) * cpu_cycles - cycles, cpu_cycles);
+            if (ran < 0) {
+                ran = arm7_run((done + seg) * cpu_cycles - cycles);
+            }
             cycles += ran;
             PROF_COUNT(PZ_SND_ARM, (uint32_t)ran);
             in_cpu = 0;
@@ -653,7 +1247,11 @@ static void run_cpu(int len) {
             done = reached;
             if (raised && !cpu_reset) {
                 PROF_START(f);
-                arm7_run_fiq(HANDLER_MAX);
+                PERF(AICA_PERF_FIQ);
+                if (!snd_drv_fiq()) {
+                    arm7_run_fiq(HANDLER_MAX);
+                }
+                PERF(AICA_PERF_FIQ_END);
                 PROF_STOP(PZ_SND_FIQ, f);
                 PROF_COUNT(PZ_SND_FIQ, 1);
             }
@@ -700,11 +1298,24 @@ static uint32_t read_reg16(uint32_t off) {
     }
 }
 
+void (*aica_write_log)(uint32_t off, uint32_t v, uint32_t mask);
+uint32_t aica_watch_gen;
+
 static void write_reg16(uint32_t off, uint32_t v, uint32_t mask) {
     uint32_t old;
     off &= 0x7FFE;
+    if (aica_write_log != NULL) {
+        aica_write_log(off, v, mask);
+    }
+    if (trace != NULL) {
+        uint32_t w[3] = { trace_time, off | mask << 16, v & mask };
+        fwrite(w, sizeof w, 1, trace);
+    }
     old = reg16(off);
     v = (old & ~mask) | (v & mask);
+    if (off < 0x2000 ? (off & 0x7F) == 0 || (off & 0x7F) == 0x08 : off == 0x280C) {
+        aica_watch_gen++;
+    }
     if (off == 0x28A0) {                    /* SCIPD: only the SH4's interrupt can be raised */
         scipd |= v & 0x20 & mask;
         update_irq();
@@ -726,6 +1337,7 @@ static void write_reg16(uint32_t off, uint32_t v, uint32_t mask) {
     reg[off] = (uint8_t)v;
     reg[off + 1] = (uint8_t)(v >> 8);
     if (off < 0x2000) {
+        par_ok[off >> 7] = 0;
         if ((off & 0x7F) == 0 && (v & 0x8000)) {
             reg[off + 1] &= 0x7F;
             key_execute();
@@ -807,6 +1419,53 @@ void aica_arm_write8(uint32_t a, uint32_t v) {
     }
 }
 
+/* what the sound CPU's writes to the registers can change, kept and put back around a check */
+struct AICA_STATE {
+    uint8_t reg[sizeof reg];
+    CHANNEL ch[64];
+    uint8_t ch_on[64], par_ok[64];
+    uint32_t scipd, mcipd, intreq;
+    int timer_count[3], timer_sub[3], timer_load[3];
+    int dsp_dirty, cpu_reset, cpu_debt;
+};
+
+AICA_STATE* aica_state_new(void) {
+    return malloc(sizeof(AICA_STATE));
+}
+
+void aica_state_save(AICA_STATE* s) {
+    memcpy(s->reg, reg, sizeof reg);
+    memcpy(s->ch, ch, sizeof ch);
+    memcpy(s->ch_on, ch_on, sizeof ch_on);
+    memcpy(s->par_ok, par_ok, sizeof par_ok);
+    s->scipd = scipd;
+    s->mcipd = mcipd;
+    s->intreq = intreq;
+    memcpy(s->timer_count, timer_count, sizeof timer_count);
+    memcpy(s->timer_sub, timer_sub, sizeof timer_sub);
+    memcpy(s->timer_load, timer_load, sizeof timer_load);
+    s->dsp_dirty = dsp_dirty;
+    s->cpu_reset = cpu_reset;
+    s->cpu_debt = cpu_debt;
+}
+
+void aica_state_load(const AICA_STATE* s) {
+    aica_watch_gen++;
+    memcpy(reg, s->reg, sizeof reg);
+    memcpy(ch, s->ch, sizeof ch);
+    memcpy(ch_on, s->ch_on, sizeof ch_on);
+    memcpy(par_ok, s->par_ok, sizeof par_ok);
+    scipd = s->scipd;
+    mcipd = s->mcipd;
+    intreq = s->intreq;
+    memcpy(timer_count, s->timer_count, sizeof timer_count);
+    memcpy(timer_sub, s->timer_sub, sizeof timer_sub);
+    memcpy(timer_load, s->timer_load, sizeof timer_load);
+    dsp_dirty = s->dsp_dirty;
+    cpu_reset = s->cpu_reset;
+    cpu_debt = s->cpu_debt;
+}
+
 /* the SH4's side */
 uint8_t* aica_sh4_ptr(uint32_t addr) {
     return ram + (addr & 0x00FFFFFFu & aica_ram_mask);
@@ -833,6 +1492,7 @@ void aica_sh4_write32(uint32_t addr, uint32_t v) {
     addr &= 0x00FFFFFFu;
     if (addr >= 0x800000u) {
         memcpy(ram + ((addr - 0x800000u) & aica_ram_mask & ~3u), &v, 4);
+        arm7_code_written((addr - 0x800000u) & aica_ram_mask & ~3u, 4);
     } else if ((addr & 0xFF8000u) == 0x700000u) {
         write_reg16(addr & 0x7FFF, v, 0xFFFF);
     }
@@ -847,16 +1507,16 @@ int aica_init(int ram_8mb) {
         make_tables();
         tables = 1;
     }
-    if (ram == NULL || aica_ram_mask + 1 != size) {
-        aica_free();
-        if ((ram = malloc(size)) == NULL) {
-            return 0;
-        }
-        aica_ram = ram;
+    /* the NAOMI's size for both, so that a switch either way finds it whole */
+    if ((ram = host_keep_block(8u << 20)) == NULL) {
+        return 0;
     }
+    aica_ram = ram;
     memset(ram, 0, size);
     memset(reg, 0, sizeof reg);
     memset(ch, 0, sizeof ch);
+    memset(ch_on, 0, sizeof ch_on);
+    memset(par_ok, 0, sizeof par_ok);
     memset(temp, 0, sizeof temp);
     memset(mems, 0, sizeof mems);
     frc_reg = y_reg = adrs_reg = memval = 0;
@@ -873,9 +1533,12 @@ int aica_init(int ram_8mb) {
 }
 
 void aica_free(void) {
-    free(ram);
-    ram = aica_ram = NULL;
+    ram = aica_ram = NULL;      /* host_keep_block's */
     aica_ram_mask = 0;
+}
+
+int aica_tracing(void) {
+    return trace != NULL;
 }
 
 int aica_cpu_running(void) {
@@ -887,7 +1550,7 @@ void aica_run_cpu(int cycles) {
 #ifdef MVC2_PROF
         game_side = 1;
 #endif
-        arm7_run(cycles);
+        arm7_run_interpreted(cycles);   /* the translated code is for the sound's own thread */
 #ifdef MVC2_PROF
         game_side = 0;
 #endif
@@ -905,6 +1568,30 @@ void aica_set_cpu_rate(int cycles) {
 
 void aica_set_filter(int on) {
     filter_on = on;
+}
+
+void aica_set_half(int on) {
+    half = on;
+}
+
+void aica_set_mix_fast(int on) {
+    mix_fast = on;
+}
+
+void aica_set_mix_simd(int on) {
+    mix_simd = on;
+}
+
+void aica_set_timer_fast(int on) {
+    timer_fast = on;
+}
+
+void aica_trace(const char* path) {
+    trace = fopen(path, "wb");
+}
+
+void aica_set_chunk(int n) {
+    chunk = n >= 1 && n <= CHUNK ? n : 16;
 }
 
 static unsigned last_active;
@@ -949,7 +1636,7 @@ void aica_dump(void (*log)(const char* fmt, ...)) {
     }
     for (c = 0; c < 64; c++) {
         CHANNEL* h = &ch[c];
-        if (!h->on) {
+        if (!ch_on[c]) {
             continue;
         }
         log("  ch%02d pcms %u sa %06X lsa %04X lea %04X lp %u oct %d fns %03X tl %02X disdl %u pan %02X imxl %u isel %u "
@@ -1062,27 +1749,34 @@ static int32_t out_level(int32_t s) {
 
 void aica_render(int16_t* out, int n) {
     while (n > 0) {
-        int len = n < CHUNK ? n : CHUNK, i, c, mvol = reg16(0x2800) & 15;
+        int len = n < chunk ? n : chunk, i, c, mvol = reg16(0x2800) & 15;
         unsigned active = 0;
         PROF_START(a);
+        PERF(AICA_PERF_CHUNK);
+        aica_watch_gen++;           /* the channels move on in each chunk's mix */
         run_cpu(len);
+        PERF(AICA_PERF_ARM_END);
         PROF_STOP(PZ_SND_ARM, a);
         PROF_START(t);
-        memset(mix_l, 0, sizeof mix_l);
-        memset(mix_r, 0, sizeof mix_r);
-        memset(mixs, 0, sizeof mixs);
+        memset(mix_l, 0, chunk * sizeof mix_l[0]);
+        memset(mix_r, 0, chunk * sizeof mix_r[0]);
+        if (sent && mixs_on) {
+            memset(mixs, 0, chunk * sizeof mixs[0]);
+        }
+        mixs_on = dsp_on || !mix_fast;
         sends_on = rv_on && !dsp_on && dsp_last;
         if (sends_on) {
-            memset(sends, 0, sizeof sends);
+            memset(sends, 0, chunk * sizeof sends[0]);
         }
         sent = 0;
         for (c = 0; c < 64; c++) {
-            if (ch[c].on) {
+            if (ch_on[c]) {
                 render_channel(c, len);
                 active++;
             }
         }
         last_active = active;
+        PERF(AICA_PERF_MIX_END);
         PROF_STOP(PZ_SND_CHANNELS, t);
         PROF_COUNT(PZ_SND_CHANNELS, active);
         if (dsp_dirty) {

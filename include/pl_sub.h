@@ -98,7 +98,7 @@ extern void score_bcd_add( Uint32 *score, Uint32 hi, Uint32 lo );
 extern void bonus_add( Uint32 *hi, Uint32 *lo );
 extern void vital_bonus( Uint32 *hi, Uint32 *lo );
 extern void time_bonus( Uint32 *hi, Uint32 *lo );
-extern void unk_9a_bonus( Uint32 *hi, Uint32 *lo );
+extern void no_ko_bonus( Uint32 *hi, Uint32 *lo );
 extern void pl_fly( PLAYER_WORK *pl_w );
 extern void pl_fly_start( PLAYER_WORK *pl_w );
 extern Uint8 pl_guard_req_ck( PLAYER_WORK *pl_w );

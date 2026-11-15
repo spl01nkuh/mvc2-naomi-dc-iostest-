@@ -482,7 +482,7 @@ static double dmax(double a, double b) {
 #define CULL_VAL 0.02
 
 static void setup_tri(SETUP* p, int list, const RD_TRI* t, int order) {
-    const RD_STATE* s = &rd_frame.states[t->state];
+    const RD_STATE* s = &rd_frame->states[t->state];
     const RD_VTX *a = &p->v[0], *b = &p->v[1], *c = &p->v[2];
     double area;
     COLOR k[6];
@@ -751,18 +751,18 @@ static void save_frame(void) {
     if (e == NULL || (f = fopen(name, "wb")) == NULL) {
         return;
     }
-    tex = malloc(sizeof *tex * (size_t)(rd_frame.nstates + 1));
+    tex = malloc(sizeof *tex * (size_t)(rd_frame->nstates + 1));
     fwrite("RDF1", 1, 4, f);
-    fwrite(rd_frame.ntris, sizeof(int), RD_LISTS, f);
-    fwrite(&rd_frame.nstates, sizeof(int), 1, f);
+    fwrite(rd_frame->ntris, sizeof(int), RD_LISTS, f);
+    fwrite(&rd_frame->nstates, sizeof(int), 1, f);
     for (i = 0; i < RD_LISTS; i++) {
-        fwrite(rd_frame.tris[i], sizeof(RD_TRI), (size_t)rd_frame.ntris[i], f);
+        fwrite(rd_frame->tris[i], sizeof(RD_TRI), (size_t)rd_frame->ntris[i], f);
     }
-    fwrite(rd_frame.background, sizeof rd_frame.background, 1, f);
+    fwrite(rd_frame->background, sizeof rd_frame->background, 1, f);
     fwrite(&rd_fog, sizeof rd_fog, 1, f);
     fwrite(rd_palette, sizeof rd_palette, 1, f);
-    for (i = 0; i < rd_frame.nstates; i++) {
-        const RD_STATE* s = &rd_frame.states[i];
+    for (i = 0; i < rd_frame->nstates; i++) {
+        const RD_STATE* s = &rd_frame->states[i];
         int n = -1;
         for (j = 0; s->tex != NULL && j < ntex; j++) {
             if (tex[j] == s->tex) {
@@ -805,21 +805,21 @@ static void log_frame(void) {
     for (i = 0; i < 128; i++) {
         fprintf(dbg_log, " %.2f", rd_fog.table[i]);
     }
-    fprintf(dbg_log, "\nbackground %08X %08X %08X z %g\n", rd_frame.background[0].base, rd_frame.background[1].base,
-            rd_frame.background[2].base, rd_frame.background[0].z);
+    fprintf(dbg_log, "\nbackground %08X %08X %08X z %g\n", rd_frame->background[0].base, rd_frame->background[1].base,
+            rd_frame->background[2].base, rd_frame->background[0].z);
     e = getenv("MVC2_RDPIX");
     if (e != NULL && sscanf(e, "%d,%d", &px, &py) == 2) {
         dbg_pix = py * RD_WIDTH + px;
     }
     for (list = 0; list < RD_LISTS; list++) {
-        for (i = 0; i < rd_frame.ntris[list];) {
-            const RD_TRI* t = &rd_frame.tris[list][i];
-            const RD_STATE* s = &rd_frame.states[t->state];
+        for (i = 0; i < rd_frame->ntris[list];) {
+            const RD_TRI* t = &rd_frame->tris[list][i];
+            const RD_STATE* s = &rd_frame->states[t->state];
             float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f, z0 = 1e9f, z1 = -1e9f;
             int j = i, k;
-            for (; j < rd_frame.ntris[list] && rd_frame.tris[list][j].state == t->state; j++) {
+            for (; j < rd_frame->ntris[list] && rd_frame->tris[list][j].state == t->state; j++) {
                 for (k = 0; k < 3; k++) {
-                    const RD_VTX* v = &rd_frame.tris[list][j].v[k];
+                    const RD_VTX* v = &rd_frame->tris[list][j].v[k];
                     x0 = fminf(x0, v->x), x1 = fmaxf(x1, v->x), y0 = fminf(y0, v->y), y1 = fmaxf(y1, v->y);
                     z0 = fminf(z0, v->z), z1 = fmaxf(z1, v->z);
                 }
@@ -836,7 +836,7 @@ static void log_frame(void) {
             }
             if (getenv("MVC2_RDVTX") != NULL && atoi(getenv("MVC2_RDVTX")) == t->state) {
                 for (k = i; k < j; k++) {
-                    const RD_VTX* v = rd_frame.tris[list][k].v;
+                    const RD_VTX* v = rd_frame->tris[list][k].v;
                     fprintf(dbg_log, "  %.1f,%.1f %.3f,%.3f  %.1f,%.1f %.3f,%.3f  %.1f,%.1f %.3f,%.3f\n", v[0].x, v[0].y, v[0].u,
                             v[0].v, v[1].x, v[1].y, v[1].u, v[1].v, v[2].x, v[2].y, v[2].u, v[2].v);
                 }
@@ -866,12 +866,12 @@ static void resolve_row(const WORKER* w, int y) {
         }
         for (i = 0; i < n; i++) {
             const FRAG* p = &w->frags[idx[i]];
-            const RD_TRI* t = &rd_frame.tris[RD_TRANS][p->order];
+            const RD_TRI* t = &rd_frame->tris[RD_TRANS][p->order];
             if (at == dbg_pix) {
                 fprintf(dbg_log, "pixel: under %08X, z %g tri %d st %d colour %08X\n", cbuf[at], p->z, p->order, t->state,
                         p->color);
             }
-            cbuf[at] = blend(&rd_frame.states[t->state], unpack(p->color), cbuf[at]);
+            cbuf[at] = blend(&rd_frame->states[t->state], unpack(p->color), cbuf[at]);
         }
     }
 }
@@ -917,13 +917,13 @@ static void work(WORKER* w) {
         int per = (ntotal + nworkers - 1) / nworkers, end = (w->index + 1) * per, base[RD_LISTS + 1], list = 0;
         base[0] = 0;
         for (i = 0; i < RD_LISTS; i++) {
-            base[i + 1] = base[i] + rd_frame.ntris[i];
+            base[i + 1] = base[i] + rd_frame->ntris[i];
         }
         for (i = w->index * per; i < end && i < ntotal; i++) {
             while (i >= base[list + 1]) {
                 list++;
             }
-            setup_tri(&setups[i], list, &rd_frame.tris[list][i - base[list]], i - base[list]);
+            setup_tri(&setups[i], list, &rd_frame->tris[list][i - base[list]], i - base[list]);
         }
         return;
     }
@@ -1045,7 +1045,7 @@ void rd_end_frame(uint32_t* frame, int pitch) {
     save_frame();
     ntotal = 0;
     for (list = 0; list < RD_LISTS; list++) {
-        ntotal += rd_frame.ntris[list];
+        ntotal += rd_frame->ntris[list];
     }
     if (ntotal > maxsetups) {
         SETUP* p = realloc(setups, (size_t)ntotal * sizeof *p);
@@ -1062,7 +1062,7 @@ void rd_end_frame(uint32_t* frame, int pitch) {
         fog_on |= rd_fog.table[i] != 0.0f;
     }
     for (i = 0; i < 3; i++) {
-        background[i] = rd_frame.background[i];
+        background[i] = rd_frame->background[i];
         if (scale != 1) {
             background[i].x /= scale, background[i].y /= scale;
         }

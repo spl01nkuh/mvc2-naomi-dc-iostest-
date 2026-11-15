@@ -234,7 +234,7 @@ void clock_base_main( PLAYER_WORK *w )
 
 void clock_mark_main( PLAYER_WORK *w )
 {
-	if( !unk_8C212F20 && w->master_w->type == 1 ) w->disp_flag = 0 ;
+	if( !net_wait && w->master_w->type == 1 ) w->disp_flag = 0 ;
 }
 
 /* the sign shows whether the line is busy or broken */
@@ -242,7 +242,7 @@ void clock_sign_main( PLAYER_WORK *w )
 {
 	switch( w->routine_1 ){
 	case 0 :
-		if( !unk_8C212F20 ){
+		if( !net_wait ){
 			if( w->type == 1 ){
 				w->obj = obj_dm0d->obj[53] ;
 			} else {
@@ -250,7 +250,7 @@ void clock_sign_main( PLAYER_WORK *w )
 			}
 			w->routine_1 = 2 ;
 		}
-		if( unk_8C213705 < 0 ){
+		if( net_line_st < 0 ){
 			if( w->type == 1 ){
 				w->obj = obj_dm0d->obj[51] ;
 				w->timer0 = 60 ;
@@ -270,7 +270,7 @@ void clock_sign_main( PLAYER_WORK *w )
 /* the dots light and go out in turn while the server is asked */
 void clock_dot_main( PLAYER_WORK *w )
 {
-	if( unk_8C212F20 && unk_8C213705 >= 0 ){
+	if( net_wait && net_line_st >= 0 ){
 		if( !w->dir ){
 			if( -- w->timer0 < 0 ){
 				w->timer0 = ( w->type + 1 ) * 16 ;

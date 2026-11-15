@@ -23,7 +23,7 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[3]
-REFERENCE = "ff9443b7b6537b0a03e3dbe79c896fe6d4365660"
+REFERENCE = "6d9e0928395f5e8cc97935408909eea5e7d36c87"
 
 
 def reference_tree(revision: str, destination: Path) -> None:

@@ -1714,7 +1714,7 @@ static void nml_k_set( PLAYER_WORK *pl_w )
 	pl_w->hit_stop = 10 ;
 	ef_color_set( pl_w, 1, 5, 1 ) ;
 	pl_w->catch_w->dm_elem = 3 ;
-	pl_w->catch_w->unk_228 = 3 ;
+	pl_w->catch_w->dm_elem_now = 3 ;
 	dm00_04_set( pl_w->catch_w ) ;
 	pls35_00_set( pl_w, 1 ) ;
 	pl_char_set( pl_w, Char_Catch, 2 ) ;
@@ -1739,7 +1739,7 @@ static void jump_set( PLAYER_WORK *pl_w )
 	nage_hit_set( pl_w, &ofs ) ;
 	ef_color_set( pl_w, 1, 5, 1 ) ;
 	pl_w->catch_w->dm_elem = 3 ;
-	pl_w->catch_w->unk_228 = 3 ;
+	pl_w->catch_w->dm_elem_now = 3 ;
 	dm00_04_set( pl_w->catch_w ) ;
 	pl_w->hit_stop = 10 ;
 	pl_char_set( pl_w, Char_Catch, 4 ) ;
@@ -1849,7 +1849,7 @@ static void k_catch_wait( PLAYER_WORK *pl_w )
 	PLAYER_WORK *em ;
 
 	pl_w->catch_w->dm_elem = 3 ;
-	pl_w->catch_w->unk_228 = 3 ;
+	pl_w->catch_w->dm_elem_now = 3 ;
 	k_catch_color( pl_w ) ;
 	pl_char_move( pl_w ) ;
 	if( pl_w->cg_type == 1 ){
@@ -1904,7 +1904,7 @@ static void j_catch_wait( PLAYER_WORK *pl_w )
 	PLAYER_WORK *em ;
 
 	pl_w->catch_w->dm_elem = 3 ;
-	pl_w->catch_w->unk_228 = 3 ;
+	pl_w->catch_w->dm_elem_now = 3 ;
 	k_catch_color( pl_w ) ;
 	pl_char_move( pl_w ) ;
 	if( pl_w->cg_type ){

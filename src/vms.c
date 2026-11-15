@@ -4,6 +4,12 @@
 #include "naomi.h"
 #include "book.h"
 #include "vms.h"
+#ifdef HOST_NATIVE64
+#include "host_memory.h"
+#define VMS_RAM_AT( address ) HOST_NATIVE64_RAM_AT( address )
+#else
+#define VMS_RAM_AT( address ) address
+#endif
 #ifdef TARGET_DC
 #include "shinobi.h"
 #endif
@@ -20,12 +26,12 @@ extern int pdLcdGetDirection( Uint32 id ) ;
 extern int pdVmsLcdWrite( Uint32 id, Uint8 *bitmap, int dir ) ;
 extern void syTmrGenSetClock( int clock ) ;
 extern void syTmrGenStart( void ) ;
-extern int buInit( int blocks, int unk_1, int unk_2, void ( *func )( void ) ) ;
+extern int buInit( int blocks, int drives, int work, void ( *func )( void ) ) ;
 extern int buExit( void ) ;
 extern int buSetCompleteCallback( int ( *func )( int, int, int, int ) ) ;
 extern int buIsExistFile( int port, const char *name ) ;
 extern int buGetFileInfo( int port, const char *name, BU_FILE_INFO *info ) ;
-extern int buGetDiskFree( int port, int unk ) ;
+extern int buGetDiskFree( int port, int type ) ;
 extern int buFindExecFile( int port, char *name ) ;
 extern int buUnmount( int port ) ;
 extern int buMountDisk( int port, void *work, int size ) ;
@@ -58,7 +64,7 @@ extern void play_time_ck( void ) ;
 
 static void vms_lcd_conv( void *src ) ;
 static void vms_lcd_put( int port ) ;
-static int vms_callback( int port, int func, int result, int unk ) ;
+static int vms_callback( int port, int func, int result, int param ) ;
 static void vms_callback_set( void ) ;
 static int vms_sum_b( Uint8 no ) ;
 int vms_sum_c( void ) ;
@@ -433,10 +439,10 @@ typedef struct VMS_SYS_DATA {
 	SYS_RTC_DATE	date;	/* 000: when it was first saved */
 	Uint8	unk_00a[2];
 	Uint8	vm_level;	/* 00c: the secret factor's work, field by field */
-	Uint8	unk_00d;
+	Uint8	vm_exp;
 	Uint16	d_pts;
-	Uint16	unk_010;
-	Uint16	unk_012;
+	Uint16	n_pts;
+	Uint16	v_pts;
 	Uint32	char_open0;	/* 014: the characters opened */
 	Uint32	char_open1;
 	Uint32	char_open_all0;
@@ -448,15 +454,15 @@ typedef struct VMS_SYS_DATA {
 	Uint16	unk_028;
 	Uint16	unk_02a;
 	Uint8	unk_02c;
-	Uint8	unk_02d;	/* 02d: the network games counted */
-	Uint16	unk_02e;	/* 02e: the secret factor's unk_08 */
+	Uint8	net_cnt;	/* 02d: the network games counted */
+	Uint16	n_link;		/* 02e */
 	Uint16	unk_030;
 	Uint8	arcade_clear;	/* 032: Sys's */
 	VMS_RANK	score[20];	/* 034: the rankings */
 	VMS_RANK_WIN	win[20];	/* 214 */
 	VMS_RANK	sa[20];		/* 2b4 */
 	PLAY_CNT	play;		/* 494: the play counts */
-	Uint16	unk_6ec;	/* 6ec: unk_02e again */
+	Uint16	unk_6ec;	/* 6ec: n_link again */
 	VMS_OPTION	option;	/* 6f0 */
 	Uint16	sum16;		/* 724: the sum of the words before it */
 	Uint16	sum8;		/* 726: and of the bytes */
@@ -475,8 +481,8 @@ typedef struct VMS_NET_DATA {
 	Uint8	unk_10a[118];
 	Uint8	unk_180[0x40];
 	Uint8	unk_1c0[0x40];
-	Uint32	unk_200;
-	Uint32	unk_204;
+	Uint32	entry_num2;	/* 200: net_entry_num2 and 3 */
+	Uint32	entry_num3;
 	Uint32	entry_num;	/* 208: net_entry_num */
 	VMS_NET_ENTRY	list[50];	/* 20c */
 	VMS_NET_ENTRY	own;		/* 720: the file's own key */
@@ -498,7 +504,14 @@ extern Uint8 upload_buf[0x6000] ;	/* the upload file's page, which another modul
 #define VMS_UP_BUF	upload_buf
 #else
 static Uint8 vms_sys_buf[0x728] ;
+#ifdef HOST_NATIVE64
+/* The original upload spans following linker-ordered objects. Native C
+   requires a complete byte buffer independent of those objects' placement. */
+static Uint8 vms_upload_buf[0x6000] ;
+#define VMS_UP_BUF vms_upload_buf
+#else
 #define VMS_UP_BUF	vms_sys_buf
+#endif
 #endif
 #ifdef TARGET_DC
 /* the download file: unlocks, what they open (to check them by) and a level */
@@ -532,16 +545,16 @@ typedef struct VMS_CARD_DATA {
 	Uint8	unk_3b;		/* 03b: the secret work's, each count with its hundreds in the second byte */
 	Uint8	unk_3c[2];
 	Uint8	unk_3e[2];
-	Uint8	unk_40;
+	Uint8	net_cnt;	/* 040 */
 	Uint8	play_hour;	/* 041: its play time */
 	Uint8	play_min;
 	Uint8	play_sec;
-	Uint8	unk_44[2];	/* 044: its points */
-	Uint8	unk_46[2];	/* 046: a count, the hundreds in the second */
-	Uint8	unk_48[2];
-	Uint8	unk_4a[2];	/* 04a: another */
+	Uint8	d_pts[2];	/* 044: the secret work's points, each with its hundreds in the second byte */
+	Uint8	n_pts[2];	/* 046: the arcade adds the points it gives the card */
+	Uint8	v_pts[2];
+	Uint8	n_link[2];	/* 04a: counted up each time an arcade reads the card */
 	Uint8	arcade_clear;	/* 04c: Sys's */
-	Uint8	unk_4d;		/* 04d: the country */
+	Uint8	country;	/* 04d: Sys's cpu_level_type */
 	Uint8	unk_4e[2];
 	Uint8	sum;		/* 050: the sum of the bytes before it */
 	Uint8	unk_51[0x200 - 0x51];
@@ -567,7 +580,7 @@ static char vms_exec_name[0x20] ;
 /*			The backup library's completion callback: notes		*/
 /*			what each call for a card found						*/
 /*==============================================================*/
-static int vms_callback( int port, int func, int result, int unk )
+static int vms_callback( int port, int func, int result, int param )
 {
 	BU_FILE_INFO info ;
 	int ret ;
@@ -578,7 +591,7 @@ static int vms_callback( int port, int func, int result, int unk )
 		vms_slot[port].func = func ;
 		vms_slot[port].result = 0xffff0000 ;
 		vms_slot[port].disk_blocks = result ;
-		vms_slot[port].unk_10 = unk ;
+		vms_slot[port].param = param ;
 		vms_slot[port].sys_file = 0 ;
 		vms_slot[port].up_file = 0 ;
 		vms_slot[port].net_file = 0 ;
@@ -1269,8 +1282,8 @@ int vms_net_cnt_up( void )
 {
 	if( vms_work.net_cnt_flag ){
 		vms_work.net_cnt_flag = 0 ;
-		CS_Secret_Work.unk_10 ++ ;
-		if( CS_Secret_Work.unk_10 > 99 ) CS_Secret_Work.unk_10 = 99 ;
+		CS_Secret_Work.net_cnt ++ ;
+		if( CS_Secret_Work.net_cnt > 99 ) CS_Secret_Work.net_cnt = 99 ;
 		return 1 ;
 	}
 	return 0 ;
@@ -1335,10 +1348,10 @@ void vms_data_make( Uint8 type )
 			vms_sys_buf.date = date ;
 		}
 		vms_sys_buf.vm_level = CS_Secret_Work.vm_level ;
-		vms_sys_buf.unk_00d = CS_Secret_Work.vm_exp ;
+		vms_sys_buf.vm_exp = CS_Secret_Work.vm_exp ;
 		vms_sys_buf.d_pts = CS_Secret_Work.d_pts ;
-		vms_sys_buf.unk_010 = CS_Secret_Work.unk_04 ;
-		vms_sys_buf.unk_012 = CS_Secret_Work.n_pts ;
+		vms_sys_buf.n_pts = CS_Secret_Work.n_pts ;
+		vms_sys_buf.v_pts = CS_Secret_Work.v_pts ;
 		vms_sys_buf.char_open0 = Sys->char_open0 ;
 		vms_sys_buf.char_open1 = Sys->char_open1 ;
 		vms_sys_buf.char_open_all0 = Sys->char_open_all0 ;
@@ -1350,8 +1363,8 @@ void vms_data_make( Uint8 type )
 		vms_sys_buf.unk_02c = CS_Secret_Work.unk_11 ;
 		vms_sys_buf.unk_028 = CS_Secret_Work.unk_0a ;
 		vms_sys_buf.unk_02a = CS_Secret_Work.unk_0c ;
-		vms_sys_buf.unk_02d = CS_Secret_Work.unk_10 ;
-		vms_sys_buf.unk_02e = CS_Secret_Work.unk_08 ;
+		vms_sys_buf.net_cnt = CS_Secret_Work.net_cnt ;
+		vms_sys_buf.n_link = CS_Secret_Work.n_link ;
 		vms_sys_buf.arcade_clear = Sys->arcade_clear ;
 		vms_sys_buf.unk_030 = CS_Secret_Work.unk_0e ;
 		vms_sys_buf.option.difficulty = option_w.difficulty ;
@@ -1398,7 +1411,7 @@ void vms_data_make( Uint8 type )
 			vms_sys_buf.play.tr_pl[i] = play_cnt.tr_pl[i] ;
 			vms_sys_buf.play.ne_pl[i] = play_cnt.ne_pl[i] ;
 		}
-		vms_sys_buf.unk_6ec = vms_sys_buf.unk_02e ;
+		vms_sys_buf.unk_6ec = vms_sys_buf.n_link ;
 		for( i = 0 ; i < 20 ; i ++ ){
 			for( j = 0 ; j < 4 ; j ++ ){
 				vms_sys_buf.score[i].name[j] = rank_score[i].name[j] ;
@@ -1466,8 +1479,8 @@ void vms_data_make( Uint8 type )
 			vms_net_buf.unk_1c0[i] = unk_8C21396A[i] ;
 			vms_net_buf.unk_180[i] = unk_8C213A2A[i] ;
 		}
-		vms_net_buf.unk_200 = unk_8C213AF8 ;
-		vms_net_buf.unk_204 = unk_8C213AFC ;
+		vms_net_buf.entry_num2 = net_entry_num2 ;
+		vms_net_buf.entry_num3 = net_entry_num3 ;
 		vms_net_buf.entry_num = net_entry_num ;
 		vms_net_buf.net_cnt_flag = vms_work.net_cnt_flag ;
 		vms_net_buf.unk_74e = unk_8C214294 ;
@@ -1545,25 +1558,25 @@ void vms_exec_data_make( Uint8 no )
 	card->stage_ex_cnt = vms_work.stage_ex_cnt ;
 	card->level = CS_Secret_Work.vm_level ;
 	card->level_pt = CS_Secret_Work.vm_exp ;
-	card->unk_4d = Sys->cpu_level_type ;
+	card->country = Sys->cpu_level_type ;
 	card->arcade_clear = Sys->arcade_clear ;
 	card->play_hour = CS_Secret_Work.play_hour ;
 	card->play_min = CS_Secret_Work.play_min ;
 	card->play_sec = CS_Secret_Work.play_sec ;
-	card->unk_44[0] = CS_Secret_Work.d_pts % 100 ;
-	card->unk_44[1] = CS_Secret_Work.d_pts / 100 ;
-	card->unk_46[0] = CS_Secret_Work.unk_04 % 100 ;
-	card->unk_46[1] = CS_Secret_Work.unk_04 / 100 ;
-	card->unk_48[0] = CS_Secret_Work.n_pts % 100 ;
-	card->unk_48[1] = CS_Secret_Work.n_pts / 100 ;
+	card->d_pts[0] = CS_Secret_Work.d_pts % 100 ;
+	card->d_pts[1] = CS_Secret_Work.d_pts / 100 ;
+	card->n_pts[0] = CS_Secret_Work.n_pts % 100 ;
+	card->n_pts[1] = CS_Secret_Work.n_pts / 100 ;
+	card->v_pts[0] = CS_Secret_Work.v_pts % 100 ;
+	card->v_pts[1] = CS_Secret_Work.v_pts / 100 ;
 	card->unk_3b = CS_Secret_Work.unk_11 ;
 	card->unk_3c[0] = CS_Secret_Work.unk_0a % 100 ;
 	card->unk_3c[1] = CS_Secret_Work.unk_0a / 100 ;
 	card->unk_3e[0] = CS_Secret_Work.unk_0c % 100 ;
 	card->unk_3e[1] = CS_Secret_Work.unk_0c / 100 ;
-	card->unk_40 = CS_Secret_Work.unk_10 ;
-	card->unk_4a[0] = CS_Secret_Work.unk_08 % 100 ;
-	card->unk_4a[1] = CS_Secret_Work.unk_08 / 100 ;
+	card->net_cnt = CS_Secret_Work.net_cnt ;
+	card->n_link[0] = CS_Secret_Work.n_link % 100 ;
+	card->n_link[1] = CS_Secret_Work.n_link / 100 ;
 	card->sum = vms_sum_b( no ) ;
 #endif
 }
@@ -1573,12 +1586,18 @@ typedef struct BU_FILE_HEAD {
 	char	vms_name[18];		/* 000: the name the card's menu shows */
 	char	comment[34];		/* 012 */
 	Uint8	pal[16];		/* 034: the icon's colours */
-	void	*icon;			/* 044 */
-	void	*unk_48;		/* 048 */
+	void	*icon;			/* 044: its colours (the library's icon_palette) */
+	void	*icon_data;		/* 048: its pixels */
 	Uint16	icon_cnt;		/* 04c */
 	Uint16	icon_spd;		/* 04e */
-	Sint32	unk_50;			/* 050 */
-	Uint16	unk_54;			/* 054 */
+#ifdef HOST_NATIVE64
+	/* This is the backup library's native descriptor, never the saved image.
+	   Match dc_vmu.c's pointer field and the following native alignment. */
+	void	*visual_data;
+#else
+	Sint32	visual_data;		/* 050: none */
+#endif
+	Uint16	visual_type;		/* 054 */
 	void	*data;			/* 058: what is saved */
 	Uint32	size;			/* 05c: and its size */
 } BU_FILE_HEAD ;
@@ -1588,8 +1607,8 @@ extern int buSaveFile( int port, const char *name, void *image, int size, void *
 extern int buAnalyzeBackupFileImage( BU_FILE_HEAD *head, void *image ) ;
 extern int buGetFileSize( int port, const char *name ) ;
 extern int buLoadFile( int port, const char *name, void *buf, int size ) ;
-extern int buLoadFileEx( int port, const char *name, void *buf, int unk_1, int unk_2 ) ;
-extern int buRewriteExecFile( int port, const char *name, void *buf, int unk_1, int unk_2 ) ;
+extern int buLoadFileEx( int port, const char *name, void *buf, int start, int nblock ) ;
+extern int buRewriteExecFile( int port, const char *name, void *buf, int start, int nblock ) ;
 extern int buSaveExecFile( int port, const char *name, void *image, int size, void *date, Uint32 flag ) ;
 extern int buDefragDisk( int port, void *work ) ;
 
@@ -1642,11 +1661,11 @@ int vms_file_make( Sint8 type )
 		break ;
 	}
 	head.icon = vms_icon_pal_tbl[type] ;
-	head.unk_48 = vms_icon_img_tbl[type] ;
+	head.icon_data = vms_icon_img_tbl[type] ;
 	head.icon_cnt = 1 ;
 	head.icon_spd = 5 ;
-	head.unk_50 = 0 ;
-	head.unk_54 = 0 ;
+	head.visual_data = 0 ;
+	head.visual_type = 0 ;
 	return buMakeBackupFileImage( &vms_buf_a, &head ) ;
 }
 
@@ -1707,9 +1726,9 @@ int vms_file_save( Sint8 type, int port )
 /* a Backup file image's first bytes: where its data's size is kept */
 /* the exec file's image in the cartridge, the one the card's menu starts */
 #ifdef TARGET_DC
-#define VMS_EXEC_IMAGE	( ( void * )0x0CE1E000 )	/* VS4.BIN, read from the disc at the start */
+#define VMS_EXEC_IMAGE	( ( void * )VMS_RAM_AT( 0x0CE1E000 ) )	/* VS4.BIN, read from the disc at the start */
 #else
-#define VMS_EXEC_IMAGE	( ( void * )0x0D980000 )
+#define VMS_EXEC_IMAGE	( ( void * )VMS_RAM_AT( 0x0D980000 ) )
 #endif
 #define VMS_BIT( port )	( 1 << ( port ) )
 
@@ -1821,10 +1840,10 @@ void vms_data_set( Uint8 type )
 		break ;
 	case 1:
 		CS_Secret_Work.vm_level = vms_sys_buf.vm_level ;
-		CS_Secret_Work.vm_exp = vms_sys_buf.unk_00d ;
+		CS_Secret_Work.vm_exp = vms_sys_buf.vm_exp ;
 		CS_Secret_Work.d_pts = vms_sys_buf.d_pts ;
-		CS_Secret_Work.unk_04 = vms_sys_buf.unk_010 ;
-		CS_Secret_Work.n_pts = vms_sys_buf.unk_012 ;
+		CS_Secret_Work.n_pts = vms_sys_buf.n_pts ;
+		CS_Secret_Work.v_pts = vms_sys_buf.v_pts ;
 		vms_work.card_open[0] = vms_sys_buf.char_open0 ;
 		vms_work.card_open[1] = vms_sys_buf.char_open1 ;
 		vms_work.card_ex[0] = vms_sys_buf.char_open_all0 ;
@@ -1836,8 +1855,8 @@ void vms_data_set( Uint8 type )
 		CS_Secret_Work.unk_11 = vms_sys_buf.unk_02c ;
 		CS_Secret_Work.unk_0a = vms_sys_buf.unk_028 ;
 		CS_Secret_Work.unk_0c = vms_sys_buf.unk_02a ;
-		CS_Secret_Work.unk_10 = vms_sys_buf.unk_02d ;
-		CS_Secret_Work.unk_08 = vms_sys_buf.unk_02e ;
+		CS_Secret_Work.net_cnt = vms_sys_buf.net_cnt ;
+		CS_Secret_Work.n_link = vms_sys_buf.n_link ;
 		Sys->arcade_clear = vms_sys_buf.arcade_clear ;
 		CS_Secret_Work.unk_0e = vms_sys_buf.unk_030 ;
 		option_w.difficulty = vms_sys_buf.option.difficulty ;
@@ -1962,8 +1981,8 @@ void vms_net_data_get( void )
 		for( j = 0 ; j < 18 ; j ++ ) net_key_list[i].handle[j] = vms_net_buf.list[i].handle[j] ;
 		for( j = 0 ; j < 8 ; j ++ ) net_key_list[i].key[j] = vms_net_buf.list[i].key[j] ;
 	}
-	unk_8C213AF8 = vms_net_buf.unk_200 ;
-	unk_8C213AFC = vms_net_buf.unk_204 ;
+	net_entry_num2 = vms_net_buf.entry_num2 ;
+	net_entry_num3 = vms_net_buf.entry_num3 ;
 	net_entry_num = vms_net_buf.entry_num ;
 	unk_8C214294 = vms_net_buf.unk_74e ;
 	unk_8C214292 = vms_net_buf.unk_74f ;
@@ -2359,7 +2378,12 @@ int vms_exec_reload( int port, Uint8 no )
 		if( vms_w->bu_busy_bit & VMS_BIT( port ) ) return -1 ;
 		shown = vms_w->mount_port ;
 		if( shown == cur ){
+#ifdef HOST_PORT
+			/* the board passes vms_load_ex the buffer this routine was given */
+			rc = vms_load_ex( slot[shown].port, no ) ;
+#else
 			rc = vms_load_ex( slot[shown].port ) ;
+#endif
 			switch( rc ){
 			default:
 				return -1 ;
@@ -2508,21 +2532,21 @@ void vms_card_read( Uint8 no )
 	CS_Secret_Work.play_hour = card->play_hour ;
 	CS_Secret_Work.play_min = card->play_min ;
 	CS_Secret_Work.play_sec = card->play_sec ;
-	CS_Secret_Work.d_pts = card->unk_44[0] ;
-	CS_Secret_Work.d_pts += card->unk_44[1] * 100 ;
-	CS_Secret_Work.unk_04 = card->unk_46[0] ;
-	CS_Secret_Work.unk_04 += card->unk_46[1] * 100 ;
-	CS_Secret_Work.n_pts = card->unk_48[0] ;
-	CS_Secret_Work.n_pts += card->unk_48[1] * 100 ;
+	CS_Secret_Work.d_pts = card->d_pts[0] ;
+	CS_Secret_Work.d_pts += card->d_pts[1] * 100 ;
+	CS_Secret_Work.n_pts = card->n_pts[0] ;
+	CS_Secret_Work.n_pts += card->n_pts[1] * 100 ;
+	CS_Secret_Work.v_pts = card->v_pts[0] ;
+	CS_Secret_Work.v_pts += card->v_pts[1] * 100 ;
 	CS_Secret_Work.unk_11 = card->unk_3b ;
 	CS_Secret_Work.unk_0a = card->unk_3c[0] ;
 	CS_Secret_Work.unk_0a += card->unk_3c[1] * 100 ;
 	CS_Secret_Work.unk_0c = card->unk_3e[0] ;
 	CS_Secret_Work.unk_0c += card->unk_3e[1] * 100 ;
-	CS_Secret_Work.unk_10 = card->unk_40 ;
+	CS_Secret_Work.net_cnt = card->net_cnt ;
 	CS_Secret_Work.vm_level = card->level ;
 	CS_Secret_Work.vm_exp = card->level_pt ;
-	CS_Secret_Work.unk_08 = card->unk_4a[0] + card->unk_4a[1] * 100 ;
+	CS_Secret_Work.n_link = card->n_link[0] + card->n_link[1] * 100 ;
 }
 
 /****************************************************************/
@@ -2731,24 +2755,24 @@ int vms_card_read( Uint8 no )
 			else vms_work.card_ex[0] |= 1 << ( card->unlock[i] & 63 ) ;
 		}
 	}
-	pts = card->unk_4a[0] ;
-	pts += card->unk_4a[1] * 100 ;
+	pts = card->n_link[0] ;
+	pts += card->n_link[1] * 100 ;
 	if( pts < 9999 ) pts ++ ;
-	card->unk_4a[0] = pts % 100 ;
-	card->unk_4a[1] = pts / 100 ;
+	card->n_link[0] = pts % 100 ;
+	card->n_link[1] = pts / 100 ;
 	if( card->level - vms_work.point_lv > 0 ) add = ( card->level - vms_work.point_lv ) * 10 ;
 	else add = 10 ;
 	vms_work.add_point[no] = add ;
 	if( vms_work.point_lv - card->level > 0 ) rest = ( vms_work.point_lv - card->level ) * 10 ;
 	else rest = 10 ;
-	pts = card->unk_46[0] ;
-	pts += card->unk_46[1] * 100 ;
+	pts = card->n_pts[0] ;
+	pts += card->n_pts[1] * 100 ;
 	if( pts < 9999 ){
 		pts += rest ;
 		if( pts > 9999 ) pts = 9999 ;
 	}
-	card->unk_46[0] = pts % 100 ;
-	card->unk_46[1] = pts / 100 ;
+	card->n_pts[0] = pts % 100 ;
+	card->n_pts[1] = pts / 100 ;
 	vms_work.get_point[no] = rest ;
 	while( rest >= 100 ){
 		if( card->level < 99 ){
@@ -2952,8 +2976,8 @@ int vms_dow_read( void )
 	Uint8 sum, no, o, e, level ;
 
 	sum = vms_sum_c() ;
-	vms_work.unk_88 = sum ;
-	vms_work.unk_89 = vms_dow_buf.sum ;
+	vms_work.dow_sum = sum ;
+	vms_work.dow_file_sum = vms_dow_buf.sum ;
 	if( vms_dow_buf.sum != sum ) return VMS_DOW_ERR ;
 	open[0] = open[1] = 0 ;
 	ex[0] = ex[1] = 0 ;

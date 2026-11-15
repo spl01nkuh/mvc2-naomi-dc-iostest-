@@ -207,7 +207,7 @@ void room_select( void )
 			}
 		}
 		if( unk_8C2136FF ){
-			switch( unk_8C2141E8 ){
+			switch( room_btn_no ){
 			case 1 :
 				room_flag0 = 1 ;
 				room_r1 = 1 ;
@@ -223,7 +223,7 @@ void room_select( void )
 		}
 		break ;
 	case 1 :
-		if( !unk_8C2141E8 ){
+		if( !room_btn_no ){
 			room_r1 = 0 ;
 			room_flag1 = 0 ;
 			room_flag0 = 0 ;

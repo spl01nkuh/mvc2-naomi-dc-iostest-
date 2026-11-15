@@ -182,7 +182,7 @@ void bonus_screen_set( int two_p )
 		bonus_score( ew ) ;
 		if( ( ew = bonus_line_set( ew, 2 ) ) ){
 			ew->pos.y = 0.0f ;
-			unk_9a_bonus( &BONUS_LW( ew )->hi, &BONUS_LW( ew )->lo ) ;
+			no_ko_bonus( &BONUS_LW( ew )->hi, &BONUS_LW( ew )->lo ) ;
 			bonus_score( ew ) ;
 			if( ( ew = bonus_line_set( ew, 1 ) ) ){
 				ew->pos.y = 5.0f ;

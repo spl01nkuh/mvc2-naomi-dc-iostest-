@@ -32,6 +32,7 @@ set(CTR_ROOT ${DEVKITPRO}/libctru)
 set(CTR_3DSXTOOL ${DEVKITPRO}/tools/bin/3dsxtool${EXE})
 set(CTR_SMDHTOOL ${DEVKITPRO}/tools/bin/smdhtool${EXE})
 set(CTR_PICASSO ${DEVKITPRO}/tools/bin/picasso${EXE})
+set(CTR_TEX3DS ${DEVKITPRO}/tools/bin/tex3ds${EXE})
 # optional, for the CIA: makerom (Project_CTR) and bannertool
 find_program(CTR_MAKEROM makerom)
 find_program(CTR_BANNERTOOL bannertool)
@@ -66,11 +67,14 @@ function(ctr_create_cia target title description dir icon)
         return()
     endif()
     set(bin ${CMAKE_CURRENT_BINARY_DIR})
-    add_custom_command(OUTPUT ${bin}/${target}.cia
+    add_custom_command(OUTPUT ${bin}/${target}.cia ${bin}/${target}.cxi
         COMMAND ${CTR_BANNERTOOL} makebanner -i ${dir}/banner.png -a ${dir}/banner.wav -o ${bin}/${target}.bnr
         COMMAND ${CTR_BANNERTOOL} makesmdh -s ${title} -l ${description} -p "mvc2-naomi-dc"
                 -i ${icon} -o ${bin}/${target}.cia.smdh
         COMMAND ${CTR_MAKEROM} -f cia -o ${bin}/${target}.cia -target t -exefslogo -elf $<TARGET_FILE:${target}>
+                -rsf ${dir}/${target}.rsf -icon ${bin}/${target}.cia.smdh -banner ${bin}/${target}.bnr ${ARGN}
+        # the same program as a .cxi, which an emulator boots without installing it
+        COMMAND ${CTR_MAKEROM} -f cxi -o ${bin}/${target}.cxi -target t -exefslogo -elf $<TARGET_FILE:${target}>
                 -rsf ${dir}/${target}.rsf -icon ${bin}/${target}.cia.smdh -banner ${bin}/${target}.bnr ${ARGN}
         DEPENDS ${target} ${dir}/${target}.rsf ${icon} ${dir}/banner.png ${dir}/banner.wav
         COMMENT "Making ${target}.cia")

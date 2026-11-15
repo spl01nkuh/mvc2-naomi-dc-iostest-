@@ -104,8 +104,8 @@ void dm0d_entry_init( void )
 	entry_day1 = entry_day0 = date.day ;
 	entry_card = 0 ;
 	entry_num0 = net_entry_num ;
-	entry_num1 = unk_8C213AF8 ;
-	entry_num2 = unk_8C213AFC ;
+	entry_num1 = net_entry_num2 ;
+	entry_num2 = net_entry_num3 ;
 	sprintf( net_entry_str, "%d", net_entry_num ) ;
 }
 

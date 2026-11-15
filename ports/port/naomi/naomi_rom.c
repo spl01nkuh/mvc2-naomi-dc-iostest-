@@ -2,13 +2,20 @@
  * naomi_rom.c  The cartridge's ROM as one address space, as MAME's naomi.cpp lays out the mvsc2 set
  *
  * ic11 at 0, the mask ROMs from 0x800000 8 MB each, then ic31 again; from 0x8000000 ic31 and ic32s as one
- * 32-bit wide ROM; 0x400000 mirrors 0x1200000. Read 64 KB blocks at a time through a cache.
+ * 32-bit wide ROM; 0x400000 mirrors 0x1200000. Read 64 KB blocks at a time through a cache. The files
+ * can be in MAME's zip of the set instead, which is unpacked once into an image of the address space.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#define make_dir(d) _mkdir(d)
+#else
+#define make_dir(d) mkdir(d, 0777)
+#endif
 
 #include "naomi_host.h"
 
@@ -39,6 +46,7 @@ static const ROM_FILE files[] = {
 #define NFILES (sizeof files / sizeof *files)
 #define IC31 (NFILES - 1)           /* and ic32s, opened last */
 #define IC32 NFILES
+#define IC32_NAME "mpr-23084.ic32s"
 #define WIDE_BASE 0x8000000u        /* a 16-bit word from each in turn */
 #define WIDE_SIZE 0x400000u
 #define MIRROR_FROM 0x1200000u
@@ -53,6 +61,7 @@ static const ROM_FILE files[] = {
 #define MIN_BLOCKS 4
 
 #define IMAGE "mvsc2.bin"
+#define ZIP "mvsc2.zip"
 
 uint32_t naomi_rom_cache_bytes = ROM_SIZE;
 static int cache_blocks;
@@ -123,9 +132,9 @@ static void fill_from_files(uint32_t b, uint8_t* dst) {
     memset(dst, 0xFF, BLOCK_SIZE);
 }
 
-static void fill_block(uint32_t b, uint8_t* dst) {
+static void fill_block(uint32_t b, uint32_t last, uint8_t* dst) {
     if (use_reader) {
-        if (!reader->read(b, dst)) {
+        if (!reader->read(b, last, dst)) {
             host_log("could not read the ROM's block %X", b);
             memset(dst, 0xFF, BLOCK_SIZE);
         }
@@ -139,7 +148,7 @@ static void fill_block(uint32_t b, uint8_t* dst) {
     }
 }
 
-/* a free slot, else the least recently read; NULL without memory */
+/* a free slot, else the least recently read; the cache stops growing where memory runs out */
 static uint8_t* take_slot(uint32_t b) {
     int s = 0, i;
     for (i = 0; i < cache_blocks; i++) {
@@ -151,11 +160,16 @@ static uint8_t* take_slot(uint32_t b) {
             s = i;
         }
     }
-    if (slot[s].data == NULL) {
-        slot[s].data = malloc(BLOCK_SIZE);
-        if (slot[s].data == NULL) {
+    if (slot[s].data == NULL && (slot[s].data = host_try_malloc(BLOCK_SIZE)) == NULL) {
+        /* the slots before s all hold blocks */
+        if (s < MIN_BLOCKS) {
+            host_out_of_memory("the ROM cache's block", BLOCK_SIZE);
             return NULL;
         }
+        host_log("ROM cache: no memory for more than %d KB of its %d KB", s << (BLOCK_SHIFT - 10),
+                 cache_blocks << (BLOCK_SHIFT - 10));
+        cache_blocks = s;
+        return take_slot(b);
     }
     if (slot[s].block >= 0) {
         slot_of[slot[s].block] = -1;
@@ -178,7 +192,7 @@ static const uint8_t* block(uint32_t b, uint32_t last) {
     if (d == NULL) {
         return NULL;
     }
-    fill_block(b, d);
+    fill_block(b, last, d);
     if (use_reader && reader->missed != NULL) {
         reader->missed(b, last);
     }
@@ -208,24 +222,61 @@ static int has_file(const char* dir, const char* name, uint32_t size) {
     return stat(path, &st) == 0 && (uint32_t)st.st_size == size;
 }
 
-/* the first of the set's files missing from dir or the wrong size, or NULL (or the image there) */
-const char* naomi_rom_check(const char* dir) {
+/* the first of the set's files missing from dir or the wrong size, or NULL */
+static const char* missing_file(const char* dir) {
     size_t i;
-    if (has_file(dir, IMAGE, ROM_SIZE)) {
-        return NULL;
-    }
     for (i = 0; i < NFILES; i++) {
         if (!has_file(dir, files[i].name, files[i].size)) {
             return files[i].name;
         }
     }
-    return has_file(dir, "mpr-23084.ic32s", WIDE_SIZE) ? NULL : "mpr-23084.ic32s";
+    return has_file(dir, IC32_NAME, WIDE_SIZE) ? NULL : IC32_NAME;
+}
+
+/* the set's zip, in dir or beside it */
+static NAOMI_ZIP* open_zip(const char* dir) {
+    char path[1100];
+    size_t n = strlen(dir);
+    NAOMI_ZIP* z;
+    snprintf(path, sizeof path, "%s/" ZIP, dir);
+    if ((z = naomi_zip_open(path)) != NULL) {
+        return z;
+    }
+    while (n > 0 && (dir[n - 1] == '/' || dir[n - 1] == '\\')) {
+        n--;
+    }
+    snprintf(path, sizeof path, "%.*s.zip", (int)n, dir);
+    return naomi_zip_open(path);
+}
+
+static int zip_whole(const NAOMI_ZIP* z) {
+    size_t i;
+    for (i = 0; i < NFILES; i++) {
+        if (!naomi_zip_has(z, files[i].name, files[i].size)) {
+            return 0;
+        }
+    }
+    return naomi_zip_has(z, IC32_NAME, WIDE_SIZE);
+}
+
+/* the first of the set's files missing from dir or the wrong size, or NULL (or the image or a whole zip there) */
+const char* naomi_rom_check(const char* dir) {
+    const char* missing;
+    NAOMI_ZIP* z;
+    int whole;
+    if (has_file(dir, IMAGE, ROM_SIZE) || (missing = missing_file(dir)) == NULL) {
+        return NULL;
+    }
+    z = open_zip(dir);
+    whole = z != NULL && zip_whole(z);
+    naomi_zip_close(z);
+    return whole ? NULL : missing;
 }
 
 static int open_files(const char* dir) {
     size_t i;
     for (i = 0; i <= NFILES; i++) {
-        rom_file[i] = open_file(dir, i < NFILES ? files[i].name : "mpr-23084.ic32s");
+        rom_file[i] = open_file(dir, i < NFILES ? files[i].name : IC32_NAME);
         if (rom_file[i] == NULL) {
             return 0;
         }
@@ -243,16 +294,12 @@ static void close_files(void) {
     }
 }
 
-/* the image, from the set's files in dir; 1 when done */
-int naomi_rom_make_image(const char* dir, const char* path, void (*progress)(uint32_t done, uint32_t total)) {
-    char tmp[1100];
+typedef void (*PROGRESS)(uint32_t done, uint32_t total);
+
+static int from_files(const char* dir, FILE* f, PROGRESS progress) {
     uint8_t* buf = malloc(BLOCK_SIZE);
-    FILE* f;
     uint32_t b;
-    int ok;
-    snprintf(tmp, sizeof tmp, "%s.part", path);
-    f = fopen(tmp, "wb");
-    ok = buf != NULL && f != NULL && open_files(dir);
+    int ok = buf != NULL && open_files(dir);
     for (b = 0; ok && b < ROM_BLOCKS; b++) {
         fill_from_files(b, buf);
         ok = fwrite(buf, 1, BLOCK_SIZE, f) == BLOCK_SIZE;
@@ -261,10 +308,91 @@ int naomi_rom_make_image(const char* dir, const char* path, void (*progress)(uin
         }
     }
     close_files();
+    free(buf);
+    return ok;
+}
+
+static int put(FILE* f, const uint8_t* p, uint32_t n, uint32_t* done, PROGRESS progress) {
+    *done += n;
+    if (progress != NULL) {
+        progress(*done >> BLOCK_SHIFT, ROM_BLOCKS);
+    }
+    return fwrite(p, 1, n, f) == n;
+}
+
+/* the progress through a file being read from the zip, as part of the image */
+static PROGRESS zip_progress;
+static uint32_t zip_done, zip_part;
+
+static void zip_step(uint32_t done) {
+    if (zip_progress != NULL) {
+        zip_progress((zip_done + (uint32_t)((uint64_t)done * zip_part / 0x800000)) >> BLOCK_SHIFT, ROM_BLOCKS);
+    }
+}
+
+/* name into buf, for part bytes of the image after done */
+static int zip_read(NAOMI_ZIP* z, const char* name, uint8_t* buf, uint32_t size, uint32_t done, uint32_t part) {
+    zip_done = done;
+    zip_part = part * (0x800000 / size);
+    return naomi_zip_read(z, name, buf, size, zip_step);
+}
+
+/* the image from the zip in address order, a file at a time; the mirrored file is read twice */
+static int from_zip(NAOMI_ZIP* z, FILE* f, PROGRESS progress) {
+    uint8_t* buf = malloc(0x800000);
+    uint8_t* out = malloc(BLOCK_SIZE);
+    uint32_t done = 0, at, w;
+    size_t i, m = 0;
+    int ok = buf != NULL && out != NULL;
+    zip_progress = progress;
+    while (files[m].offset + files[m].size <= MIRROR_FROM) {
+        m++;
+    }
+    ok = ok && zip_read(z, files[0].name, buf, files[0].size, done, files[0].size)
+         && put(f, buf, files[0].size, &done, progress);
+    ok = ok && zip_read(z, files[m].name, buf, files[m].size, done, MIRROR_SIZE)
+         && put(f, buf + (MIRROR_FROM - files[m].offset), MIRROR_SIZE, &done, progress);
+    for (i = 1; ok && i < NFILES; i++) {
+        ok = zip_read(z, files[i].name, buf, files[i].size, done, files[i].size)
+             && put(f, buf, files[i].size, &done, progress);
+    }
+    /* ic31 is still in buf; from WIDE_BASE it and ic32s are one 32-bit wide ROM */
+    memset(out, 0xFF, BLOCK_SIZE);
+    while (ok && done < WIDE_BASE) {
+        ok = put(f, out, BLOCK_SIZE, &done, progress);
+    }
+    ok = ok && zip_read(z, IC32_NAME, buf + WIDE_SIZE, WIDE_SIZE, done, 0);
+    for (at = 0; ok && at < WIDE_SIZE; at += BLOCK_SIZE / 2) {
+        for (w = 0; w < BLOCK_SIZE / 2; w += 2) {
+            memcpy(out + w * 2, buf + at + w, 2);
+            memcpy(out + w * 2 + 2, buf + WIDE_SIZE + at + w, 2);
+        }
+        ok = put(f, out, BLOCK_SIZE, &done, progress);
+    }
+    free(buf);
+    free(out);
+    return ok && done == ROM_SIZE;
+}
+
+/* the image, from the set's files in dir, else from its zip; 1 when done */
+int naomi_rom_make_image(const char* dir, const char* path, PROGRESS progress) {
+    char tmp[1100];
+    NAOMI_ZIP* z = NULL;
+    FILE* f;
+    int ok;
+    if (missing_file(dir) != NULL) {
+        make_dir(dir);
+        if ((z = open_zip(dir)) == NULL) {
+            return 0;
+        }
+    }
+    snprintf(tmp, sizeof tmp, "%s.part", path);
+    f = fopen(tmp, "wb");
+    ok = f != NULL && (z != NULL ? from_zip(z, f, progress) : from_files(dir, f, progress));
+    naomi_zip_close(z);
     if (f != NULL && fclose(f) != 0) {
         ok = 0;
     }
-    free(buf);
     remove(path);
     if (!ok || rename(tmp, path) != 0) {
         remove(tmp);
@@ -292,15 +420,23 @@ int naomi_rom_open(const char* dir) {
     snprintf(path, sizeof path, "%s/%s", dir, IMAGE);
     if (reader != NULL && reader->open(dir)) {
         use_reader = 1;
-    } else if (has_file(dir, IMAGE, ROM_SIZE)) {
-        image = fopen(path, "rb");
-        if (image == NULL) {
+    } else {
+        if (!has_file(dir, IMAGE, ROM_SIZE) && missing_file(dir) != NULL) {
+            host_log("unpacking the set's zip into %s", path);
+            if (!naomi_rom_make_image(dir, path, NULL)) {
+                host_log("could not unpack the set's zip into %s", path);
+            }
+        }
+        if (has_file(dir, IMAGE, ROM_SIZE)) {
+            image = fopen(path, "rb");
+            if (image == NULL) {
+                return 0;
+            }
+            setvbuf(image, NULL, _IONBF, 0);
+        } else if (!open_files(dir)) {
+            close_files();
             return 0;
         }
-        setvbuf(image, NULL, _IONBF, 0);
-    } else if (!open_files(dir)) {
-        close_files();
-        return 0;
     }
     is_open = 1;
     return 1;

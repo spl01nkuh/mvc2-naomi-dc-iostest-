@@ -130,7 +130,7 @@ static void game_pl_set( void )
 	side_sw_adrs[1] = &pl_work[1].pad_sw ;
 	/* in the training, a pad plays the dummy too unless the computer was chosen for it */
 	if( Sys->home_mode == HOME_TRAINING ){
-		if( training_work.unk_04 != 1 ){
+		if( training_work.dummy_mode != 1 ){
 			for( i = 0 ; i < 6 ; i ++ ) pl_work[i].cpu_flag = 0 ;
 		} else Sys->play_side = Sys->entry_side ;
 	}

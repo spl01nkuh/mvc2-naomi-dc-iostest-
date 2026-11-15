@@ -6,7 +6,7 @@
 /* the start of a player's animation frame, as pl_char.c reads it */
 typedef struct CHAR_FRAME {
 	Uint8	unk_00[0x12];
-	Uint16	unk_12;		/* 012: the frame's entry in frame_box_tbl */
+	Uint16	frame_box_no;	/* 012: the frame's entry in frame_box_tbl */
 } CHAR_FRAME;
 
 static void catch_em_pos_set( PLAYER_WORK *pl_w, PLAYER_WORK *em, Uint8 wall );
@@ -26,7 +26,7 @@ void pl_rot_ofs_set( PLAYER_WORK *pl_w )
 		tbl = ( Uint32 * )( pl_w->char_adrs + pl_w->char_ofs ) ;
 		tbl = ( Uint32 * )( pl_w->char_adrs + tbl[16] ) ;
 		cg = ( CHAR_FRAME * )( pl_w->char_adrs + tbl[pl_w->char_no.b.no] ) ;
-		box = &pl_w->frame_box_tbl[( Uint8 )cg->unk_12] ;
+		box = &pl_w->frame_box_tbl[( Uint8 )cg->frame_box_no] ;
 		pl_w->rot_ofs_y = -( Uint8 )box->unk_0e / 2 ;
 	}
 }

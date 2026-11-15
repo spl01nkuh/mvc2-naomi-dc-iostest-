@@ -145,9 +145,9 @@ static void test_frame_sprite(void) {
     rd_quality("exact");
     rd_begin_frame(); rd_background(0xff102030);
     assert(sprite_disp(&work) == 1);
-    assert(rd_frame.ntris[RD_TRANS] == 2 && rd_frame.nstates == 1);
-    assert(rd_frame.states[0].tex == &nl_tex[400].tex);
-    assert(rd_frame.states[0].palette == 2 * 16);
+    assert(rd_frame->ntris[RD_TRANS] == 2 && rd_frame->nstates == 1);
+    assert(rd_frame->states[0].tex == &nl_tex[400].tex);
+    assert(rd_frame->states[0].palette == 2 * 16);
     rd_end_frame(frame, RD_WIDTH);
     assert(frame[110 * RD_WIDTH + 110] == UINT32_C(0xffff0000));
     assert(frame[99 * RD_WIDTH + 99] == UINT32_C(0xff102030));
@@ -205,7 +205,7 @@ static void test_sprite_sets(void) {
         work[slot].disp_z = 15; work[slot].disp_zm_x = work[slot].disp_zm_y = work[slot].alpha = 1;
         rd_begin_frame();
         assert(sprite_disp(&work[slot]) == PARTS);
-        assert(rd_frame.ntris[RD_TRANS] == PARTS * 2);
+        assert(rd_frame->ntris[RD_TRANS] == PARTS * 2);
     }
     for (unsigned slot = 0; slot < 2; ++slot) {
         sprite_set_free(&work[slot], ids[slot]);

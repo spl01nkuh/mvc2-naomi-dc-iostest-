@@ -1303,7 +1303,7 @@
 0C04C3F6 bcd_conv combo
 0C04C428 vital_bonus
 0C04C592 time_bonus
-0C04C5D6 unk_9a_bonus
+0C04C5D6 no_ko_bonus
 0C04C638 bonus_add
 0C04C6C8 pl_fly
 0C04C7E8 fly_end pl_fly
@@ -19703,7 +19703,7 @@
 0C343AAC snd_ring nlsnd
 0C343AB0 snd_info nlsnd
 0C343AB4 snd_base nlsnd
-0C343AB8 snd_unk_b8 nlsnd
+0C343AB8 snd_free_top nlsnd
 0C343ABC snd_ram_size nlsnd
 0C343AC0 snd_used nlsnd
 0C343AC4 snd_stream_size nlsnd

@@ -17,12 +17,12 @@ typedef struct SHL06_01_LOCAL_W {
 	Uint8	cut_flag;			/* 03: 0xff once the trail is cut */
 	Uint8	attack_flag;			/* 04: 0xff on the works that attack */
 	Sint8	attack_cnt;			/* 05 */
-	Sint8	unk_06;			/* 06 */
+	Sint8	ground_timer;		/* 06: set to 30 as the trail reaches the ground, counted down */
 	Sint8	trail_timer;			/* 07: frames to the next work of the trail */
 	Sint8	trail_wait;			/* 08: trail_timer as it starts again */
 	Uint8	alt_no;			/* 09 */
 	Uint8	trail_cnt;			/* 0a */
-	Uint8	unk_0b;			/* 0b: the long beam's */
+	Uint8	big_flag;		/* 0b: the long beam's (shl06_01_set's big) */
 	struct PLAYER_WORK *parent;	/* 0c: the work that made this one */
 	Float	ground_x;			/* 10 */
 	Float	ground_y;			/* 14 */
@@ -137,7 +137,7 @@ void *shl06_01_set( PLAYER_WORK *pl_w, Sint8 big, Sint8 wait, Sint8 alt )
 		ew->type = ew->sub_type = 0 ;
 		ew->ef_no = 0x601 ;
 		lw = SHL06_01_LW( ew ) ;
-		lw->unk_0b = big ;
+		lw->big_flag = big ;
 		lw->trail_wait = wait ;
 		lw->alt_flag = alt ;
 	}
@@ -186,12 +186,12 @@ static void shl06_01_init( PLAYER_WORK *ew, SHL06_01_LOCAL_W *lw )
 		lw->st_timer = 4 ;
 		lw->attack_flag = 0 ;
 		lw->attack_cnt = 2 ;
-		lw->unk_02 = lw->unk_06 = lw->cut_flag = 0 ;
+		lw->unk_02 = lw->ground_timer = lw->cut_flag = 0 ;
 		lw->flash_step = 1 ;
 		lw->flash_timer = 1 ;
 		ew->dir = PL06_LW( pl_w )->beam_dir ;
 		lw->trail_cnt = PL06_LW( pl_w )->beam_len ;
-		if( !lw->unk_0b ){
+		if( !lw->big_flag ){
 			lw->ground_flag = 0 ;
 			lw->trail_wait = 0 ;
 			shl06_01_set2( ew, 5 ) ;
@@ -250,7 +250,7 @@ static void shl06_01_head_move( PLAYER_WORK *ew, SHL06_01_LOCAL_W *lw )
 		return ;
 	}
 	if( vs_sys_work.slow_bit & 1 << vs_sys_work.slow_step ) return ;
-	if( lw->unk_0b ) lw->beam_st = plw->beam_st ;
+	if( lw->big_flag ) lw->beam_st = plw->beam_st ;
 	if( lw->beam_st != plw->beam_st ){
 		if( --lw->st_timer < 0 ){
 			lw->st_timer = 1 ;
@@ -258,7 +258,7 @@ static void shl06_01_head_move( PLAYER_WORK *ew, SHL06_01_LOCAL_W *lw )
 			else lw->beam_st -= 16 ;
 		}
 	}
-	if( lw->unk_06 ) lw->unk_06 -- ;
+	if( lw->ground_timer ) lw->ground_timer -- ;
 	lw->ground_flag = 0 ;
 	lw->unk_02 ^= 2 ;
 	shl06_01_flash( ew, &lw->flash_timer, &lw->flash_step ) ;
@@ -268,7 +268,7 @@ static void shl06_01_head_move( PLAYER_WORK *ew, SHL06_01_LOCAL_W *lw )
 	if( --lw->trail_timer <= 0 ){
 		if( lw->trail_timer < 0 ) lw->trail_timer = lw->trail_wait ;
 		if( !lw->trail_timer ){
-			if( !lw->unk_0b || lw->trail_cnt ){
+			if( !lw->big_flag || lw->trail_cnt ){
 				if( lw->trail_cnt ) lw->trail_cnt -- ;
 				if( ( nw = work_get( ew, W_SHL, LIST_BEHIND ) ) ){
 					nw->work_func = ew->work_func ;
@@ -283,7 +283,7 @@ static void shl06_01_head_move( PLAYER_WORK *ew, SHL06_01_LOCAL_W *lw )
 					if( --lw->attack_cnt < 0 ){
 						lw->attack_cnt = 2 ;
 						nlw->attack_flag = 0xff ;
-						if( lw->unk_0b ){
+						if( lw->big_flag ){
 							ew->atck_flag = HIT_ON | HIT_SHOT ;
 							ew->dm_flag = HIT_ON | HIT_SHOT ;
 						}
@@ -294,7 +294,7 @@ static void shl06_01_head_move( PLAYER_WORK *ew, SHL06_01_LOCAL_W *lw )
 	}
 	if( --ew->timer0 < 0 ){
 		ew->timer0 = 10 ;
-		if( !lw->unk_0b && pl_w->char_no.b.grp != Char_Catch ){
+		if( !lw->big_flag && pl_w->char_no.b.grp != Char_Catch ){
 			Uint8 no = pl_w->atck_no ;
 
 			if( lw->alt_flag ){
@@ -345,7 +345,7 @@ static void shl06_01_trail_move( PLAYER_WORK *ew, SHL06_01_LOCAL_W *lw )
 		lw->cut_flag = 0xff ;
 		return ;
 	}
-	if( !plw->unk_0b || !plw->trail_timer ) ew->type ++ ;
+	if( !plw->big_flag || !plw->trail_timer ) ew->type ++ ;
 	lw->unk_02 = plw->unk_02 ;
 	ew->disp_dir = mw->disp_dir ;
 	ew->dir = bw->dir ;
@@ -361,8 +361,8 @@ static void shl06_01_trail_move( PLAYER_WORK *ew, SHL06_01_LOCAL_W *lw )
 		plw->ground_x = ew->pos.x ;
 		plw->ground_y = mw->ground_y ;
 		plw->ground_flag = 0xff ;
-		if( !plw->unk_06 ) plw->unk_06 = 30 ;
-		if( plw->unk_0b ){
+		if( !plw->ground_timer ) plw->ground_timer = 30 ;
+		if( plw->big_flag ){
 			ew->routine_0 = 2 ;
 			ew->disp_flag = 0 ;
 			return ;
@@ -384,7 +384,7 @@ static void shl06_01_trail_move( PLAYER_WORK *ew, SHL06_01_LOCAL_W *lw )
 		ew->hit_box_no = 0 ;
 		shl06_01_hit_box( ew, lw, plw ) ;
 	}
-	else if( !plw->unk_0b ){
+	else if( !plw->big_flag ){
 		if( !lw->attack_flag ){
 			ew->atck_flag = 0 ;
 			if( lw->cut_flag ){
@@ -560,7 +560,7 @@ static void shl06_01_char_set( PLAYER_WORK *ew, SHL06_01_LOCAL_W *lw )
 	return ;
 cut:
 	pl_char_set2( ew, 21, 8, shl06_01_cut_char_tbl[ew->dir] ) ;
-	if( plw->unk_0b ){
+	if( plw->big_flag ){
 		plw->cut_dir = ew->dir ;
 		ofs[0] = DOT_X( shl06_01_head_ofs[ew->dir][0] ) ;
 		ofs[1] = DOT_Y( shl06_01_head_ofs[ew->dir][1] ) ;

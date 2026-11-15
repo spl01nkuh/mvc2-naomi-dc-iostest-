@@ -170,17 +170,17 @@ void data_put( PLAYER_WORK *w )
 	str_wide_set( buf, wide ) ;
 	str_put( 284.0f, 116.0f, 11.91f, 0xff0affff, wide ) ;
 
-	sprintf( buf, "%4d", unk_8C2152A0 + unk_8C2152A2 ) ;
+	sprintf( buf, "%4d", net_win_cnt2 + net_lose_cnt2 ) ;
 	str_wide_set( buf, wide ) ;
 	str_put( 62.0f, 200.0f, 11.91f, 0xff0affff, wide ) ;
-	sprintf( buf, "%4d", unk_8C2152A0 ) ;
+	sprintf( buf, "%4d", net_win_cnt2 ) ;
 	str_wide_set( buf, wide ) ;
 	str_put( 176.0f, 200.0f, 11.91f, 0xff0affff, wide ) ;
-	sprintf( buf, "%4d", unk_8C2152A2 ) ;
+	sprintf( buf, "%4d", net_lose_cnt2 ) ;
 	str_wide_set( buf, wide ) ;
 	str_put( 284.0f, 200.0f, 11.91f, 0xff0affff, wide ) ;
 
-	num_comma_set( unk_8C213AF8, buf ) ;
+	num_comma_set( net_entry_num2, buf ) ;
 	str_put( 150.0f, 332.0f, 14.45f, 0xffffa00a, buf ) ;
 	num_comma_set( net_entry_num, buf ) ;
 	str_put( 450.0f, 332.0f, 14.45f, 0xffffa00a, buf ) ;

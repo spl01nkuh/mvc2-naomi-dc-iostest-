@@ -551,6 +551,16 @@ static void pls03_02_stop( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 /*			Mode 4, her appearance: they fly out from her and	*/
 /*			wait until it is over								*/
 /*==============================================================*/
+#ifdef HOST_NATIVE64
+/* The original expression uses the row address's low byte as a numeric
+   priority. Keep that C quirk explicit; this value never stores a pointer or
+   resolves back to one. The unused third column is not a proven replacement. */
+static inline Sint8 pls03_02_address_priority( const void *row )
+{
+	return ( Sint8 )( uintptr_t )row ;
+}
+#endif
+
 static void pls03_02_appear_start( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 {
 	static Sint16 pls03_02_ofs[8][3] = {
@@ -566,7 +576,11 @@ static void pls03_02_appear_start( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 	if( ew->disp_dir ) ew->pos.x += pls03_02_ofs[ew->sub_type][0] * 1.6666666f / 256.0f ;
 	else ew->pos.x -= pls03_02_ofs[ew->sub_type][0] * 1.6666666f / 256.0f ;
 	ew->pos.y += pls03_02_ofs[ew->sub_type][1] * 2.142857f / 256.0f ;
+#ifdef HOST_NATIVE64
+	ew->sub_prio = pls03_02_address_priority( pls03_02_ofs[ew->sub_type] ) ;
+#else
 	ew->sub_prio = ( Sint8 )pls03_02_ofs[ew->sub_type] ;
+#endif
 	ef_char_set2( ew, 27, 8, nlRand() & 3 ) ;
 }
 

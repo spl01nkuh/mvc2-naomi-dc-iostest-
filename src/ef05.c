@@ -458,7 +458,12 @@ static void ef05_go( PLAYER_WORK *ew )
 		ew->fade.g = 1.0f ;
 		ew->fade.b = 1.0f ;
 		ef05_timer_set( ew ) ;
+#ifdef HOST_PORT
+		/* the board takes pick from the stack pointer, which is a multiple of 4 */
+		side = 0 ;
+#else
 		side = pick & 1 ;
+#endif
 		if( ew->pos.x >= 0.0f ){
 			if( ew->pos.x > 50.0f ){
 				if( side ) vec.x = ew->pos.x + 120.0f ;

@@ -26,7 +26,7 @@ if [[ "$SDK" == device ]]; then
     trap 'rm -rf "$PACKAGE_DIR"' EXIT
     mkdir -p "$PACKAGE_DIR/Payload"
     ditto "$APP" "$PACKAGE_DIR/Payload/MVC2Development.app"
-    ditto -c -k --keepParent "$PACKAGE_DIR/Payload" "$BUILD_DIR/MVC2-Development-unsigned.ipa"
-    shasum -a 256 "$BUILD_DIR/MVC2-Development-unsigned.ipa" > "$BUILD_DIR/SHA256.txt"
-    echo "Unsigned development IPA: $BUILD_DIR/MVC2-Development-unsigned.ipa"
+    ditto -c -k --keepParent "$PACKAGE_DIR/Payload" "$BUILD_DIR/MVC2-Gameplay-unsigned.ipa"
+    shasum -a 256 "$BUILD_DIR/MVC2-Gameplay-unsigned.ipa" > "$BUILD_DIR/SHA256.txt"
+    echo "Unsigned native gameplay test IPA: $BUILD_DIR/MVC2-Gameplay-unsigned.ipa"
 fi
