@@ -28,6 +28,7 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86|AMD64|amd64|i.86")
 endif()
 
 add_library(mvc2_native_game_objects OBJECT ${MVC2_NATIVE_ARCADE_SOURCES})
+set_target_properties(mvc2_native_game_objects PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED YES C_EXTENSIONS YES)
 target_include_directories(mvc2_native_game_objects PRIVATE
     "${MVC2_NATIVE_GAME}/include" "${MVC2_NATIVE_GAME}/src"
     "${MVC2_NATIVE_PORT}/include" "${MVC2_NATIVE_PORT}/native64")
@@ -87,6 +88,7 @@ else()
     message(STATUS "Native coroutine execution requires ARM64; this host can build objects and inspect link dependencies")
 endif()
 add_library(mvc2_native_backend_objects OBJECT ${MVC2_NATIVE_BACKEND_SOURCES})
+set_target_properties(mvc2_native_backend_objects PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED YES C_EXTENSIONS YES)
 target_include_directories(mvc2_native_backend_objects PRIVATE
     "${MVC2_NATIVE_GAME}/include" "${MVC2_NATIVE_GAME}/src/lib/libnaomi"
     "${MVC2_NATIVE_PORT}/include" "${MVC2_NATIVE_PORT}/native64"
@@ -100,6 +102,7 @@ target_compile_options(mvc2_native_backend_objects PRIVATE
 # The checkpoint controller, host ownership/input/audio buffers, allocations,
 # and coroutine implementation must survive restoration of engine globals.
 add_library(mvc2_native_support_objects OBJECT ${MVC2_NATIVE_SUPPORT_SOURCES})
+set_target_properties(mvc2_native_support_objects PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED YES C_EXTENSIONS YES)
 target_include_directories(mvc2_native_support_objects PRIVATE
     "${MVC2_NATIVE_PORT}/include" "${MVC2_NATIVE_PORT}/native64"
     "${MVC2_NATIVE_PORT}/render" "${MVC2_NATIVE_PORT}/snd" "${MVC2_NATIVE_PORT}/sys")
