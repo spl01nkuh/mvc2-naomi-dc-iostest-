@@ -39,11 +39,31 @@ static void shl36_01_move( PLAYER_WORK *ew, PLAYER_WORK *pl_w );
 static void shl36_01_end( PLAYER_WORK *ew );
 static void shl36_01_free( PLAYER_WORK *ew );
 
+#ifdef HOST_NATIVE64
+/* The terminal states use only the effect. Native calls keep the dispatch
+   table's two-argument type and adapt the unused master explicitly. */
+static void shl36_01_end_native( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
+{
+	( void )pl_w ;
+	shl36_01_end( ew ) ;
+}
+
+static void shl36_01_free_native( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
+{
+	( void )pl_w ;
+	shl36_01_free( ew ) ;
+}
+#endif
+
 /*==============================================================*/
 static void shl36_01_main( PLAYER_WORK *ew )
 {
 	static void ( *shl36_01_jmp[] )( PLAYER_WORK *ew, PLAYER_WORK *pl_w ) = {
+#ifdef HOST_NATIVE64
+		shl36_01_init, shl36_01_move, shl36_01_end_native, shl36_01_free_native,
+#else
 		shl36_01_init, shl36_01_move, shl36_01_end, shl36_01_free,
+#endif
 	} ;
 
 	shl36_01_jmp[ew->routine_0]( ew, ew->master_w ) ;

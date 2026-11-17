@@ -26,11 +26,26 @@ static void pls0c_01_init( PLAYER_WORK *ew, PLS0C_01_LOCAL_W *lw, PLAYER_WORK *p
 static void pls0c_01_move( PLAYER_WORK *ew, PLS0C_01_LOCAL_W *lw, PLAYER_WORK *pl_w );
 static void pls0c_01_free( PLAYER_WORK *ew );
 
+#ifdef HOST_NATIVE64
+/* Terminal states ignore the dispatcher's extra arguments. Native adapters
+   retain the exact callback type without calling through an incompatible one. */
+static void pls0c_01_free_native( PLAYER_WORK *ew, PLS0C_01_LOCAL_W *lw, PLAYER_WORK *pl_w )
+{
+	( void )lw ;
+	( void )pl_w ;
+	pls0c_01_free( ew ) ;
+}
+#endif
+
 /*==============================================================*/
 static void pls0c_01_main( PLAYER_WORK *ew )
 {
 	static void ( *pls0c_01_jmp[] )( PLAYER_WORK *ew, PLS0C_01_LOCAL_W *lw, PLAYER_WORK *pl_w ) = {
+#ifdef HOST_NATIVE64
+		pls0c_01_init, pls0c_01_move, pls0c_01_free_native,
+#else
 		pls0c_01_init, pls0c_01_move, pls0c_01_free,
+#endif
 	} ;
 
 	pls0c_01_jmp[ew->routine_0]( ew, PLS0C_01_LW( ew ), ew->master_w ) ;

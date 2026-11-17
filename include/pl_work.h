@@ -309,7 +309,18 @@ typedef struct PLAYER_WORK {
 	Sint16	vital_red_wait;		/* 2a0: counted down by vital_red_timer; red vital comes back only at 0 */
 	Uint8	unk_2a2;	/* 2a2: set (1) by some characters' standing light punch; never read */
 	Uint8	unk_2a3;
+#ifdef HOST_NATIVE64
+	/* Local records keep native pointers. SonSon's 32-byte prefix and thirteen
+	   part pointers require 136 bytes on LP64; retain Sint32 element indexing
+	   while aligning every character's view to native pointer alignment. */
+	union {
+		Sint32 tlocal[( ( 0x20 + 13 * sizeof( void * ) > 0x80 ) ?
+			( 0x20 + 13 * sizeof( void * ) ) : 0x80 ) / sizeof( Sint32 )];
+		void *native_tlocal_alignment;
+	};
+#else
 	Sint32	tlocal[0x80 / 4];	/* 2a4: the character's own work */
+#endif
 	Uint8	wall_wide_timer;	/* 324: frames left in which pl_wall_wide_ck keeps the player on the screen with more room (a teleport) */
 	Uint8	prio_ofs;	/* 325: taken from the player's drawing priority: the character's table entry * 2 */
 	Uint8	win_wait;	/* 326: frames before START can end the win pose; 0xff holds it while a pose plays out */

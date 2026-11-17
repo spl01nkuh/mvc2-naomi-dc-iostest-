@@ -6,10 +6,20 @@
 #include "pl0a_def.h"
 
 /* what she reads of other characters' own work when she takes their power */
+#ifdef HOST_NATIVE64
+/* His native local record widens the two pointers before shield_st. Share
+   the real declaration instead of using its original byte-offset view. */
+#include "pl0b_def.h"
+static int pl0a_shield_in_hand( PLAYER_WORK *em )
+{
+	return PL0B_LW( em )->shield_st == 0 ;
+}
+#else
 typedef struct PL0B_LOCAL_W {		/* Captain America */
 	Uint8	unk_00[0x0e];
 	Uint8	shield_st;
 } PL0B_LOCAL_W;
+#endif
 
 typedef struct PL12_LOCAL_W {		/* Hayato */
 	Sint16	hyper_timer;
@@ -3419,7 +3429,11 @@ static void power_set( PLAYER_WORK *pl_w, PLAYER_WORK *em )
 	}
 	switch( PL0A_LW( pl_w )->power_type ){
 	case 0x0b :
+#ifdef HOST_NATIVE64
+		if( pl0a_shield_in_hand( em ) ) no = 1 ;
+#else
 		if( ( ( PL0B_LOCAL_W * )em->tlocal )->shield_st == 0 ) no = 1 ;
+#endif
 		break ;
 	case 0x12 :
 		if( ( ( PL12_LOCAL_W * )em->tlocal )->hyper_timer > 0 ) no = 1 ;

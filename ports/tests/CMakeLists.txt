@@ -254,6 +254,10 @@ target_link_libraries(test_native64_vms_backup PRIVATE mvc2_native_game_memory)
 target_link_libraries(test_native64_vms_backup_dc PRIVATE mvc2_native_game_memory)
 target_compile_definitions(test_native64_vms_backup PRIVATE _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
 target_compile_definitions(test_native64_vms_backup_dc PRIVATE _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
+mvc2_core_test(native64_tlocal LEGACY_WARNINGS test_native64_tlocal.c
+    "${GAME}/src/s_pl0b.c" "${GAME}/src/s_pl14.c")
+mvc2_core_test(native64_tlocal_dc DREAMCAST LEGACY_WARNINGS test_native64_tlocal.c
+    "${GAME}/src/s_pl0b.c" "${GAME}/src/s_pl14.c")
 
 # Verify the actual writable-section checkpoint on Apple Clang. The GCC
 # fixture uses explicit sections to exercise the same preservation algorithm.

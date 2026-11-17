@@ -69,6 +69,22 @@ static void pls31_00_appear_move( PLAYER_WORK *ew, PLAYER_WORK *pl_w );
 static void pls31_00_next( PLAYER_WORK *ew );
 static void pls31_00_free( PLAYER_WORK *ew );
 
+#ifdef HOST_NATIVE64
+/* Terminal states ignore the dispatcher's extra arguments. Native adapters
+   retain the exact callback type without calling through an incompatible one. */
+static void pls31_00_next_native( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
+{
+	( void )pl_w ;
+	pls31_00_next( ew ) ;
+}
+
+static void pls31_00_free_native( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
+{
+	( void )pl_w ;
+	pls31_00_free( ew ) ;
+}
+#endif
+
 /*==============================================================*/
 static void pls31_00_appear_init( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 {
@@ -148,7 +164,11 @@ static void pls31_00_appear_move( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 static void pls31_00_appear( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 {
 	static void ( *pls31_00_appear_jmp[] )( PLAYER_WORK *ew, PLAYER_WORK *pl_w ) = {
+#ifdef HOST_NATIVE64
+		pls31_00_appear_init, pls31_00_appear_move, pls31_00_next_native, pls31_00_free_native,
+#else
 		pls31_00_appear_init, pls31_00_appear_move, pls31_00_next, pls31_00_free,
+#endif
 	} ;
 
 	pls31_00_appear_jmp[ew->routine_0]( ew, pl_w ) ;
@@ -202,7 +222,11 @@ static void pls31_00_win_move( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 static void pls31_00_win( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 {
 	static void ( *pls31_00_win_jmp[] )( PLAYER_WORK *ew, PLAYER_WORK *pl_w ) = {
+#ifdef HOST_NATIVE64
+		pls31_00_win_init, pls31_00_win_move, pls31_00_next_native, pls31_00_free_native,
+#else
 		pls31_00_win_init, pls31_00_win_move, pls31_00_next, pls31_00_free,
+#endif
 	} ;
 
 	pls31_00_win_jmp[ew->routine_0]( ew, pl_w ) ;
@@ -256,7 +280,11 @@ static void pls31_00_metamor_move( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 static void pls31_00_metamor( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 {
 	static void ( *pls31_00_metamor_jmp[] )( PLAYER_WORK *ew, PLAYER_WORK *pl_w ) = {
+#ifdef HOST_NATIVE64
+		pls31_00_metamor_init, pls31_00_metamor_move, pls31_00_next_native, pls31_00_free_native,
+#else
 		pls31_00_metamor_init, pls31_00_metamor_move, pls31_00_next, pls31_00_free,
+#endif
 	} ;
 
 	pls31_00_metamor_jmp[ew->routine_0]( ew, pl_w ) ;

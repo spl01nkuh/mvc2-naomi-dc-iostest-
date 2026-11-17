@@ -61,7 +61,13 @@ Uint8 pl_dash_ck( PLAYER_WORK *pl_w )
 	if( pl_w->act_st == N_GUARD || pl_w->act_st == N_AIR_GUARD ){
 		if( !dash_cancel_ck( pl_w ) ) return 0 ;
 	}
+#ifdef HOST_NATIVE64
+	/* A target beyond the fly screen prevents a dash, just like the other
+	   rejected command checks above and below. */
+	if( pl_w->target_w->fly_screen_flag ) return 0 ;
+#else
 	if( pl_w->target_w->fly_screen_flag ) return ;	/* no value, as in the arcade build */
+#endif
 	if( sw_now_ck( pl_w, 0x0300, &sw, 0 ) ){
 		cw->sw = pl_w->pl_sw_new ;
 	} else {

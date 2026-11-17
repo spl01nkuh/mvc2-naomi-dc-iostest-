@@ -13,10 +13,18 @@ void *shl17_04_set( PLAYER_WORK *pl_w )
 	PLAYER_WORK *ew ;
 
 	if( pl_w->hit_flag ){
+#ifdef HOST_NATIVE64
+		if( !( ew = work_get( 0, W_PLS, LIST_TOP ) ) ) return 0 ;
+#else
 		if( !( ew = work_get( 0, W_PLS, LIST_TOP ) ) ) return ;
+#endif
 		ew->work_func = shl17_04_show_main ;
 	} else {
+#ifdef HOST_NATIVE64
+		if( !( ew = work_get( 0, W_SHL, LIST_TOP ) ) ) return 0 ;
+#else
 		if( !( ew = work_get( 0, W_SHL, LIST_TOP ) ) ) return ;
+#endif
 		ew->work_func = shl17_04_main ;
 	}
 	ew->master_w = pl_w ;

@@ -71,6 +71,22 @@ static void shl20_00_spike_move( PLAYER_WORK *ew );
 static void shl20_00_end( PLAYER_WORK *ew );
 static void shl20_00_free( PLAYER_WORK *ew );
 
+#ifdef HOST_NATIVE64
+/* Terminal states ignore the dispatcher's extra arguments. Native adapters
+   retain the exact callback type without calling through an incompatible one. */
+static void shl20_00_end_native( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
+{
+	( void )pl_w ;
+	shl20_00_end( ew ) ;
+}
+
+static void shl20_00_free_native( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
+{
+	( void )pl_w ;
+	shl20_00_free( ew ) ;
+}
+#endif
+
 /*==============================================================*/
 static void shl20_00_spike_main( PLAYER_WORK *ew )
 {
@@ -285,7 +301,11 @@ static void shl20_00_ssand_move( PLAYER_WORK *ew, PLAYER_WORK *pl_w );
 static void shl20_00_ssand_main( PLAYER_WORK *ew )
 {
 	static void ( *shl20_00_ssand_jmp[] )( PLAYER_WORK *ew, PLAYER_WORK *pl_w ) = {
+#ifdef HOST_NATIVE64
+		shl20_00_ssand_init, shl20_00_ssand_move, shl20_00_end_native, shl20_00_free_native,
+#else
 		shl20_00_ssand_init, shl20_00_ssand_move, shl20_00_end, shl20_00_free,
+#endif
 	} ;
 
 	shl20_00_ssand_jmp[ew->routine_0]( ew, ew->master_w ) ;
@@ -440,7 +460,11 @@ static void shl20_00_ssand_part_move( PLAYER_WORK *ew, PLAYER_WORK *pl_w );
 static void shl20_00_ssand_part_main( PLAYER_WORK *ew )
 {
 	static void ( *shl20_00_ssand_part_jmp[] )( PLAYER_WORK *ew, PLAYER_WORK *pl_w ) = {
+#ifdef HOST_NATIVE64
+		shl20_00_ssand_part_init, shl20_00_ssand_part_move, shl20_00_end_native, shl20_00_free_native,
+#else
 		shl20_00_ssand_part_init, shl20_00_ssand_part_move, shl20_00_end, shl20_00_free,
+#endif
 	} ;
 
 	shl20_00_ssand_part_jmp[ew->routine_0]( ew, ew->master_w ) ;

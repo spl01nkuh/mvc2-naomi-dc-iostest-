@@ -29,8 +29,16 @@ PLAYER_WORK *sel_name_set( PLAYER_WORK *pl_w, Uint8 flag )
 {
 	PLAYER_WORK *ew ;
 
+#ifdef HOST_NATIVE64
+	if( flag && Sys->stage_cnt == 7 ) return 0 ;
+#else
 	if( flag && Sys->stage_cnt == 7 ) return ;
+#endif
+#ifdef HOST_NATIVE64
+	if( !( ew = work_get( 0, W_SET, LIST_END ) ) ) return 0 ;
+#else
 	if( !( ew = work_get( 0, W_SET, LIST_END ) ) ) return ;
+#endif
 	ew->disp_flag = 1 ;
 	ew->master_w = pl_w ;
 	ew->type = pl_w->pl_index ;

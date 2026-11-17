@@ -31,7 +31,11 @@ PLAYER_WORK *pls17_02_set( PLAYER_WORK *pl_w, PLAYER_WORK *ef_w )
 			pls17_02_char_no_p = &PLS17_02_LW( ew )->char_no ;
 			*pls17_02_char_no_p = ew->master_w->char_no.w ;
 		}
+#ifdef HOST_NATIVE64
+		else return 0 ;
+#else
 		else return ;
+#endif
 		i ++ ;
 	} while( i < 3 ) ;
 	return ew ;

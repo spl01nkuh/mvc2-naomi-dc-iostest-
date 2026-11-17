@@ -31,11 +31,25 @@ static void shl34_02_move( PLAYER_WORK *ew, PLAYER_WORK *ef_w );
 static void shl34_02_end( PLAYER_WORK *ew, PLAYER_WORK *ef_w );
 static void shl34_02_free( PLAYER_WORK *ew );
 
+#ifdef HOST_NATIVE64
+/* Terminal states ignore the dispatcher's extra arguments. Native adapters
+   retain the exact callback type without calling through an incompatible one. */
+static void shl34_02_free_native( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
+{
+	( void )pl_w ;
+	shl34_02_free( ew ) ;
+}
+#endif
+
 /*==============================================================*/
 static void shl34_02_main( PLAYER_WORK *ew )
 {
 	static void ( *shl34_02_jmp[] )( PLAYER_WORK *ew, PLAYER_WORK *ef_w ) = {
+#ifdef HOST_NATIVE64
+		shl34_02_init, shl34_02_move, shl34_02_end, shl34_02_free_native,
+#else
 		shl34_02_init, shl34_02_move, shl34_02_end, shl34_02_free,
+#endif
 	} ;
 
 	shl34_02_jmp[ew->routine_0]( ew, ew->ef_w ) ;

@@ -1292,7 +1292,11 @@ static int ef_throw_catch_end( PLAYER_WORK *ew, PLAYER_WORK *pl_w, SHL13_00_LOCA
 			pl_dir_set( em ) ;
 			ew->routine_0 ++ ;
 			ew->disp_flag = 0 ;
+#ifdef HOST_NATIVE64
+			return 0 ;
+#else
 			return ;
+#endif
 		}
 	}
 	return lw->throw_catch_flag ;
@@ -1309,7 +1313,11 @@ static int ef_throw_catch_hold( PLAYER_WORK *ew, PLAYER_WORK *pl_w, SHL13_00_LOC
 			pl_dir_set( em ) ;
 			ew->routine_0 ++ ;
 			ew->disp_flag = 0 ;
+#ifdef HOST_NATIVE64
+			return 0 ;
+#else
 			return ;
+#endif
 		}
 		catch_pos_set( ew, em ) ;
 		if( em->hit_box_no ){
@@ -1317,14 +1325,22 @@ static int ef_throw_catch_hold( PLAYER_WORK *ew, PLAYER_WORK *pl_w, SHL13_00_LOC
 			ew->disp_flag = 0 ;
 			em->catch_type = 0 ;
 			pl_dir_set( em ) ;
+#ifdef HOST_NATIVE64
+			return 0 ;
+#else
 			return ;
+#endif
 		}
 		if( ew->timer1 -- <= 0 ){
 			ew->routine_0 ++ ;
 			ew->disp_flag = 0 ;
 			pl_dir_set( em ) ;
 			if( em->vital_new ) pl_stand_ret( em ) ;
+#ifdef HOST_NATIVE64
+			return 0 ;
+#else
 			return ;
+#endif
 		}
 	}
 	return lw->throw_catch_flag ;

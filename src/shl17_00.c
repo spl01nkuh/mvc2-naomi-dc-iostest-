@@ -57,9 +57,17 @@ void *shl17_00_set( PLAYER_WORK *pl_w )
 			if( ( ew = work_get( 0, W_SHL, LIST_TOP ) ) ){
 				ew->ef_w = 0 ;
 				old = 0 ;
+#ifdef HOST_NATIVE64
+			} else return 0 ;
+#else
 			} else return ;
+#endif
 		} else {
+#ifdef HOST_NATIVE64
+			if( !( ew = work_get( ew, W_SHL, LIST_BEHIND ) ) ) return 0 ;
+#else
 			if( !( ew = work_get( ew, W_SHL, LIST_BEHIND ) ) ) return ;
+#endif
 		}
 		lw = SHL17_00_LW( ew ) ;
 		ew->work_func = shl17_00_main ;

@@ -35,6 +35,16 @@ void *shl33_01_set( PLAYER_WORK *pl_w, Uint8 a, Uint8 b )
 static void shl33_01_blast_main( PLAYER_WORK *ew, PLAYER_WORK *pl_w );
 static void shl33_01_free( PLAYER_WORK *ew );
 
+#ifdef HOST_NATIVE64
+/* Terminal states ignore the dispatcher's extra arguments. Native adapters
+   retain the exact callback type without calling through an incompatible one. */
+static void shl33_01_free_native( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
+{
+	( void )pl_w ;
+	shl33_01_free( ew ) ;
+}
+#endif
+
 /*==============================================================*/
 static void shl33_01_main( PLAYER_WORK *ew )
 {
@@ -58,7 +68,11 @@ static void shl33_01_end( PLAYER_WORK *ew, PLAYER_WORK *pl_w );
 static void shl33_01_blast_main( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 {
 	static void ( *shl33_01_blast_main_jmp[] )( PLAYER_WORK *ew, PLAYER_WORK *pl_w ) = {
+#ifdef HOST_NATIVE64
+		shl33_01_init, shl33_01_move, shl33_01_end, shl33_01_free_native,
+#else
 		shl33_01_init, shl33_01_move, shl33_01_end, shl33_01_free,
+#endif
 	} ;
 
 	shl33_01_blast_main_jmp[ew->routine_0]( ew, pl_w ) ;
