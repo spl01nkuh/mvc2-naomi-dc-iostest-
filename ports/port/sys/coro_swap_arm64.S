@@ -5,10 +5,10 @@
 #include "coro_arm64_context.h"
 
 #if !defined(__aarch64__) && !defined(__arm64__)
-#error "coro_arm64.S requires ARM64"
+#error "coro_swap_arm64.S requires ARM64"
 #endif
 #if defined(__arm64e__)
-#error "coro_arm64.S does not implement the arm64e pointer-authentication ABI"
+#error "coro_swap_arm64.S does not implement the arm64e pointer-authentication ABI"
 #endif
 
 #if defined(__APPLE__)

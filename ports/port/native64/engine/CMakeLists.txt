@@ -82,7 +82,7 @@ set(MVC2_NATIVE_SUPPORT_SOURCES
     "${CMAKE_CURRENT_LIST_DIR}/host_alloc.c")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$" OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
     list(APPEND MVC2_NATIVE_SUPPORT_SOURCES
-        "${MVC2_NATIVE_PORT}/sys/coro_arm64.c" "${MVC2_NATIVE_PORT}/sys/coro_arm64.S")
+        "${MVC2_NATIVE_PORT}/sys/coro_arm64.c" "${MVC2_NATIVE_PORT}/sys/coro_swap_arm64.S")
 else()
     message(STATUS "Native coroutine execution requires ARM64; this host can build objects and inspect link dependencies")
 endif()

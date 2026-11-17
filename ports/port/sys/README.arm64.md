@@ -1,6 +1,6 @@
 # ARM64 coroutine backend
 
-`coro_arm64.c` and `coro_arm64.S` implement the existing `coro.h` interface on
+`coro_arm64.c` and `coro_swap_arm64.S` implement the existing `coro.h` interface on
 ordinary ARM64 Linux and Apple arm64. The game stays on its caller's thread;
 switching does not dispatch work to a pthread, emulate instructions or allocate
 writable executable memory. The implementation uses pthread only to verify
@@ -30,7 +30,7 @@ On a native ARM64 Linux or Mac host, from the repository root:
 
 ```sh
 cc -std=c17 -O2 -UNDEBUG -Wall -Wextra -Wpedantic -Werror -pthread \
-  -Iports/port/sys ports/port/sys/coro_arm64.c ports/port/sys/coro_arm64.S \
+  -Iports/port/sys ports/port/sys/coro_arm64.c ports/port/sys/coro_swap_arm64.S \
   ports/tests/test_coro.c ports/tests/coro_registers_arm64.S -o /tmp/test-mvc2-coro
 /tmp/test-mvc2-coro
 ```

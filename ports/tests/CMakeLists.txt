@@ -221,7 +221,7 @@ endif()
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
     find_package(Threads REQUIRED)
     add_executable(test_coro test_coro.c coro_registers_arm64.S
-        "${PORT}/sys/coro_arm64.c" "${PORT}/sys/coro_arm64.S")
+        "${PORT}/sys/coro_arm64.c" "${PORT}/sys/coro_swap_arm64.S")
     target_include_directories(test_coro PRIVATE "${PORT}/sys")
     target_link_libraries(test_coro PRIVATE Threads::Threads)
     target_compile_options(test_coro PRIVATE -UNDEBUG -Wall -Wextra -Werror)
@@ -230,7 +230,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
         "${PORT}/naomi/naomi_board.c" "${PORT}/naomi/naomi_rom.c" "${PORT}/naomi/nl_am.c"
         "${PORT}/nl/nl_tex.c" "${PORT}/snd/snd_nl.c" "${PORT}/snd/snd_drv.c"
         "${PORT}/snd/aica.c" "${PORT}/snd/arm7.c" "${PORT}/naomi/naomi_zip.c"
-        "${PORT}/sys/coro_arm64.c" "${PORT}/sys/coro_arm64.S")
+        "${PORT}/sys/coro_arm64.c" "${PORT}/sys/coro_swap_arm64.S")
     target_include_directories(test_native64_board PRIVATE "${PORT}/include" "${PORT}/sys"
         "${PORT}/nl" "${PORT}/snd" "${GAME}/include")
     target_compile_definitions(test_native64_board PRIVATE HOST_NATIVE64=1 _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)

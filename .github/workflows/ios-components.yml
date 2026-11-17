@@ -6,7 +6,7 @@ on:
   pull_request:
     paths:
       - ports/port/ios/**
-      - ports/port/sys/coro_arm64*
+      - ports/port/sys/coro_*arm64*
       - ports/port/native64/**
       - ports/port/tools/**
       - include/**
@@ -49,7 +49,7 @@ jobs:
             xcrun --sdk "$sdk" clang -target "$target" -isysroot "$sdk_path" -std=c17 -Wall -Wextra -Werror \
               -c ports/port/sys/coro_arm64.c -o "build/apple-$sdk/coro.o"
             xcrun --sdk "$sdk" clang -target "$target" -isysroot "$sdk_path" \
-              -c ports/port/sys/coro_arm64.S -o "build/apple-$sdk/coro_swap.o"
+              -c ports/port/sys/coro_swap_arm64.S -o "build/apple-$sdk/coro_swap.o"
             for source in ports/port/native64/memory.c ports/port/native64/game_memory.c ports/port/native64/model.c ports/port/native64/model_store.c ports/port/native64/texture_file.c ports/port/native64/system_textures.c; do
               object="$(basename "$source" .c)"
               xcrun --sdk "$sdk" clang -target "$target" -isysroot "$sdk_path" -std=c17 \
