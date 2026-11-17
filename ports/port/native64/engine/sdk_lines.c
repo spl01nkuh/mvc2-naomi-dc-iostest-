@@ -58,9 +58,10 @@ void nlSingleLineUseViewMatrix(VEC3* from, VEC3* to, unsigned color) {
         !isfinite(b.x) || !isfinite(b.y) || !isfinite(b.w)) return;
     memcpy(&near_negative, nl_objput_param + 12, sizeof near_negative);
     float near_w = near_negative < 0.0f ? -near_negative : 0.001f;
+    float margin = rd_widescreen_offset();
     if (!clip(&a, &b, a.w - near_w, b.w - near_w) ||
-        !clip(&a, &b, a.x + a.w, b.x + b.w) ||
-        !clip(&a, &b, (RD_WIDTH + 1) * a.w - a.x, (RD_WIDTH + 1) * b.w - b.x) ||
+        !clip(&a, &b, a.x + (margin + 1) * a.w, b.x + (margin + 1) * b.w) ||
+        !clip(&a, &b, (RD_WIDTH + margin + 1) * a.w - a.x, (RD_WIDTH + margin + 1) * b.w - b.x) ||
         !clip(&a, &b, a.y + a.w, b.y + b.w) ||
         !clip(&a, &b, (RD_HEIGHT + 1) * a.w - a.y, (RD_HEIGHT + 1) * b.w - b.y)) return;
     float ax = a.x / a.w, ay = a.y / a.w, bx = b.x / b.w, by = b.y / b.w;

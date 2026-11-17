@@ -66,6 +66,7 @@ struct AppSettings: Codable {
     var filter: CRTFilter = .off
     var filterStrength = 0.75
     var aspect: ScreenAspect = .fourThree
+    var nativeWidescreen = false
     var screenScale = 1.0
     var screenWidth = 1.0
     var screenHeight = 1.0
@@ -77,6 +78,46 @@ struct AppSettings: Codable {
     var stickDeadZone = 0.0
     var directionStyle: DirectionStyle = .hybrid
     var controls = TouchControl.defaults
+
+    /// Fit the actual last frame through a render-mode transition. In
+    /// particular, disabling widescreen while paused must not squeeze the
+    /// retained wide image before the first new 4:3 frame arrives.
+    func presentationAspect(sourceWidth: Int, sourceHeight: Int) -> ScreenAspect {
+        guard aspect == .fourThree else { return aspect }
+        let hasWideFrame = sourceWidth > 0 && sourceHeight > 0 &&
+            Double(sourceWidth) / Double(sourceHeight) > 4.0 / 3.0
+        return nativeWidescreen || hasWideFrame ? .native : .fourThree
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case filter, filterStrength, aspect, nativeWidescreen
+        case screenScale, screenWidth, screenHeight, screenOffsetX, screenOffsetY
+        case touchEnabled, touchOpacity, stickSensitivity, stickDeadZone, directionStyle, controls
+    }
+
+    init() {}
+
+    /// Adding a render option must not discard an existing saved control
+    /// layout. Missing keys inherit their defaults; invalid values still fail
+    /// decoding so the host can report corrupt settings to the user.
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        filter = try values.decodeIfPresent(CRTFilter.self, forKey: .filter) ?? filter
+        filterStrength = try values.decodeIfPresent(Double.self, forKey: .filterStrength) ?? filterStrength
+        aspect = try values.decodeIfPresent(ScreenAspect.self, forKey: .aspect) ?? aspect
+        nativeWidescreen = try values.decodeIfPresent(Bool.self, forKey: .nativeWidescreen) ?? nativeWidescreen
+        screenScale = try values.decodeIfPresent(Double.self, forKey: .screenScale) ?? screenScale
+        screenWidth = try values.decodeIfPresent(Double.self, forKey: .screenWidth) ?? screenWidth
+        screenHeight = try values.decodeIfPresent(Double.self, forKey: .screenHeight) ?? screenHeight
+        screenOffsetX = try values.decodeIfPresent(Double.self, forKey: .screenOffsetX) ?? screenOffsetX
+        screenOffsetY = try values.decodeIfPresent(Double.self, forKey: .screenOffsetY) ?? screenOffsetY
+        touchEnabled = try values.decodeIfPresent(Bool.self, forKey: .touchEnabled) ?? touchEnabled
+        touchOpacity = try values.decodeIfPresent(Double.self, forKey: .touchOpacity) ?? touchOpacity
+        stickSensitivity = try values.decodeIfPresent(Double.self, forKey: .stickSensitivity) ?? stickSensitivity
+        stickDeadZone = try values.decodeIfPresent(Double.self, forKey: .stickDeadZone) ?? stickDeadZone
+        directionStyle = try values.decodeIfPresent(DirectionStyle.self, forKey: .directionStyle) ?? directionStyle
+        controls = try values.decodeIfPresent([TouchControl].self, forKey: .controls) ?? controls
+    }
 
     mutating func sanitize() {
         func clamped(_ v: Double, _ min: Double, _ max: Double, fallback: Double) -> Double {

@@ -448,9 +448,14 @@ static int sphere(const float* m, const uint8_t* s, float scale, uint32_t* limit
     }
     rx = nl_focusX2 * -r;
     ry = nl_focusY2 * -r;
-    dx = sx - nl_projectMatrixLeft * w;
+    /* Widen the visible world while retaining the original projection's
+     * focal length. RD translates the emitted pixel coordinates once; the
+     * game still projects fighters and computes fight bounds in 640x480. */
+    float horizontal_margin = rd_widescreen_offset();
+    dx = sx - (nl_projectMatrixLeft - horizontal_margin) * w;
     dy = sy - nl_projectMatrixTop * w;
-    if (!(dx > rx) || !(dy > ry) || dx > nl_projectMatrixWidth * w - rx || dy > nl_projectMatrixHeight * w - ry) {
+    if (!(dx > rx) || !(dy > ry) || dx > (nl_projectMatrixWidth + horizontal_margin * 2.0f) * w - rx ||
+        dy > nl_projectMatrixHeight * w - ry) {
         return SPHERE_OUT;
     }
     return seen;

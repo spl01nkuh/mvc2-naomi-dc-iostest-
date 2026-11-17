@@ -15,6 +15,7 @@ private func check(_ condition: @autoclosure () -> Bool, _ message: String) thro
 struct IOSSettingsTests {
     static func main() throws {
         try persistence()
+        try widescreenSettings()
         try heldSources()
         try concurrentSources()
         try coinEvents()
@@ -82,6 +83,46 @@ struct IOSSettingsTests {
         try check(input.buttons == 0, "Modal and background cancellation must clear every held input")
     }
 
+    static func widescreenSettings() throws {
+        var settings = AppSettings()
+        settings.nativeWidescreen = true
+        settings.controls.append(TouchControl(label: "LP + HP", x: 0.5, y: 0.5,
+            buttons: NativeButton.lp.rawValue | NativeButton.hp.rawValue, custom: true))
+        let encoded = try JSONEncoder().encode(settings)
+        let restored = try JSONDecoder().decode(AppSettings.self, from: encoded)
+        try check(restored.nativeWidescreen && restored.controls == settings.controls,
+                  "Native widescreen and the custom layout must survive relaunch")
+        try check(restored.presentationAspect(sourceWidth: 854, sourceHeight: 480) == .native,
+                  "The original default fit must preserve a widescreen source's proportions")
+
+        var legacy = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+        legacy.removeValue(forKey: "nativeWidescreen")
+        let legacyData = try JSONSerialization.data(withJSONObject: legacy)
+        let migrated = try JSONDecoder().decode(AppSettings.self, from: legacyData)
+        try check(!migrated.nativeWidescreen && migrated.controls == settings.controls,
+                  "An older settings file must preserve its layout and keep the original 4:3 mode")
+        try check(migrated.presentationAspect(sourceWidth: 640, sourceHeight: 480) == .fourThree,
+                  "Disabling native widescreen must retain the original display fit")
+
+        // The paused display retains its previous frame until the native owner
+        // resumes. Both toggle directions must respect that frame's geometry.
+        settings.nativeWidescreen = false
+        try check(settings.presentationAspect(sourceWidth: 854, sourceHeight: 480) == .native,
+                  "Disabling widescreen while paused must preserve the last wide frame's proportions")
+        try check(settings.presentationAspect(sourceWidth: 640, sourceHeight: 480) == .fourThree,
+                  "The first new 4:3 frame must restore the original display fit")
+        settings.nativeWidescreen = true
+        try check(settings.presentationAspect(sourceWidth: 640, sourceHeight: 480) == .native,
+                  "Enabling widescreen while paused must fit the retained 4:3 source without stretching it")
+
+        settings.aspect = .fill
+        try check(settings.presentationAspect(sourceWidth: 854, sourceHeight: 480) == .fill,
+                  "Native widescreen must retain an explicitly selected fill adjustment")
+        settings.aspect = .native
+        try check(settings.presentationAspect(sourceWidth: 640, sourceHeight: 480) == .native,
+                  "Source aspect must remain available in both native render modes")
+    }
+
     static func concurrentSources() throws {
         let input = InputState()
         DispatchQueue.concurrentPerform(iterations: 256) { index in
@@ -117,6 +158,20 @@ struct IOSSettingsTests {
         try check(cleared == nil && nextGeneration == generation + 1, "Stopping a session must remove its old game frame")
         let independent = NativeFrameStore()
         try check(independent.snapshot().0 == nil && independent.snapshot().1 == 0, "A different session must not inherit a frame")
+
+        // A mode switch changes the native output width. The host must retain
+        // its whole last column rather than copying only the old 640 pixels.
+        var widePixels = [UInt32](repeating: 0xff123456, count: 854 * 480)
+        widePixels[widePixels.count - 1] = 0xffabcdef
+        guard let wide = widePixels.withUnsafeBufferPointer({
+            NativeCanvasFrame(width: 854, height: 480, argb: $0)
+        }) else { throw TestFailure(description: "A complete widescreen native frame must be accepted") }
+        frames.publish(frame: wide)
+        let (publishedWide, _) = frames.snapshot()
+        try check(publishedWide?.width == 854 && publishedWide?.height == 480,
+                  "A native aspect change must publish the actual frame dimensions")
+        try check(Array(wide.rgba.suffix(4)) == [0xab, 0xcd, 0xef, 0xff],
+                  "Widescreen frame copying must preserve the last native pixel")
     }
 
     static func coinEvents() throws {

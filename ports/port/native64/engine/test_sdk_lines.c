@@ -11,6 +11,8 @@ int rd_discard;
 static unsigned draws;
 static RD_STATE observed_state;
 static RD_VTX observed[4];
+static float horizontal_margin;
+float rd_widescreen_offset(void) { return horizontal_margin; }
 
 const float* nl_xmtrx(void) { return identity; }
 const float* nl_view_matrix(void) { return identity; }
@@ -63,5 +65,15 @@ int main(void) {
     from = (VEC3){0,0,2}; to = (VEC3){1,0,2};
     nlSingleLineUseViewMatrix(&from, &to, 0xffffffff);
     assert(draws == 2);
+    /* Geometry in the new left margin must survive line clipping. These
+     * projected positions remain in logical coordinates until rd_quad adds
+     * the common viewport translation in the production renderer. */
+    nlLineSetThickness(2);
+    horizontal_margin = 107;
+    from = (VEC3){-2.3125f,0,2}; to = (VEC3){-2.0f,0,2};
+    nlSingleLineUseViewMatrix(&from, &to, 0xffffffff);
+    assert(draws == 3);
+    close_to(observed[0].x, -50);
+    close_to(observed[1].x, 0);
     return 0;
 }

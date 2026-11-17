@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-26]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -92,5 +92,7 @@ jobs:
         if: always()
         with:
           name: ARM64-audit-${{ matrix.os }}
-          path: build/arm64-audit.json
+          path: |
+            build/arm64-audit.json
+            build/ios-components/widescreen-fixtures/*.ppm
           if-no-files-found: warn

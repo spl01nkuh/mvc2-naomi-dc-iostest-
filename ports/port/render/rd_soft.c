@@ -42,8 +42,8 @@
 /* rd_q: half draws at half size, each pixel shown as four; fast takes the nearest texel */
 static int scale = 1, draw_w = RD_WIDTH, draw_h = RD_HEIGHT, fast, nofog, nosort;
 
-static float zbuf[RD_WIDTH * RD_HEIGHT];
-static uint32_t cbuf[RD_WIDTH * RD_HEIGHT];     /* ARGB, the alpha kept for the blend factors */
+static float zbuf[RD_MAX_WIDTH * RD_HEIGHT];
+static uint32_t cbuf[RD_MAX_WIDTH * RD_HEIGHT];     /* ARGB, the alpha kept for the blend factors */
 
 /* the translucent fragments, a list a pixel */
 typedef struct {
@@ -53,7 +53,7 @@ typedef struct {
     int next;
 } FRAG;
 
-static int fhead[RD_WIDTH * RD_HEIGHT];
+static int fhead[RD_MAX_WIDTH * RD_HEIGHT];
 
 typedef struct WORKER WORKER;
 
@@ -633,7 +633,7 @@ static void raster(const SETUP* p, WORKER* wk) {
         }
         for (x = xs; x < xe; x++) {
             float z, rz, u = 0, v = 0, ch[8];
-            int at = y * RD_WIDTH + x, level;
+            int at = y * RD_MAX_WIDTH + x, level;
             COLOR base, offs, col;
             if (x > xs) {
                 for (k = 0; k < np; k++) {
@@ -809,7 +809,7 @@ static void log_frame(void) {
             rd_frame->background[2].base, rd_frame->background[0].z);
     e = getenv("MVC2_RDPIX");
     if (e != NULL && sscanf(e, "%d,%d", &px, &py) == 2) {
-        dbg_pix = py * RD_WIDTH + px;
+        dbg_pix = py * RD_MAX_WIDTH + px;
     }
     for (list = 0; list < RD_LISTS; list++) {
         for (i = 0; i < rd_frame->ntris[list];) {
@@ -849,7 +849,7 @@ static void log_frame(void) {
 /* row y's translucent fragments, far to near, into the frame */
 static void resolve_row(const WORKER* w, int y) {
     int idx[MAX_LAYERS], at;
-    for (at = y * RD_WIDTH; at < y * RD_WIDTH + draw_w; at++) {
+    for (at = y * RD_MAX_WIDTH; at < y * RD_MAX_WIDTH + draw_w; at++) {
         int n = 0, i, f;
         for (f = fhead[at]; f >= 0 && n < MAX_LAYERS; f = w->frags[f].next) {
             /* by depth, then order: the list runs newest first */
@@ -886,14 +886,14 @@ static void background_row(int y) {
     if (a->base == b->base && a->base == c->base && a->z == b->z && a->z == c->z && isfinite(a->z) &&
         isfinite(a->x) && isfinite(a->y) && isfinite(b->x) && isfinite(b->y) && isfinite(c->x) && isfinite(c->y)) {
         for (x = 0; x < draw_w; x++) {
-            cbuf[y * RD_WIDTH + x] = a->base;
-            zbuf[y * RD_WIDTH + x] = a->z;
-            fhead[y * RD_WIDTH + x] = -1;
+            cbuf[y * RD_MAX_WIDTH + x] = a->base;
+            zbuf[y * RD_MAX_WIDTH + x] = a->z;
+            fhead[y * RD_MAX_WIDTH + x] = -1;
         }
         return;
     }
     for (x = 0; x < draw_w; x++) {
-        int at = y * RD_WIDTH + x;
+        int at = y * RD_MAX_WIDTH + x;
         double w0 = 1, w1 = 0, w2 = 0;
         if (area != 0) {
             w0 = edge(b, c, x + 0.5, y + 0.5) / area;
@@ -912,7 +912,7 @@ static void background_row(int y) {
 
 /* phase 0: set up a share of the triangles; 1: draw, resolve and copy out the worker's rows */
 static void work(WORKER* w) {
-    int i, y, x;
+    int i, y, x, output_width = rd_width();
     if (phase == 0) {
         int per = (ntotal + nworkers - 1) / nworkers, end = (w->index + 1) * per, base[RD_LISTS + 1], list = 0;
         base[0] = 0;
@@ -940,13 +940,13 @@ static void work(WORKER* w) {
     for (y = first_row(w, 0); y < draw_h; y = next_row(w, y)) {
         resolve_row(w, y);
         if (scale == 1) {
-            for (x = 0; x < RD_WIDTH; x++) {
-                out_frame[y * out_pitch + x] = 0xFF000000u | cbuf[y * RD_WIDTH + x];
+            for (x = 0; x < output_width; x++) {
+                out_frame[y * out_pitch + x] = 0xFF000000u | cbuf[y * RD_MAX_WIDTH + x];
             }
         } else {
             uint32_t* o = &out_frame[2 * y * out_pitch];
-            for (x = 0; x < RD_WIDTH; x++) {
-                o[x] = o[out_pitch + x] = 0xFF000000u | cbuf[y * RD_WIDTH + x / 2];
+            for (x = 0; x < output_width; x++) {
+                o[x] = o[out_pitch + x] = 0xFF000000u | cbuf[y * RD_MAX_WIDTH + x / 2];
             }
         }
     }
@@ -968,7 +968,7 @@ static void take_quality(void) {
     nofog = rd_q.nofog;
     nosort = rd_q.nosort;
     scale = rd_q.half ? 2 : 1;
-    draw_w = RD_WIDTH / scale, draw_h = RD_HEIGHT / scale;
+    draw_w = rd_width() / scale, draw_h = RD_HEIGHT / scale;
 }
 
 /* MVC2_RDTHREADS=n workers, by default one a CPU */
@@ -1035,7 +1035,7 @@ static void report_time(double ms) {
 void rd_end_frame(uint32_t* frame, int pitch) {
     double start = now_ms();
     int list, i;
-    if (frame == NULL || pitch < RD_WIDTH) return;
+    if (frame == NULL || pitch < rd_width()) return;
     if (nworkers == 0) {
         make_tables();
         start_workers();

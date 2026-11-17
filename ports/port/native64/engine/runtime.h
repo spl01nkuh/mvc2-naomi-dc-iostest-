@@ -16,8 +16,14 @@ extern "C" {
 int mvc2_gameplay_start(const char* rom_directory, const char* save_directory,
                         char* error, size_t capacity);
 int mvc2_gameplay_step(const HOST_INPUT* input, char* error, size_t capacity);
-/* Borrowed 640x480 numeric 0xAARRGGBB pixels, valid until the next step/stop. */
+/* Owning thread, between steps. Expands the camera view horizontally; keeps
+ * the game's original HUD safe area and pixel scale. Applied at next step. */
+void mvc2_gameplay_set_widescreen(int enabled);
+/* Borrowed numeric 0xAARRGGBB pixels, tightly packed at frame_width() stride,
+ * valid until the next step/stop. Dimensions are zero when no frame exists. */
 const uint32_t* mvc2_gameplay_frame(void);
+int mvc2_gameplay_frame_width(void);
+int mvc2_gameplay_frame_height(void);
 /* Borrowed interleaved stereo PCM at 44100 Hz; returns sample frames. */
 int mvc2_gameplay_audio(const int16_t** output);
 void mvc2_gameplay_stop(void);

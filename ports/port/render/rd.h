@@ -9,6 +9,19 @@
 
 #define RD_WIDTH 640
 #define RD_HEIGHT 480
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+#define RD_MAX_WIDTH 854
+#else
+#define RD_MAX_WIDTH RD_WIDTH
+#endif
+
+/* Native presentation can expose more world horizontally while retaining
+ * the game's original 640x480 coordinate system, camera scale and HUD. Call
+ * only on the frame owner between completed frames. Existing ports stay 4:3. */
+void rd_set_widescreen(int enabled);
+int rd_width(void);
+int rd_height(void);
+float rd_widescreen_offset(void);
 
 typedef struct {
     float x, y;         /* pixels */

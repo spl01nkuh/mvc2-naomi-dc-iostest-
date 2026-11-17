@@ -1,8 +1,9 @@
 # Marvel vs. Capcom 2 - NAOMI and Dreamcast program source
 
-Native iOS work in this fork is on the `native-ios-port` branch. See
-[`ports/IOS.md`](ports/IOS.md) for its current status. It is not yet a playable
-iPhone release; an IPA will be provided only after gameplay is verified.
+The experimental native iOS gameplay build in this fork is on
+`native-ios-gameplay`, based on upstream release **0.2.1**. It links the native
+arcade game to ZIP import, touch controls, audio and Metal presentation. See
+[`ports/IOS.md`](ports/IOS.md) for building and device-test limitations.
 
 **AI Disclosure**:
 Yes, this used Claude.

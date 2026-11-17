@@ -225,7 +225,7 @@ private final class NativeMetalPresenter: NSObject, MTKViewDelegate {
 
     private func makeUniforms(sourceWidth: Int, sourceHeight: Int, drawable: CGSize) -> PresentationUniforms {
         let aspect: MVC2Aspect
-        switch settings.aspect {
+        switch settings.presentationAspect(sourceWidth: sourceWidth, sourceHeight: sourceHeight) {
         case .fourThree: aspect = MVC2_ASPECT_FOUR_THREE
         case .native: aspect = MVC2_ASPECT_SOURCE
         case .fill: aspect = MVC2_ASPECT_FILL

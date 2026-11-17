@@ -66,7 +66,9 @@ func run() throws {
         throw TestFailure.failed("No output texture")
     }
 
-    func render(mode: Int, strength: Float, rect: SIMD4<Float>? = nil) throws -> [UInt8] {
+    func render(mode: Int, strength: Float, rect: SIMD4<Float>? = nil,
+                sourceTexture: MTLTexture? = nil) throws -> [UInt8] {
+        let sourceTexture = sourceTexture ?? input
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = output
         pass.colorAttachments[0].loadAction = .clear
@@ -78,12 +80,12 @@ func run() throws {
         }
         var uniforms = Uniforms(
             controls: SIMD4(strength, Float(mode), 0, 0),
-            source: SIMD4(Float(inputWidth), Float(inputHeight), 0, 0),
+            source: SIMD4(Float(sourceTexture.width), Float(sourceTexture.height), 0, 0),
             output: SIMD4(Float(outputWidth), Float(outputHeight), 0, 0),
             rect: rect ?? SIMD4(0, 0, Float(outputWidth), Float(outputHeight)))
         try require(MemoryLayout<Uniforms>.stride == 64, "Swift/Metal uniform ABI mismatch")
         encoder.setRenderPipelineState(pipeline)
-        encoder.setFragmentTexture(input, index: 0)
+        encoder.setFragmentTexture(sourceTexture, index: 0)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
@@ -127,6 +129,60 @@ func run() throws {
         try require(empty[offset] == 0 && empty[offset + 1] == 0 && empty[offset + 2] == 0,
                     "Empty viewport is not black")
     }
+    // A native wide frame has more pixels horizontally. Check the production
+    // shader keeps its square marker square and presents both extra margins.
+    let wideWidth = 854, wideHeight = 480
+    let wideDescription = MTLTextureDescriptor.texture2DDescriptor(
+        pixelFormat: .rgba8Unorm, width: wideWidth, height: wideHeight, mipmapped: false)
+    wideDescription.storageMode = .shared
+    wideDescription.usage = .shaderRead
+    guard let wideTexture = device.makeTexture(descriptor: wideDescription) else {
+        throw TestFailure.failed("No widescreen source texture")
+    }
+    var widePixels = [UInt8](repeating: 0, count: wideWidth * wideHeight * 4)
+    for y in 0..<wideHeight {
+        for x in 0..<wideWidth {
+            let offset = (y * wideWidth + x) * 4
+            widePixels[offset + 3] = 255
+            if x < 107 { widePixels[offset] = 255 }
+            if x >= 747 { widePixels[offset + 1] = 255 }
+            if abs(x - 427) < 32 && abs(y - 240) < 32 {
+                widePixels[offset] = 255
+                widePixels[offset + 1] = 255
+                widePixels[offset + 2] = 255
+            }
+        }
+    }
+    widePixels.withUnsafeBytes { bytes in
+        wideTexture.replace(region: MTLRegionMake2D(0, 0, wideWidth, wideHeight),
+                            mipmapLevel: 0, withBytes: bytes.baseAddress!, bytesPerRow: wideWidth * 4)
+    }
+    let fittedHeight = Float(outputWidth) * Float(wideHeight) / Float(wideWidth)
+    let wideRect = SIMD4<Float>(0, (Float(outputHeight) - fittedHeight) / 2,
+                                Float(outputWidth), fittedHeight)
+    let wideOutput = try render(mode: 0, strength: 1, rect: wideRect, sourceTexture: wideTexture)
+    func channel(_ x: Int, _ y: Int, _ component: Int) -> UInt8 {
+        wideOutput[(y * outputWidth + x) * 4 + component]
+    }
+    try require(channel(40, 240, 2) == 255 && channel(600, 240, 1) == 255,
+                "Widescreen presentation lost an expanded side of the native frame")
+    try require(channel(320, 0, 0) == 0 && channel(320, 479, 2) == 0,
+                "Widescreen presentation escaped its proportional viewport")
+    let whiteColumns = (0..<outputWidth).filter {
+        channel($0, 240, 0) > 240 && channel($0, 240, 1) > 240 && channel($0, 240, 2) > 240
+    }.count
+    let whiteRows = (0..<outputHeight).filter {
+        channel(320, $0, 0) > 240 && channel(320, $0, 1) > 240 && channel(320, $0, 2) > 240
+    }.count
+    try require(whiteColumns > 40 && abs(whiteColumns - whiteRows) <= 1,
+                "A square in the native widescreen frame was stretched during presentation")
+    for mode in 1...9 {
+        try require(try render(mode: mode, strength: 0, rect: wideRect,
+                               sourceTexture: wideTexture) == wideOutput,
+                    "Preset \(mode) changes a widescreen image at zero strength")
+        _ = try render(mode: mode, strength: 1, rect: wideRect, sourceTexture: wideTexture)
+    }
+    print("PASS: 854x480 widescreen, proportional pixels, expanded margins, all CRT presets")
     print("PASS: presentation geometry, GPU: \(device.name)")
 }
 

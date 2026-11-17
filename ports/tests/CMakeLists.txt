@@ -99,6 +99,26 @@ else()
 endif()
 add_test(NAME native64_render COMMAND test_native64_render)
 
+add_executable(test_native64_widescreen test_native64_widescreen.c
+    "${PORT}/nl/nl_tex.c" "${PORT}/nl/nl_obj.c" "${PORT}/nl/nl_xmtr.c"
+    "${PORT}/nl/nl_sys.c" "${PORT}/nl/nl_work.c" "${PORT}/naomi/naomi_board.c"
+    "${PORT}/nl/nl_sprite.c" "${PORT}/nl/nl_strip.c"
+    "${GAME}/src/lib/libnaomi/nlmath.c" "${GAME}/src/lib/libnaomi/nlproj.c")
+target_include_directories(test_native64_widescreen PRIVATE "${PORT}/include" "${PORT}/sys"
+    "${PORT}/snd" "${GAME}/include" "${GAME}/src/lib/libnaomi")
+target_compile_definitions(test_native64_widescreen PRIVATE HOST_NATIVE64=1 _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
+target_compile_options(test_native64_widescreen PRIVATE -UNDEBUG -include "${PORT}/include/port_prefix.h"
+    -ffp-contract=off -ffunction-sections -fdata-sections)
+target_link_libraries(test_native64_widescreen PRIVATE mvc2_native_model_store mvc2_native_renderer mvc2_native_host_alloc)
+if(APPLE)
+    target_link_options(test_native64_widescreen PRIVATE "LINKER:-dead_strip")
+else()
+    target_link_options(test_native64_widescreen PRIVATE "LINKER:--gc-sections")
+endif()
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/widescreen-fixtures")
+add_test(NAME native64_widescreen COMMAND test_native64_widescreen
+    "${CMAKE_CURRENT_BINARY_DIR}/widescreen-fixtures")
+
 # Isolated tests execute original engine routines under the experimental
 # native record ABI. Dead stripping removes unrelated SDK routines; no dummy
 # implementations are supplied. The full port still requires its 32-bit ABI.

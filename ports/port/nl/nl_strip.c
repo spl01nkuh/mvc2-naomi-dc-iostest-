@@ -105,6 +105,24 @@ static void strip(int num, int mode, const uint32_t* vt, int translucent) {
         v[i].base = vt[fmt[1]];
         v[i].offset = 0;
     }
+    /* The game's full-screen fade/flash is a screen-space solid strip.
+     * Extend only that exact rectangle to the new viewport boundaries.
+     * World geometry, textured HUD artwork and ordinary strips keep their
+     * original shape and scale. RD supplies the common centre translation. */
+    if (!disp_coord && num == 4 && rd_widescreen_offset() != 0.0f) {
+        int corners = 0;
+        for (i = 0; i < 4; ++i) {
+            int left = v[i].x == 0.0f, right = v[i].x == (float)RD_WIDTH;
+            int top = v[i].y == 0.0f, bottom = v[i].y == (float)RD_HEIGHT;
+            if (!(left || right) || !(top || bottom)) break;
+            corners |= 1 << (right + 2 * bottom);
+        }
+        if (i == 4 && corners == 15) {
+            float margin = rd_widescreen_offset();
+            for (i = 0; i < 4; ++i)
+                v[i].x += v[i].x == 0.0f ? -margin : margin;
+        }
+    }
     rd_strip(&s, v, num);
     PROF_STOP(PZ_NL_STRIP, t0);
 }

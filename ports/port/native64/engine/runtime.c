@@ -23,8 +23,10 @@ static pthread_t owner;
 static int owner_set;
 static int active;
 static int has_frame;
+static int wants_widescreen;
+static int presented_width, presented_height;
 static HOST_INPUT controls;
-static uint32_t pixels[RD_WIDTH * RD_HEIGHT];
+static uint32_t pixels[RD_MAX_WIDTH * RD_HEIGHT];
 static const int16_t* audio_samples;
 static int audio_frames;
 static char save_directory[PATH_MAX];
@@ -66,8 +68,10 @@ int mvc2_gameplay_start(const char* rom, const char* saves, char* error, size_t 
     memcpy(save_directory, saves, strlen(saves) + 1);
     memset(&controls, 0, sizeof controls);
     has_frame = audio_frames = 0;
+    presented_width = presented_height = 0;
     audio_samples = NULL;
     rd_quality("exact");
+    rd_set_widescreen(wants_widescreen);
     rd_begin_frame();
     rd_background(UINT32_C(0xff000000));
     if (!naomi_init(&arc_program, rom)) {
@@ -102,6 +106,20 @@ const uint32_t* mvc2_gameplay_frame(void) {
     return on_owner(0) && active && has_frame ? pixels : NULL;
 }
 
+void mvc2_gameplay_set_widescreen(int enabled) {
+    if (!on_owner(0)) return;
+    wants_widescreen = enabled != 0;
+    if (active) rd_set_widescreen(wants_widescreen);
+}
+
+int mvc2_gameplay_frame_width(void) {
+    return on_owner(0) && active && has_frame ? presented_width : 0;
+}
+
+int mvc2_gameplay_frame_height(void) {
+    return on_owner(0) && active && has_frame ? presented_height : 0;
+}
+
 int mvc2_gameplay_audio(const int16_t** output) {
     if (output) *output = NULL;
     if (!output || !on_owner(0) || !active) return 0;
@@ -117,6 +135,7 @@ void mvc2_gameplay_stop(void) {
     mvc2_game_memory_close();
     mvc2_engine_restore();
     active = has_frame = audio_frames = 0;
+    presented_width = presented_height = 0;
     audio_samples = NULL;
     memset(&controls, 0, sizeof controls);
     save_directory[0] = save_file[0] = 0;
@@ -128,7 +147,9 @@ void mvc2_gameplay_stop(void) {
 const HOST_INPUT* host_input(void) { return &controls; }
 
 void host_present(void) {
-    rd_end_frame(pixels, RD_WIDTH);
+    presented_width = rd_width();
+    presented_height = rd_height();
+    rd_end_frame(pixels, presented_width);
     has_frame = 1;
     rd_begin_frame();
 }

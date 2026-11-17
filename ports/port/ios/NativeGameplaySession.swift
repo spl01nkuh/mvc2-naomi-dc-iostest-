@@ -36,6 +36,7 @@ final class NativeGameplaySession {
     private let condition = NSCondition()
     private var commands: [Command] = []
     private var suspensionRequested = true
+    private var widescreenRequested = false
     private var owner: Thread?
 
     init(input: InputState, frames: NativeFrameStore,
@@ -75,6 +76,13 @@ final class NativeGameplaySession {
         condition.unlock()
     }
 
+    func setWidescreen(_ enabled: Bool) {
+        condition.lock()
+        widescreenRequested = enabled
+        condition.signal()
+        condition.unlock()
+    }
+
     private func send(_ event: NativeGameplayEvent) {
         let receive = self.receive
         // Preserve owner-thread event order when reporting to the UI.
@@ -98,6 +106,7 @@ final class NativeGameplaySession {
             }
             let command = commands.isEmpty ? nil : commands.removeFirst()
             let shouldPause = suspensionRequested
+            let widescreen = widescreenRequested
             condition.unlock()
 
             if let command {
@@ -177,6 +186,9 @@ final class NativeGameplaySession {
             }
 
             autoreleasepool {
+                // Rendering options cross the native boundary on the same
+                // permanent thread as startup, frame steps and shutdown.
+                mvc2_gameplay_set_widescreen(widescreen ? 1 : 0)
                 let snapshot = input.snapshotForFrame()
                 var controls = HOST_INPUT()
                 controls.player = (UInt32(snapshot.buttons), 0)
@@ -196,9 +208,12 @@ final class NativeGameplaySession {
                     return
                 }
 
-                if let pixels = mvc2_gameplay_frame(),
-                   let frame = NativeCanvasFrame(width: 640, height: 480,
-                       argb: UnsafeBufferPointer(start: pixels, count: 640 * 480)) {
+                let width = Int(mvc2_gameplay_frame_width())
+                let height = Int(mvc2_gameplay_frame_height())
+                if width > 0, height > 0, width <= 4096, height <= 4096,
+                   let pixels = mvc2_gameplay_frame(),
+                   let frame = NativeCanvasFrame(width: width, height: height,
+                       argb: UnsafeBufferPointer(start: pixels, count: width * height)) {
                     frames.publish(frame: frame)
                     if !deliveredFrame {
                         deliveredFrame = true

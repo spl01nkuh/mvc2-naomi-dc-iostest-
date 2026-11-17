@@ -16,6 +16,33 @@ static RD_FRAME first_frame;
 RD_FRAME* rd_frame = &first_frame;
 RD_QUALITY rd_q;
 
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+static int native_widescreen;
+#endif
+
+void rd_set_widescreen(int enabled) {
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+    float old_offset = native_widescreen ? (RD_MAX_WIDTH - RD_WIDTH) * 0.5f : 0.0f;
+    float new_offset = enabled ? (RD_MAX_WIDTH - RD_WIDTH) * 0.5f : 0.0f;
+    native_widescreen = enabled != 0;
+    for (int i = 0; i < 3; ++i) rd_frame->background[i].x += new_offset - old_offset;
+#else
+    (void)enabled;
+#endif
+}
+
+int rd_width(void) {
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+    return native_widescreen ? RD_MAX_WIDTH : RD_WIDTH;
+#else
+    return RD_WIDTH;
+#endif
+}
+
+int rd_height(void) { return RD_HEIGHT; }
+
+float rd_widescreen_offset(void) { return (rd_width() - RD_WIDTH) * 0.5f; }
+
 void rd_quality(const char* words) {
     rd_q.half = words != NULL && strstr(words, "half") != NULL;
     rd_q.fast = words != NULL && strstr(words, "fast") != NULL;
@@ -107,6 +134,13 @@ RD_FOG rd_fog;
 
 void rd_background_plane(const RD_VTX* v) {
     memcpy(rd_frame->background, v, sizeof rd_frame->background);
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+    /* The background is an infinite plane defined by these three reference
+     * points. Shift its reference frame with the scene, without stretching
+     * the original colour/depth gradients or leaving uncovered side bars. */
+    float offset = rd_widescreen_offset();
+    for (int i = 0; i < 3; ++i) rd_frame->background[i].x += offset;
+#endif
 }
 
 void rd_background(uint32_t argb) {
@@ -170,6 +204,13 @@ static int add_tri(int list, int state, const RD_VTX* a, const RD_VTX* b, const 
     t->v[0] = *a;
     t->v[1] = *b;
     t->v[2] = *c;
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+    /* One translation for every submission path: models, world sprites,
+     * HUD strips, system text and debug lines all retain their pixel scale.
+     * Model culling separately admits the newly visible world at the sides. */
+    float offset = rd_widescreen_offset();
+    for (int corner = 0; corner < 3; ++corner) t->v[corner].x += offset;
+#endif
 #ifdef __3DS__
     if (rd_seen && !rd_frame->seen[state] && (list != RD_TRANS || !rd_unseen(a, b, c))) {
         rd_frame->seen[state] = 1;

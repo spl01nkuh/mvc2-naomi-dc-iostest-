@@ -7,7 +7,10 @@ import UIKit
 @MainActor
 final class DevelopmentStore: ObservableObject {
     @Published var settings: AppSettings {
-        didSet { saveSettings() }
+        didSet {
+            runtime?.setWidescreen(settings.nativeWidescreen)
+            saveSettings()
+        }
     }
     @Published private(set) var isImporting = false
     @Published private(set) var hasImportedData = false
@@ -88,6 +91,10 @@ final class DevelopmentStore: ObservableObject {
            let style = DirectionStyle(rawValue: String(argument.dropFirst(previewPrefix.count))) {
             restored.directionStyle = style
         }
+        let widescreenPrefix = "--mvc2-widescreen-preview="
+        if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix(widescreenPrefix) }) {
+            restored.nativeWidescreen = argument == widescreenPrefix + "on"
+        }
         #endif
         settings = restored
         settingsURL = preferences
@@ -101,6 +108,7 @@ final class DevelopmentStore: ObservableObject {
         runtime = NativeGameplaySession(input: input, frames: frames) { [weak self] event in
             self?.receive(event)
         }
+        runtime.setWidescreen(settings.nativeWidescreen)
         applicationInactive = UIApplication.shared.applicationState != .active
         interruptions = NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)
             .receive(on: DispatchQueue.main)
