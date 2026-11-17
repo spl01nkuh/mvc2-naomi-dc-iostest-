@@ -73,7 +73,6 @@ set(MVC2_NATIVE_BACKEND_SOURCES
     "${MVC2_NATIVE_PORT}/native64/system_textures.c"
     "${MVC2_NATIVE_PORT}/native64/game_tables.c"
     "${MVC2_NATIVE_PORT}/native64/sdk_native.c"
-    "${CMAKE_CURRENT_LIST_DIR}/program.c"
     "${CMAKE_CURRENT_LIST_DIR}/sdk_board.c"
     "${CMAKE_CURRENT_LIST_DIR}/sdk_lines.c"
     "${CMAKE_CURRENT_LIST_DIR}/sdk_graphics.c")
@@ -113,8 +112,12 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND (APPLE OR CMAKE_SYSTEM_NAME STREQUAL 
     target_compile_definitions(mvc2_native_support_objects PRIVATE MVC2_ENGINE_SECTION_SNAPSHOT=1)
 endif()
 
-add_library(mvc2_native_engine STATIC $<TARGET_OBJECTS:mvc2_native_game_objects>
+# Xcode requires a real source in a static archive assembled from object
+# libraries. The immutable program descriptor needs no writable checkpoint.
+add_library(mvc2_native_engine STATIC "${CMAKE_CURRENT_LIST_DIR}/program.c"
+    $<TARGET_OBJECTS:mvc2_native_game_objects>
     $<TARGET_OBJECTS:mvc2_native_backend_objects> $<TARGET_OBJECTS:mvc2_native_support_objects>)
+target_compile_definitions(mvc2_native_engine PRIVATE HOST_NATIVE64=1)
 target_include_directories(mvc2_native_engine PUBLIC
     "${MVC2_NATIVE_PORT}/include" "${MVC2_NATIVE_PORT}/native64" "${MVC2_NATIVE_PORT}/render"
     "${CMAKE_CURRENT_LIST_DIR}")
@@ -127,8 +130,9 @@ file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/engine-objects-$<CONFIG>.txt" 
 add_custom_target(mvc2_native_inventory
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/inventory.py"
         --nm "${CMAKE_NM}" --objects "${CMAKE_CURRENT_BINARY_DIR}/engine-objects-$<CONFIG>.txt"
+        --definitions-from-archive "$<TARGET_FILE:mvc2_native_engine>"
         --output "${CMAKE_CURRENT_BINARY_DIR}/engine-inventory-$<CONFIG>.json"
-    DEPENDS mvc2_native_game_objects mvc2_native_backend_objects mvc2_native_support_objects
+    DEPENDS mvc2_native_engine
     VERBATIM)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

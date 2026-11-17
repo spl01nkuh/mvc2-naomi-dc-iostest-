@@ -4,7 +4,7 @@
 #include <string.h>
 
 /* A host value outside the engine sections must survive both restores. */
-static int outside_control = 3;
+static volatile int outside_control = 3;
 
 #if defined(__APPLE__)
 #include "engine_sections.h"
@@ -17,10 +17,13 @@ static int outside_control = 3;
 #define ENGINE_BSS __attribute__((section("mvc2_bss")))
 #endif
 
-static int initialized ENGINE_DATA = 17;
-static float fractional ENGINE_DATA = 1.25f;
-static int* native_pointer ENGINE_DATA = &initialized;
-static unsigned char zeroed[512] ENGINE_BSS;
+/* The controller reaches these objects through linker section boundaries,
+ * which the optimizer cannot associate with internal fixture variables.
+ * Retain their storage and observe the memory restored by that other unit. */
+static volatile int initialized ENGINE_DATA __attribute__((used)) = 17;
+static volatile float fractional ENGINE_DATA __attribute__((used)) = 1.25f;
+static volatile int* volatile native_pointer ENGINE_DATA __attribute__((used)) = &initialized;
+static volatile unsigned char zeroed[512] ENGINE_BSS __attribute__((used));
 
 int main(int argc, char** argv) {
     (void)argv;
@@ -35,7 +38,7 @@ int main(int argc, char** argv) {
     fractional = -0.5f;
     native_pointer = &outside_control;
     outside_control = 44;
-    memset(zeroed, 0x5a, sizeof zeroed);
+    for (unsigned index = 0; index < sizeof zeroed; ++index) zeroed[index] = 0x5a;
     assert(mvc2_engine_checkpoint());
     mvc2_engine_restore();
     assert(initialized == 17 && fractional == 1.25f);
