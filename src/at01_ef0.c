@@ -475,7 +475,14 @@ static void at01_ef0_main( PLAYER_WORK *ew )
 			ew->rot[0] = DEG_ANG( to->x ) ;
 			ew->rot[1] = DEG_ANG( to->y ) ;
 			ew->rot[2] = DEG_ANG( to->z ) ;
+#ifdef HOST_NATIVE64
+			/* 49 keys have 48 intervals. Continuing at key 48 reads the
+			   nonexistent key 49 on the next frame of the logo scene. */
+			if( ++ ew->timer1 >= sizeof( at01_ef0_time_tbl ) / sizeof( at01_ef0_time_tbl[0] ) - 1 )
+				ew->routine_0 ++ ;
+#else
 			if( ++ ew->timer1 >= 49U ) ew->routine_0 ++ ;
+#endif
 		}
 		break ;
 	case 1:

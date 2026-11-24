@@ -20,6 +20,7 @@ final class DevelopmentStore: ObservableObject {
     @Published private(set) var gameStatus: NativeGameplayStatus = .stopped
     @Published private(set) var sessionHasFrame = false
     @Published private(set) var audioWarning: String?
+    @Published private(set) var interruptedSessionReport: URL?
     @Published private(set) var isStopping = false
     @Published private(set) var isUserPaused = false
     @Published private(set) var isAudioInterrupted = false
@@ -60,6 +61,8 @@ final class DevelopmentStore: ObservableObject {
         let manager = FileManager.default
         var restored = AppSettings()
         var preferences: URL?
+        var checkpoint: URL?
+        var report: URL?
         var assets: URL?
         var saves: URL?
         var failure: String?
@@ -70,6 +73,18 @@ final class DevelopmentStore: ObservableObject {
                                             appropriateFor: nil, create: true)
             let root = documents.appendingPathComponent("MVC2", isDirectory: true)
             try manager.createDirectory(at: root, withIntermediateDirectories: true)
+            let activeReport = root.appendingPathComponent(".active-session.txt")
+            checkpoint = activeReport
+            if manager.fileExists(atPath: activeReport.path) {
+                let lastReport = root.appendingPathComponent("LastInterruptedSession.txt")
+                do {
+                    try Data(contentsOf: activeReport).write(to: lastReport, options: .atomic)
+                    try manager.removeItem(at: activeReport)
+                    report = lastReport
+                } catch {
+                    report = activeReport
+                }
+            }
             let dataRoot = root.appendingPathComponent("GameData", isDirectory: true)
             try manager.createDirectory(at: dataRoot, withIntermediateDirectories: true)
             assets = dataRoot
@@ -113,10 +128,12 @@ final class DevelopmentStore: ObservableObject {
         savesRoot = saves
         storageFailure = storageError
         settingsFailure = failure
+        interruptedSessionReport = report
+        needsAutomaticStart = report == nil
         if let assets {
             hasImportedData = NativeAssetImporter.existingROM(root: assets) != nil
         }
-        runtime = NativeGameplaySession(input: input, frames: frames) { [weak self] event in
+        runtime = NativeGameplaySession(input: input, frames: frames, checkpoint: checkpoint) { [weak self] event in
             self?.receive(event)
         }
         runtime.setWidescreen(settings.nativeWidescreen)
@@ -136,6 +153,7 @@ final class DevelopmentStore: ObservableObject {
         guard let root = assetsRoot, !isImporting, !isStopping else { return }
         input.releaseAll()
         needsAutomaticStart = false
+        interruptedSessionReport = nil
         isImporting = true
         importFailure = nil
         synchronizeSuspension()
@@ -171,6 +189,7 @@ final class DevelopmentStore: ObservableObject {
             return
         }
         input.releaseAll()
+        interruptedSessionReport = nil
         importFailure = nil
         isUserPaused = false
         audioWarning = nil

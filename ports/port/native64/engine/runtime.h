@@ -16,6 +16,11 @@ extern "C" {
 int mvc2_gameplay_start(const char* rom_directory, const char* save_directory,
                         char* error, size_t capacity);
 int mvc2_gameplay_step(const HOST_INPUT* input, char* error, size_t capacity);
+/* Owning thread, between steps. Current state of the linked arcade task. */
+typedef struct {
+    int task, step, scene, routine, timer;
+} MVC2_GAMEPLAY_PROGRESS;
+MVC2_GAMEPLAY_PROGRESS mvc2_gameplay_progress(void);
 /* Owning thread, between steps. Expands the camera view horizontally; keeps
  * the game's original HUD safe area and pixel scale. Applied at next step. */
 void mvc2_gameplay_set_widescreen(int enabled);

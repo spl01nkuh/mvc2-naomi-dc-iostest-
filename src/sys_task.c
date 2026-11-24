@@ -2,6 +2,9 @@
    system textures are loaded, and each frame runs the system task Sys->task_no picks. */
 #include "player.h"
 #include "naomi.h"
+#ifdef HOST_NATIVE64
+#include "../ports/port/native64/engine/runtime.h"
+#endif
 #ifdef TARGET_DC
 #include "shinobi.h"
 #endif
@@ -32,6 +35,21 @@ static void task_menu( void ) ;
 void Palette_Init( void ) ;
 void Texture_Init( void ) ;
 static void sys_task( void ) ;
+
+#ifdef HOST_NATIVE64
+MVC2_GAMEPLAY_PROGRESS mvc2_gameplay_progress( void )
+{
+	MVC2_GAMEPLAY_PROGRESS progress = { -1, 0, 0, 0, 0 } ;
+	if( Sys ){
+		progress.task = Sys->task_no ;
+		progress.step = Sys->task_step ;
+		progress.scene = Sys->scene_no ;
+		progress.routine = Sys->routine_0 ;
+		progress.timer = Sys->timer0 ;
+	}
+	return progress ;
+}
+#endif
 
 #ifndef TARGET_DC
 /****************************************************************/

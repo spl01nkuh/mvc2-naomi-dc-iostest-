@@ -65,6 +65,11 @@ final class NativeCanvasSurface: UIView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { metalView.setNeedsDisplay() }
+    }
+
     func update(settings: AppSettings, frames: NativeFrameStore) {
         presenter?.settings = settings
         presenter?.frames = frames
@@ -130,6 +135,8 @@ private final class NativeMetalPresenter: NSObject, MTKViewDelegate {
     private let pipeline: MTLRenderPipelineState
     private var texture: MTLTexture?
     private var uploadedGeneration: UInt64?
+    private var frameInFlight = false
+    private var redrawPending = false
 
     init(view: MTKView, settings: AppSettings, frames: NativeFrameStore) throws {
         guard let device = MTLCreateSystemDefaultDevice(),
@@ -168,6 +175,14 @@ private final class NativeMetalPresenter: NSObject, MTKViewDelegate {
     }
 
     func draw(in view: MTKView) {
+        if frameInFlight {
+            redrawPending = true
+            return
+        }
+        guard view.window != nil, view.drawableSize.width > 0, view.drawableSize.height > 0,
+              let pass = view.currentRenderPassDescriptor,
+              let drawable = view.currentDrawable,
+              let command = queue.makeCommandBuffer() else { return }
         let (frame, generation) = frames.snapshot()
         if let frame, uploadedGeneration != generation {
             guard upload(frame: frame) else {
@@ -180,14 +195,12 @@ private final class NativeMetalPresenter: NSObject, MTKViewDelegate {
             texture = nil
             uploadedGeneration = nil
         }
-        guard view.drawableSize.width > 0, view.drawableSize.height > 0,
-              let pass = view.currentRenderPassDescriptor,
-              let drawable = view.currentDrawable,
-              let command = queue.makeCommandBuffer(),
-              let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { return }
+        guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { return }
         if let frame, let texture {
+            let drawableSize = CGSize(width: CGFloat(drawable.texture.width),
+                                      height: CGFloat(drawable.texture.height))
             var uniforms = makeUniforms(sourceWidth: frame.width, sourceHeight: frame.height,
-                                        drawable: view.drawableSize)
+                                        drawable: drawableSize)
             encoder.setRenderPipelineState(pipeline)
             encoder.setFragmentTexture(texture, index: 0)
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<PresentationUniforms>.stride, index: 0)
@@ -196,31 +209,44 @@ private final class NativeMetalPresenter: NSObject, MTKViewDelegate {
         // An empty session only clears to black. It never substitutes a demo
         // image for a frame from the native game renderer.
         encoder.endEncoding()
-        command.addCompletedHandler { [weak self] completed in
-            guard completed.status == .error else { return }
-            let message = completed.error?.localizedDescription ?? "The GPU could not present the image."
-            DispatchQueue.main.async { self?.onError?(message) }
+        frameInFlight = true
+        command.addCompletedHandler { [weak self, weak view] completed in
+            let error = completed.status == .error
+                ? completed.error?.localizedDescription ?? "The GPU could not present the image."
+                : nil
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.frameInFlight = false
+                if let error { self.onError?(error) }
+                if self.redrawPending {
+                    self.redrawPending = false
+                    view?.setNeedsDisplay()
+                }
+            }
         }
         command.present(drawable)
         command.commit()
     }
 
     private func upload(frame: NativeCanvasFrame) -> Bool {
-        // A new immutable upload avoids writing to a texture still in flight.
-        // The software renderer produces CPU frames. A future native GPU
-        // renderer can supply textures directly through a separate producer.
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: frame.width, height: frame.height, mipmapped: false
-        )
-        descriptor.usage = .shaderRead
-        descriptor.storageMode = .shared
-        guard let next = device.makeTexture(descriptor: descriptor) else { return false }
-        frame.rgba.withUnsafeBytes { bytes in
-            next.replace(region: MTLRegionMake2D(0, 0, frame.width, frame.height),
-                         mipmapLevel: 0, withBytes: bytes.baseAddress!, bytesPerRow: frame.width * 4)
+        // draw(in:) only uploads after the previous command completes, so a
+        // matching texture can be reused without overwriting GPU input.
+        if texture?.width != frame.width || texture?.height != frame.height {
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .rgba8Unorm, width: frame.width, height: frame.height, mipmapped: false
+            )
+            descriptor.usage = .shaderRead
+            descriptor.storageMode = .shared
+            guard let next = device.makeTexture(descriptor: descriptor) else { return false }
+            texture = next
         }
-        texture = next
-        return true
+        guard let texture else { return false }
+        return frame.rgba.withUnsafeBytes { bytes in
+            guard let pixels = bytes.baseAddress else { return false }
+            texture.replace(region: MTLRegionMake2D(0, 0, frame.width, frame.height),
+                            mipmapLevel: 0, withBytes: pixels, bytesPerRow: frame.width * 4)
+            return true
+        }
     }
 
     private func makeUniforms(sourceWidth: Int, sourceHeight: Int, drawable: CGSize) -> PresentationUniforms {

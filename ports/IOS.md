@@ -52,6 +52,10 @@ prefer that to proportional fit. Real stage edges still need device testing.
 
 Imported assets live in `Documents/MVC2/GameData`, settings in
 `Documents/MVC2/settings.json`, and game backups in `Documents/MVC2/SaveData`.
+If the app closes with the game active, the next launch offers **Start Game**
+and **Share session report**. The report contains the last recorded engine
+task, frame, and build number. It is also saved as
+`Documents/MVC2/LastInterruptedSession.txt`.
 
 ## Runtime and validation
 
