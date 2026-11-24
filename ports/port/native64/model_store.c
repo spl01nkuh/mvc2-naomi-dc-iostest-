@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { MAX_FILES = 256, MAX_MODELS = 64 };
+enum { MAX_FILES = 256, MAX_MODELS = 64, MAX_PACKED_TEXTURE_BYTES = 4 * 1024 * 1024 };
 typedef struct FileExtent {
     size_t offset, size;
     uint64_t generation;
@@ -12,6 +12,7 @@ typedef struct FileExtent {
 typedef struct ModelEntry {
     size_t offset;
     uint64_t model_generation, texture_generation;
+    int packed_texture;
     MVC2HostObjectFile file;
     MVC2NativeModel* owner;
 } ModelEntry;
@@ -20,6 +21,9 @@ static ModelEntry* models[MAX_MODELS];
 static size_t file_count, model_count;
 static uint64_t generation;
 
+static uint16_t le16(const uint8_t* bytes) {
+    return (uint16_t)(bytes[0] | (uint16_t)bytes[1] << 8);
+}
 static uint32_t le32(const uint8_t* bytes) {
     return (uint32_t)bytes[0] | (uint32_t)bytes[1] << 8 |
         (uint32_t)bytes[2] << 16 | (uint32_t)bytes[3] << 24;
@@ -54,7 +58,60 @@ static const FileExtent* find_file(size_t offset) {
         if (files[i].offset == offset && files[i].size) return &files[i];
     return NULL;
 }
-MVC2HostObjectFile* mvc2_model_store_get(void* model_bytes) {
+/* The card notice uses the game's word-LZ stream, with an explicit zero-copy
+ * terminator. With output NULL this validates the stream and measures it. */
+static int unpack_lz16(const uint8_t* input, size_t input_size, uint8_t* output,
+                       size_t capacity, size_t* output_size) {
+    size_t pos = 0, words = 0;
+    uint16_t flags = 0, bit = 0;
+    while (pos + 2 <= input_size) {
+        if (!bit) {
+            flags = le16(input + pos);
+            pos += 2;
+            bit = 0x8000;
+        }
+        if (pos + 2 > input_size) return 0;
+        uint16_t token = le16(input + pos);
+        pos += 2;
+        if (flags & bit) {
+            size_t back = token & 0x7ff, count = token >> 11;
+            if (!count) {
+                if (pos + 2 > input_size) return 0;
+                count = le16(input + pos);
+                pos += 2;
+            }
+            if (!count) {
+                if (back) return 0;
+                *output_size = words * 2;
+                return 1;
+            }
+            if (back > words || count > capacity / 2 - words) return 0;
+            if (output) {
+                for (size_t i = 0; i < count; ++i) {
+                    uint8_t* dst = output + (words + i) * 2;
+                    if (back) {
+                        const uint8_t* src = output + (words + i - back) * 2;
+                        dst[0] = src[0];
+                        dst[1] = src[1];
+                    } else {
+                        dst[0] = dst[1] = 0;
+                    }
+                }
+            }
+            words += count;
+        } else {
+            if (words == capacity / 2) return 0;
+            if (output) {
+                output[words * 2] = (uint8_t)token;
+                output[words * 2 + 1] = (uint8_t)(token >> 8);
+            }
+            ++words;
+        }
+        bit >>= 1;
+    }
+    return 0;
+}
+static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes) {
     size_t offset;
     if (!ram_offset(model_bytes, 16, &offset)) return NULL;
     const FileExtent* source = find_file(offset);
@@ -65,11 +122,14 @@ MVC2HostObjectFile* mvc2_model_store_get(void* model_bytes) {
     size_t relative = texture_table - (table - 16);
     if (relative > source->size || source->size - relative < 2) return NULL;
     const FileExtent* textures = NULL;
-    if (bytes[relative] || bytes[relative + 1]) {
-        if (source->size - relative < 16) return NULL;
+    if (packed_bytes || le16(bytes + relative)) {
         size_t texture_offset;
-        if (mvc2_memory_offset(le32(bytes + relative + 8), 1, &texture_offset) != MVC2_MEMORY_OK)
+        if (packed_bytes) {
+            if (!ram_offset(packed_bytes, 1, &texture_offset)) return NULL;
+        } else if (source->size - relative < 16 ||
+                   mvc2_memory_offset(le32(bytes + relative + 8), 1, &texture_offset) != MVC2_MEMORY_OK) {
             return NULL;
+        }
         textures = find_file(texture_offset);
         if (!textures) return NULL;
     }
@@ -78,11 +138,30 @@ MVC2HostObjectFile* mvc2_model_store_get(void* model_bytes) {
         if (models[i]->offset == offset) { entry = models[i]; break; }
     uint64_t texture_generation = textures ? textures->generation : 0;
     if (entry && entry->model_generation == source->generation &&
-        entry->texture_generation == texture_generation) return &entry->file;
+        entry->texture_generation == texture_generation &&
+        entry->packed_texture == (packed_bytes != NULL)) return &entry->file;
+
+    const uint8_t* texture_bytes = textures ? host_native64_ram + textures->offset : NULL;
+    size_t texture_size = textures ? textures->size : 0;
+    uint8_t* unpacked = NULL;
+    if (packed_bytes) {
+        size_t decoded_size;
+        if (!unpack_lz16(texture_bytes, texture_size, NULL, MAX_PACKED_TEXTURE_BYTES,
+                         &decoded_size) || !decoded_size) return NULL;
+        unpacked = malloc(decoded_size);
+        if (!unpacked) return NULL;
+        if (!unpack_lz16(texture_bytes, texture_size, unpacked, decoded_size, &decoded_size)) {
+            free(unpacked);
+            return NULL;
+        }
+        texture_bytes = unpacked;
+        texture_size = decoded_size;
+    }
     MVC2NativeModel* owner = NULL;
-    if (mvc2_native_model_decode(bytes, source->size,
-        textures ? host_native64_ram + textures->offset : NULL,
-        textures ? textures->size : 0, &owner) != MVC2_NATIVE_MODEL_OK) return NULL;
+    MVC2NativeModelStatus status = mvc2_native_model_decode(bytes, source->size,
+                                                           texture_bytes, texture_size, &owner);
+    free(unpacked);
+    if (status != MVC2_NATIVE_MODEL_OK) return NULL;
     if (!entry) {
         if (model_count == MAX_MODELS) { mvc2_native_model_free(owner); return NULL; }
         entry = calloc(1, sizeof(*entry));
@@ -95,8 +174,16 @@ MVC2HostObjectFile* mvc2_model_store_get(void* model_bytes) {
     entry->owner = owner;
     entry->model_generation = source->generation;
     entry->texture_generation = texture_generation;
+    entry->packed_texture = packed_bytes != NULL;
     mvc2_native_model_free(previous);
     return &entry->file;
+}
+MVC2HostObjectFile* mvc2_model_store_get(void* model_bytes) {
+    return get_model(model_bytes, NULL);
+}
+MVC2HostObjectFile* mvc2_model_store_get_packed_texture(void* model_bytes,
+                                                       const void* packed_bytes) {
+    return packed_bytes ? get_model(model_bytes, packed_bytes) : NULL;
 }
 void mvc2_model_store_reset(void) {
     for (size_t i = 0; i < model_count; ++i) {

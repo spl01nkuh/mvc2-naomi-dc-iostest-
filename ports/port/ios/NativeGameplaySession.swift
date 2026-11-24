@@ -90,7 +90,9 @@ final class NativeGameplaySession {
     }
 
     private func run() {
-        let audio = NativeAudioOutput()
+        // Prepare the system audio graph only once a game is ready to run.
+        var sound: NativeAudioOutput?
+        var audioActivationAttempted = false
         let period = 858.0 * 525.0 / 27_000_000.0
         var active = false
         var paused = true
@@ -112,10 +114,11 @@ final class NativeGameplaySession {
             if let command {
                 switch command {
                 case .start(let rom, let saves):
-                    audio.suspend()
+                    sound?.suspend()
                     if active { mvc2_gameplay_stop() }
                     active = false
                     paused = true
+                    audioActivationAttempted = false
                     deliveredFrame = false
                     input.releaseAll()
                     frames.clear()
@@ -139,10 +142,11 @@ final class NativeGameplaySession {
                         if shouldPause { send(.status(.paused)) }
                     }
                 case .stop(let continuation):
-                    audio.suspend()
+                    sound?.suspend()
                     if active { mvc2_gameplay_stop() }
                     active = false
                     paused = true
+                    audioActivationAttempted = false
                     input.releaseAll()
                     frames.clear()
                     send(.audioWarning(nil))
@@ -154,7 +158,8 @@ final class NativeGameplaySession {
 
             if shouldPause {
                 if !paused {
-                    audio.suspend()
+                    sound?.suspend()
+                    audioActivationAttempted = false
                     input.releaseAll()
                     paused = true
                     send(.status(.paused))
@@ -162,14 +167,6 @@ final class NativeGameplaySession {
                 continue
             }
             if paused {
-                do {
-                    try audio.resume()
-                    send(.audioWarning(nil))
-                } catch {
-                    // A route/session failure leaves the real native renderer
-                    // usable and is reported separately from an engine failure.
-                    send(.audioWarning(error.localizedDescription))
-                }
                 paused = false
                 nextFrame = ProcessInfo.processInfo.systemUptime
                 send(.status(.running))
@@ -197,7 +194,7 @@ final class NativeGameplaySession {
                 var error = [CChar](repeating: 0, count: 2048)
                 let capacity = error.count
                 if mvc2_gameplay_step(&controls, &error, capacity) == 0 {
-                    audio.suspend()
+                    sound?.suspend()
                     mvc2_gameplay_stop()
                     active = false
                     paused = true
@@ -220,10 +217,23 @@ final class NativeGameplaySession {
                         send(.firstFrame)
                     }
                 }
+                // A successful native frame precedes audio activation. A
+                // route can fail independently of starting the game engine.
+                if !audioActivationAttempted {
+                    audioActivationAttempted = true
+                    let audio = sound ?? NativeAudioOutput()
+                    sound = audio
+                    do {
+                        try audio.resume()
+                        send(.audioWarning(nil))
+                    } catch {
+                        send(.audioWarning(error.localizedDescription))
+                    }
+                }
                 var samples: UnsafePointer<Int16>?
                 let sampleFrames = mvc2_gameplay_audio(&samples)
                 if sampleFrames > 0, let samples {
-                    audio.enqueue(interleaved: samples, frames: Int(sampleFrames))
+                    sound?.enqueue(interleaved: samples, frames: Int(sampleFrames))
                 }
             }
 

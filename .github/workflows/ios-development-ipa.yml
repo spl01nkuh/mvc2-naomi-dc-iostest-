@@ -35,7 +35,15 @@ jobs:
         run: |
           python3 ports/port/ios/verify-development-ipa.py build/ios-development-device/MVC2-Gameplay-unsigned.ipa
           xcrun vtool -show-build build/ios-development-device/Release-iphoneos/MVC2Development.app/MVC2Development
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: MVC2-Gameplay-unsigned
+          path: |
+            build/ios-development-device/MVC2-Gameplay-unsigned.ipa
+            build/ios-development-device/SHA256.txt
+          if-no-files-found: error
       - name: Launch simulator gameplay host
+        timeout-minutes: 12
         run: |
           device_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for group in d["devices"].values() for v in group if v["name"].startswith("iPhone")))')"
           xcrun simctl bootstatus "$device_id" -b
@@ -45,17 +53,10 @@ jobs:
           xcrun simctl io "$device_id" screenshot build/ios-development-simulator/launch.png
           for style in dpad stick; do
             xcrun simctl terminate "$device_id" com.spl01nkuh.mvc2.native.dev
-            xcrun simctl launch "$device_id" com.spl01nkuh.mvc2.native.dev "--mvc2-controls-preview=$style" --mvc2-widescreen-preview=on
+            xcrun simctl launch "$device_id" com.spl01nkuh.mvc2.native.dev "--mvc2-controls-preview=$style" --mvc2-directions-preview=transparent --mvc2-widescreen-preview=on
             sleep 2
             xcrun simctl io "$device_id" screenshot "build/ios-development-simulator/controls-$style.png"
           done
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: MVC2-Gameplay-unsigned
-          path: |
-            build/ios-development-device/MVC2-Gameplay-unsigned.ipa
-            build/ios-development-device/SHA256.txt
-          if-no-files-found: error
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: MVC2-Gameplay-simulator-launch

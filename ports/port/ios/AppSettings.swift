@@ -77,6 +77,7 @@ struct AppSettings: Codable {
     var stickSensitivity = 0.5
     var stickDeadZone = 0.0
     var directionStyle: DirectionStyle = .hybrid
+    var transparentDirections = true
     var controls = TouchControl.defaults
 
     /// Fit the actual last frame through a render-mode transition. In
@@ -92,7 +93,8 @@ struct AppSettings: Codable {
     private enum CodingKeys: String, CodingKey {
         case filter, filterStrength, aspect, nativeWidescreen
         case screenScale, screenWidth, screenHeight, screenOffsetX, screenOffsetY
-        case touchEnabled, touchOpacity, stickSensitivity, stickDeadZone, directionStyle, controls
+        case touchEnabled, touchOpacity, stickSensitivity, stickDeadZone, directionStyle
+        case transparentDirections, controls
     }
 
     init() {}
@@ -116,6 +118,7 @@ struct AppSettings: Codable {
         stickSensitivity = try values.decodeIfPresent(Double.self, forKey: .stickSensitivity) ?? stickSensitivity
         stickDeadZone = try values.decodeIfPresent(Double.self, forKey: .stickDeadZone) ?? stickDeadZone
         directionStyle = try values.decodeIfPresent(DirectionStyle.self, forKey: .directionStyle) ?? directionStyle
+        transparentDirections = try values.decodeIfPresent(Bool.self, forKey: .transparentDirections) ?? transparentDirections
         controls = try values.decodeIfPresent([TouchControl].self, forKey: .controls) ?? controls
     }
 

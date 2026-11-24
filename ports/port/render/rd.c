@@ -18,13 +18,36 @@ RD_QUALITY rd_q;
 
 #if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
 static int native_widescreen;
+static int native_widescreen_requested;
 #endif
+
+void rd_set_widescreen_preference(int enabled) {
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+    native_widescreen_requested = enabled != 0;
+#else
+    (void)enabled;
+#endif
+}
+
+void rd_begin_stage_scene(void) {
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+    if (!native_widescreen_requested || rd_frame->nputs != 0) return;
+    /* Keep the frame narrow if another drawing pass has already used the
+     * original viewport. All geometry uses one origin and clip width. */
+    for (int i = 0; i < RD_LISTS; ++i) {
+        if (rd_frame->ntris[i] != 0) return;
+    }
+    rd_set_widescreen(1);
+#endif
+}
 
 void rd_set_widescreen(int enabled) {
 #if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+    enabled = enabled != 0;
+    if (native_widescreen == enabled) return;
     float old_offset = native_widescreen ? (RD_MAX_WIDTH - RD_WIDTH) * 0.5f : 0.0f;
     float new_offset = enabled ? (RD_MAX_WIDTH - RD_WIDTH) * 0.5f : 0.0f;
-    native_widescreen = enabled != 0;
+    native_widescreen = enabled;
     for (int i = 0; i < 3; ++i) rd_frame->background[i].x += new_offset - old_offset;
 #else
     (void)enabled;
@@ -114,6 +137,9 @@ static int grow_part(RD_FRAME* f, int list) {
 
 void rd_begin_frame(void) {
     int i;
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+    rd_set_widescreen(0);
+#endif
 #ifdef __3DS__
     share_pool(rd_frame);
 #else

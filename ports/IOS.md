@@ -35,21 +35,20 @@ In the app:
    The importer streams and validates all 17 required ROM chips, then commits
    them atomically. A failed import preserves the previous set. Dreamcast disc
    images are not supported by this importer.
-2. Choose **Start Game**. After the native game boots, use **Insert Coin** and
-   the touch **START** control. Startup failures appear in the app.
-3. Use **Layout** for control position, size, labels and custom simultaneous
-   buttons. D-pad, analog and hybrid styles have scalable vector artwork,
-   direction feedback and a moving stick grip.
+2. The game opens automatically after import and when the app launches with
+   a validated ROM. Use the floating **Insert Coin** button and touch **START**.
+3. Open the floating options menu for **Touch Layout**. It has control position,
+   size, labels and custom simultaneous buttons. Turn **Transparent D-pad / stick**
+   on or off in **Settings**.
 4. Use **Settings** for native widescreen, touch tuning, CRT presets, filter
    strength, scale, independent width/height and offsets. The CRT presets are
    original lightweight approximations of their named shader families.
 
-Native widescreen expands the rendered world horizontally at the same pixel
-scale, from 640×480 to 854×480. The original 640-pixel HUD safe area stays
-centered; it does not change game physics or the original camera's movement
-limits. Some stage edges and effects whose lifetimes use the original logical
-screen may become visible and still require real-asset testing. Turn the option
-off to return to the original viewport. Geometry/Fill controls remain separate.
+Native widescreen expands loaded 3D fights from 640×480 to 854×480 at the same
+pixel scale, with the original HUD centered. Title, selection, and menu frames
+use the original clipping so their offscreen geometry stays hidden. The display
+extends behind the floating controls. **Fill** uses the full display if you
+prefer that to proportional fit. Real stage edges still need device testing.
 
 Imported assets live in `Documents/MVC2/GameData`, settings in
 `Documents/MVC2/settings.json`, and game backups in `Documents/MVC2/SaveData`.

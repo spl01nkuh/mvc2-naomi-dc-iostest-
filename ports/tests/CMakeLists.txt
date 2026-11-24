@@ -83,6 +83,7 @@ target_compile_definitions(mvc2_native_renderer PRIVATE RD_NATIVE_SYSTEM=1)
 target_compile_options(mvc2_native_renderer PRIVATE -Wall -Wextra -Werror -ffp-contract=off)
 target_link_libraries(mvc2_native_renderer PUBLIC Threads::Threads m)
 add_executable(test_native64_render test_native64_render.c
+    "${GAME}/src/tex_load.c"
     "${PORT}/nl/nl_tex.c" "${PORT}/nl/nl_obj.c" "${PORT}/nl/nl_xmtr.c"
     "${PORT}/nl/nl_sys.c" "${PORT}/nl/nl_work.c" "${PORT}/naomi/naomi_board.c"
     "${GAME}/src/lib/libnaomi/nlproj.c")
@@ -152,6 +153,7 @@ function(mvc2_core_test name)
     add_test(NAME ${name} COMMAND test_${name})
 endfunction()
 mvc2_core_test(native64_load_queue "${PORT}/native64/tests/test_load_queue.c")
+mvc2_core_test(native64_attract_queue LEGACY_WARNINGS "${PORT}/native64/tests/test_attract_queue.c")
 mvc2_core_test(native64_effect_words LEGACY_WARNINGS "${PORT}/native64/tests/test_effect_words.c" "${GAME}/src/work.c")
 mvc2_core_test(native64_effect_thanos LEGACY_WARNINGS "${PORT}/native64/tests/test_effect_thanos.c"
     "${GAME}/src/pl_char.c" "${GAME}/src/hit_work.c" "${GAME}/src/work.c")
@@ -194,15 +196,18 @@ mvc2_core_test(native64_game_records "${PORT}/native64/tests/test_game_records.c
 mvc2_core_test(native64_work_pool "${PORT}/native64/tests/test_work_pool.c"
     "${GAME}/src/hit_work.c" "${GAME}/src/work.c")
 mvc2_core_test(native64_cpu_commands "${PORT}/native64/tests/test_cpu_commands.c"
-    "${GAME}/src/em_cmd.c" "${GAME}/src/o_sub1.c" "${GAME}/src/work.c" "${GAME}/src/em_tbl.c")
+    "${GAME}/src/em_cmd.c" "${GAME}/src/o_sub1.c" "${GAME}/src/work.c" "${GAME}/src/em_tbl.c"
+    "${GAME}/src/pl_com.c")
 mvc2_core_test(native64_game_records_dc DREAMCAST "${PORT}/native64/tests/test_game_records.c" "${GAME}/src/obj_uv.c")
 mvc2_core_test(native64_work_pool_dc DREAMCAST "${PORT}/native64/tests/test_work_pool.c"
     "${GAME}/src/hit_work.c" "${GAME}/src/work.c")
 mvc2_core_test(native64_cpu_commands_dc DREAMCAST "${PORT}/native64/tests/test_cpu_commands.c"
-    "${GAME}/src/em_cmd.c" "${GAME}/src/o_sub1.c" "${GAME}/src/work.c" "${GAME}/src/em_tbl.c")
+    "${GAME}/src/em_cmd.c" "${GAME}/src/o_sub1.c" "${GAME}/src/work.c" "${GAME}/src/em_tbl.c"
+    "${GAME}/src/pl_com.c")
 set_source_files_properties("${GAME}/src/obj_uv.c" PROPERTIES COMPILE_OPTIONS "-Wno-unused-variable")
 set_source_files_properties("${GAME}/src/hit_work.c" PROPERTIES COMPILE_OPTIONS "-Wno-unused-parameter;-Wno-unused-value")
 set_source_files_properties("${GAME}/src/em_cmd.c" PROPERTIES COMPILE_OPTIONS "-Wno-unused-parameter")
+set_source_files_properties("${GAME}/src/pl_com.c" PROPERTIES COMPILE_OPTIONS "-Wno-parentheses;-Wno-unused-parameter")
 foreach(component IN ITEMS input viewport)
     add_executable(test_ios_${component} test_ios_${component}.c)
     target_link_libraries(test_ios_${component} PRIVATE mvc2_ios_controls)

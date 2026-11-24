@@ -11,9 +11,9 @@ from this directory. The unsigned artifact is
 `build/ios-development-device/MVC2-Gameplay-unsigned.ipa` at the repository
 root. Sign it with your sideloading tool before device installation. iOS 16 or
 later is required. Import the supported complete NAOMI `mvsc2.zip` through the
-app's Import ZIP button, then choose Start Game. Dreamcast disc ZIPs are not
-supported by this importer. Insert Coin supplies arcade credit events; the
-editable Start touch control supplies the player start switch.
+app's Import ZIP button. The game starts automatically once a validated import
+is available. Use the floating coin button to add credit and touch START to
+begin a match. The importer supports NAOMI cartridge ZIPs.
 
 - `NativeAssetImporter.swift` imports the complete NAOMI `mvsc2.zip` through
   Files, validates it with `assets/`, and returns a private persistent directory.

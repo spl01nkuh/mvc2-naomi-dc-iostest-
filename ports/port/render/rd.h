@@ -15,9 +15,13 @@
 #define RD_MAX_WIDTH RD_WIDTH
 #endif
 
-/* Native presentation can expose more world horizontally while retaining
- * the game's original 640x480 coordinate system, camera scale and HUD. Call
- * only on the frame owner between completed frames. Existing ports stay 4:3. */
+/* Each frame starts with the original 640x480 clip bounds. Only the stage
+ * draw enables the wider bounds, before submitting geometry. Presentation
+ * reads the resulting width after the last draw and before rd_begin_frame. */
+void rd_set_widescreen_preference(int enabled);
+void rd_begin_stage_scene(void);
+
+/* Low-level viewport change, valid before submitting any frame geometry. */
 void rd_set_widescreen(int enabled);
 int rd_width(void);
 int rd_height(void);

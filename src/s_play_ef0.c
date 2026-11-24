@@ -9,6 +9,9 @@ void s_play_ef0_set( int no )
 {
 	PLAYER_WORK *ew ;
 
+#ifdef HOST_NATIVE64
+	if( !obj_dm0a || no < 0 || no >= obj_dm0a->cnt || !obj_dm0a->obj[no] ) return ;
+#endif
 	if( ( ew = work_get( 0, W_SYS, LIST_END ) ) ){
 		ew->disp_flag = 0 ;
 		ew->type = no ;

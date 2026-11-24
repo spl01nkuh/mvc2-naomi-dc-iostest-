@@ -24,30 +24,37 @@ struct DevelopmentContentView: View {
         }
     }
 
-    private var overlaySuspended: Bool {
-        showImporter || showOptions || sheet != nil || store.isImporting || store.isStopping ||
-            scenePhase != .active || store.isAudioInterrupted ||
-            (store.isUserPaused && !editingControls)
+    private var hostSuspended: Bool {
+        showImporter || showOptions || sheet != nil || editingControls || scenePhase != .active
     }
 
-    private var gameplaySuspended: Bool { overlaySuspended || editingControls }
+    private var touchSuspended: Bool {
+        showImporter || showOptions || sheet != nil || store.isImporting || store.isStopping ||
+            scenePhase != .active || store.isAudioInterrupted ||
+            (!editingControls && (store.isUserPaused || store.gameStatus != .running))
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            toolbar
-            ZStack {
-                NativeCanvasView(settings: store.settings, frames: store.frames)
-                developmentNotice
+        ZStack {
+            Color.black.ignoresSafeArea()
+            NativeCanvasView(settings: store.settings, frames: store.frames)
+                .ignoresSafeArea()
+
+            if store.sessionHasFrame || editingControls || store.showsControlPreview {
                 TouchOverlay(settings: $store.settings, input: store.input,
-                             editing: editingControls, suspended: overlaySuspended) { id in
+                             editing: editingControls, suspended: touchSuspended) { id in
                     sheet = .control(id)
                 }
                 .accessibilityLabel(editingControls ? "Touch control layout editor" : "Touch controls")
             }
-            .clipped()
-            footer
+
+            notice
+
+            floatingControls
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(8)
         }
-        .background(Color.black)
+        .statusBarHidden(true)
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.zip],
                       allowsMultipleSelection: false) { result in
             switch result {
@@ -56,14 +63,6 @@ struct DevelopmentContentView: View {
             case .failure(let error):
                 store.reportPickerFailure(error)
             }
-        }
-        .confirmationDialog("Game options", isPresented: $showOptions, titleVisibility: .visible) {
-            if store.gameStatus.isOpen {
-                Button("Import ZIP") { showImporter = true }.disabled(!store.canImport)
-            }
-            Button("Touch Layout") { editingControls = true }.disabled(store.isImporting)
-            Button("Settings") { sheet = .settings }
-            Button("Cancel", role: .cancel) { }
         }
         .sheet(item: $sheet) { route in
             NavigationStack {
@@ -75,166 +74,124 @@ struct DevelopmentContentView: View {
                     }
             }
         }
-        .onChange(of: overlaySuspended) { suspended in
+        .onChange(of: touchSuspended) { suspended in
             if suspended { store.input.releaseAll() }
         }
-        .onChange(of: gameplaySuspended) { store.setHostSuspended($0) }
-        .onAppear { store.setHostSuspended(gameplaySuspended) }
+        .onChange(of: hostSuspended) { store.setHostSuspended($0) }
+        .onAppear { store.setHostSuspended(hostSuspended) }
         .onDisappear { store.setHostSuspended(true) }
         .onChange(of: editingControls) { _ in store.input.releaseAll() }
-        .onChange(of: scenePhase) { phase in
-            if phase != .active {
-                store.input.releaseAll()
-                store.saveSettings()
-            }
-        }
     }
 
-    private var toolbar: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("MVC2").font(.headline)
-                Text("EXPERIMENTAL NATIVE")
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.orange)
-            }
-            Spacer(minLength: 8)
+    private var floatingControls: some View {
+        HStack(spacing: 8) {
             if editingControls {
-                Text("Drag to move · Tap to edit")
-                    .font(.caption).foregroundStyle(.secondary)
                 Button("All controls") { sheet = .controls }
+                    .buttonStyle(.bordered)
                 Button("Done") { editingControls = false }
                     .buttonStyle(.borderedProminent)
             } else {
                 if store.gameStatus.isOpen {
-                    Button(store.isUserPaused ? "Resume" : "Pause") { store.togglePause() }
-                        .disabled(!store.canPause || store.isStopping)
-                    Button { Task { await store.stopGame() } } label: {
-                        Label("Stop Game", systemImage: "stop.fill")
-                    }.disabled(store.isStopping)
-                        .labelStyle(.iconOnly)
-                } else {
-                    Button("Start Game") { store.startGame() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!store.canStart)
+                    overlayButton("Insert Coin", icon: "centsign.circle") {
+                        _ = store.input.insertCoin()
+                    }
+                    .disabled(touchSuspended || !store.sessionHasFrame)
                 }
-                if !store.gameStatus.isOpen {
-                    Button("Import ZIP") { showImporter = true }
-                        .disabled(!store.canImport)
+                overlayButton("Game options", icon: "ellipsis") {
+                    showOptions = true
                 }
-                Button { showOptions = true } label: {
-                    Label("Options", systemImage: "ellipsis.circle")
-                }.labelStyle(.iconOnly)
+                .confirmationDialog("Game options", isPresented: $showOptions, titleVisibility: .visible) {
+                    if store.canPause {
+                        Button(store.isUserPaused ? "Resume" : "Pause") { store.togglePause() }
+                    }
+                    if store.gameStatus.isOpen {
+                        Button("Stop Game") { Task { await store.stopGame() } }
+                            .disabled(store.isStopping)
+                    }
+                    Button("Import ZIP") { showImporter = true }.disabled(!store.canImport)
+                    Button("Touch Layout") { editingControls = true }.disabled(store.isImporting)
+                    Button("Settings") { sheet = .settings }
+                    Button("Cancel", role: .cancel) {}
+                }
             }
         }
-        .font(.subheadline)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 9)
-        .background(.ultraThinMaterial)
     }
 
-    private var developmentNotice: some View {
-        Group {
-            if !store.sessionHasFrame || editingControls || store.gameFailure != nil ||
-                store.audioWarning != nil || store.isUserPaused || store.isAudioInterrupted ||
-                store.isImporting {
-                VStack(spacing: 8) {
-                    if store.isImporting {
-                        ProgressView("Importing and validating ZIP…")
-                    } else if store.gameStatus == .starting {
-                        ProgressView("Starting the native engine…")
-                    }
-                    Text(editingControls ? "Touch control layout" : sessionTitle)
-                        .font(.subheadline.weight(.semibold))
-                        .multilineTextAlignment(.center)
-                    Text(editingControls
-                         ? "Drag a control to move it. Tap one to change its size or bindings."
-                         : sessionDescription)
-                        .font(.caption).foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    if let failure = store.gameFailure ?? store.storageFailure ?? store.importFailure {
-                        Text(failure).font(.caption).foregroundStyle(.orange)
-                            .multilineTextAlignment(.center)
-                    } else if let message = store.importMessage, !store.gameStatus.isOpen {
-                        Text(message).font(.caption).foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    if let warning = store.audioWarning {
-                        Text(warning).font(.caption).foregroundStyle(.orange)
-                            .multilineTextAlignment(.center)
-                    }
-                }
-                .padding(12)
-                .frame(maxWidth: 500)
-                .background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 16))
-                .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .padding(.top, 10)
+    private func overlayButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(.black.opacity(0.42), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+
+    @ViewBuilder
+    private var notice: some View {
+        if editingControls {
+            Text("Drag a control to move it. Tap to edit.")
+                .font(.caption)
+                .padding(10)
+                .background(.black.opacity(0.75), in: Capsule())
+                .frame(maxHeight: .infinity, alignment: .top)
+                .padding(.top, 12)
                 .allowsHitTesting(false)
-            }
-        }
-    }
-
-    private var sessionTitle: String {
-        switch store.gameStatus {
-        case .stopped: return "Experimental native gameplay"
-        case .starting: return "Loading validated game data"
-        case .running: return "Native engine session"
-        case .paused: return "Game paused"
-        case .failed: return "Native engine could not continue"
-        }
-    }
-
-    private var sessionDescription: String {
-        switch store.gameStatus {
-        case .stopped:
-            return store.hasImportedData
-                ? "Start Game boots your validated import. Then use Insert Coin and the on-screen START control. This experimental build still needs device testing."
-                : "Import the complete supported NAOMI mvsc2 ZIP, then choose Start Game."
-        case .starting:
-            return "The first boot can take time. Any engine failure will appear here."
-        case .running:
-            return store.sessionHasFrame ? "Video comes from the native game renderer."
-                : "Waiting for the first frame from the native game renderer."
-        case .paused:
-            return store.isAudioInterrupted ? "Gameplay and audio are suspended by an audio interruption."
-                : "Gameplay and audio are suspended. Close menus or choose Resume to continue."
-        case .failed:
-            return "The engine reported the error below. You can retry Start Game or import a supported archive again."
-        }
-    }
-
-    private var footer: some View {
-        HStack(spacing: 12) {
-            Label(store.hasImportedData ? "Data validated" : "No imported data",
-                  systemImage: store.hasImportedData ? "checkmark.circle" : "tray")
-                .foregroundStyle(store.hasImportedData ? Color.green : Color.secondary)
-            if !editingControls {
-                Button("Insert Coin") { store.input.insertCoin() }
-                    .disabled(store.gameStatus != .running || gameplaySuspended)
-                    .buttonStyle(.bordered)
-            }
-            Spacer(minLength: 8)
-            if editingControls {
-                Text("Control layout").foregroundStyle(.secondary)
-            } else {
-                TimelineView(.periodic(from: .now, by: 0.1)) { _ in
-                    let mask = store.input.buttons
-                    let titles = NativeButton.allCases
-                        .filter { mask & $0.rawValue != 0 }
-                        .map(\.title)
-                    Text(titles.isEmpty
-                         ? (store.gameStatus == .running ? "Insert Coin, then touch START" : sessionTitle)
-                         : "Held: " + titles.joined(separator: " + "))
-                        .monospaced().lineLimit(1)
-                        .foregroundStyle(.secondary)
+        } else if store.isImporting {
+            ProgressView("Importing ZIP…")
+                .padding(18)
+                .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 16))
+        } else if !store.sessionHasFrame {
+            VStack(spacing: 12) {
+                if store.gameStatus.isOpen {
+                    ProgressView(store.isAudioInterrupted ? "Game paused" : "Starting game…")
+                } else {
+                    Text(store.gameFailure == nil ? "MVC2" : "Game could not start")
+                        .font(.title2.bold())
+                    if let failure = store.gameFailure ?? store.importFailure ?? store.storageFailure {
+                        Text(failure)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    } else if !store.hasImportedData {
+                        Text("Import your complete NAOMI mvsc2 ZIP to start playing.")
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        if store.canStart {
+                            Button("Start Game") { store.startGame() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        Button("Import ZIP") { showImporter = true }
+                            .buttonStyle(.bordered)
+                            .disabled(!store.canImport)
+                    }
                 }
             }
+            .padding(16)
+            .frame(maxWidth: 460)
+        } else if store.isUserPaused || store.isAudioInterrupted {
+            VStack(spacing: 10) {
+                Text("Game paused").font(.headline)
+                if !store.isAudioInterrupted {
+                    Button("Resume") { store.togglePause() }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(16)
+            .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 16))
+        } else if let warning = store.audioWarning {
+            Text(warning)
+                .foregroundStyle(.secondary)
+                .font(.caption)
+                .multilineTextAlignment(.center)
+                .padding(10)
+                .background(.black.opacity(0.72), in: Capsule())
+                .padding()
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .allowsHitTesting(false)
         }
-        .font(.caption)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 7)
-        .background(.ultraThinMaterial)
     }
 
     @ViewBuilder

@@ -234,6 +234,34 @@ static void test_real_random_wait_tables(void) {
     }
 }
 
+static void test_cpu_mashing(void) {
+    PLAYER_WORK player = {0};
+    SYSTEM_WORK system = {0};
+    VS_SYS_WORK fight = {0};
+    Sys = &system;
+    vs_sys_w = &fight;
+    player.cpu_flag = 1;
+    fight.vs_st = VS_FIGHT;
+
+    // Level 7's board pattern sat beyond the arcade table. Exercise all
+    // random bits, including the high bit, using the real game generator.
+    system.cpu_renda_level = 7;
+    int expected[256];
+    rnd_init();
+    for (unsigned i = 0; i < sizeof expected / sizeof expected[0]; ++i)
+        expected[i] = (0xffe40680u >> (Rnd() & 31)) & 1u;
+    rnd_init();
+    for (unsigned i = 0; i < sizeof expected / sizeof expected[0]; ++i)
+        assert(lever_sw_renda_ck(&player) == expected[i]);
+
+    system.cpu_renda_level = -1;
+    assert(!lever_sw_renda_ck(&player));
+    system.cpu_renda_level = 8;
+    assert(!lever_sw_renda_ck(&player));
+    Sys = NULL;
+    vs_sys_w = NULL;
+}
+
 int main(void) {
     _Static_assert(sizeof(CPU_DATA) == 12, "CPU serialized offsets remain 32-bit");
     for (unsigned level = 0; level < 8; ++level) {
@@ -246,6 +274,7 @@ int main(void) {
     test_answer_selection();
     test_rates_and_modes();
     test_real_random_wait_tables();
+    test_cpu_mashing();
     puts("Native CPU commands: high-address offsets, script selection, rates, modes and real game RNG passed.");
     return 0;
 }

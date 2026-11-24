@@ -57,8 +57,10 @@ final class NativeAudioOutput {
         availableBuffers = Self.allBuffersAvailable
         queuedFrames = 0
         completionLock.unlock()
-        player.stop()
-        engine.pause()
+        if graphReady {
+            player.stop()
+            engine.pause()
+        }
         if sessionActive {
             try? AVAudioSession.sharedInstance().setActive(false,
                                                           options: .notifyOthersOnDeactivation)
@@ -69,7 +71,8 @@ final class NativeAudioOutput {
     /// Copies native 44.1 kHz interleaved stereo samples before the next native
     /// step invalidates them. Excess sound is dropped instead of growing latency.
     func enqueue(interleaved samples: UnsafePointer<Int16>, frames: Int) {
-        guard running, frames > 0, frames <= Int(Self.bufferCapacity) else { return }
+        guard running, engine.isRunning, frames > 0,
+              frames <= Int(Self.bufferCapacity) else { return }
 
         completionLock.lock()
         guard queuedFrames + frames <= Self.maximumQueuedFrames,
@@ -87,7 +90,13 @@ final class NativeAudioOutput {
         let buffer = buffers[index]
         buffer.frameLength = AVAudioFrameCount(frames)
         // prepareGraph creates only standard noninterleaved Float32 buffers.
-        let channels = buffer.floatChannelData!
+        guard let channels = buffer.floatChannelData else {
+            completionLock.lock()
+            availableBuffers |= slot
+            queuedFrames -= frames
+            completionLock.unlock()
+            return
+        }
         for frame in 0..<frames {
             channels[0][frame] = Float(samples[frame * 2]) / 32_768
             channels[1][frame] = Float(samples[frame * 2 + 1]) / 32_768

@@ -405,6 +405,9 @@ struct WORKER {
     TEXCACHE tex;
     FRAG* frags;
     int nfrags, maxfrags;
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+    int fragment_limit_hit;
+#endif
     RD_SEM* go;
     RD_THREAD* thread;
 };
@@ -430,8 +433,21 @@ static void add_frag(WORKER* w, int at, float z, uint32_t color, int order) {
     FRAG* f;
     if (w->nfrags == w->maxfrags) {
         int n = w->maxfrags ? w->maxfrags * 2 : 1 << 16;
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+        /* A dense translucent effect can otherwise retain an arbitrarily
+         * large fragment pool on every worker for the rest of a session. */
+        const int limit = (96u << 20) / sizeof(FRAG) / nworkers;
+        if (w->maxfrags >= limit) {
+            w->fragment_limit_hit = 1;
+            return;
+        }
+        if (n > limit) n = limit;
+#endif
         FRAG* p = realloc(w->frags, (size_t)n * sizeof *p);
         if (p == NULL) {
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+            w->fragment_limit_hit = 1;
+#endif
             return;
         }
         w->frags = p;
@@ -605,13 +621,15 @@ static void edge_span(const RD_VTX* a, const RD_VTX* b, double sign, double py, 
     }
 }
 
-static void raster(const SETUP* p, WORKER* wk) {
+static void raster(const SETUP* p, WORKER* wk, int first, int end, int sort_translucent) {
     const RD_STATE* s = p->s;
     const RD_VTX *a = &p->v[0], *b = &p->v[1], *c = &p->v[2];
     double sign = p->sign;
     /* the planes the pixels read */
     int list = p->list, y, k, np = !p->flat ? (s->offset ? PLANES : 7) : s->tex != NULL ? 3 : 1;
-    for (y = first_row(wk, p->y0); y < p->y1; y = next_row(wk, y)) {
+    int top = p->y0 > first ? p->y0 : first;
+    int bottom = p->y1 < end ? p->y1 : end;
+    for (y = first_row(wk, top); y < bottom; y = next_row(wk, y)) {
         double py = y + 0.5, lo = p->x0, hi = p->x1, f[PLANES];
         int x, xs, xe;
         edge_span(b, c, sign, py, &lo, &hi);
@@ -684,7 +702,7 @@ static void raster(const SETUP* p, WORKER* wk) {
             if ((s->fog == RD_FOG_TABLE && fog_on && !nofog) || s->fog == RD_FOG_TABLE2) {
                 fog(s, &col, z);
             }
-            if (list == RD_TRANS && !nosort) {
+            if (list == RD_TRANS && sort_translucent) {
                 add_frag(wk, at, z, pack(col), p->order);
                 continue;
             }
@@ -910,34 +928,28 @@ static void background_row(int y) {
     }
 }
 
-/* phase 0: set up a share of the triangles; 1: draw, resolve and copy out the worker's rows */
-static void work(WORKER* w) {
-    int i, y, x, output_width = rd_width();
-    if (phase == 0) {
-        int per = (ntotal + nworkers - 1) / nworkers, end = (w->index + 1) * per, base[RD_LISTS + 1], list = 0;
-        base[0] = 0;
-        for (i = 0; i < RD_LISTS; i++) {
-            base[i + 1] = base[i] + rd_frame->ntris[i];
-        }
-        for (i = w->index * per; i < end && i < ntotal; i++) {
-            while (i >= base[list + 1]) {
-                list++;
-            }
-            setup_tri(&setups[i], list, &rd_frame->tris[list][i - base[list]], i - base[list]);
-        }
-        return;
-    }
+static void draw_rows(WORKER* w, int first, int end, int sort_translucent) {
+    int i, y;
     w->nfrags = 0;
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+    w->fragment_limit_hit = 0;
+#endif
     w->tex.s = NULL;
-    for (y = first_row(w, 0); y < draw_h; y = next_row(w, y)) {
+    for (y = first_row(w, first); y < end; y = next_row(w, y)) {
         background_row(y);
     }
     for (i = 0; i < ntotal; i++) {
-        if (setups[i].y1 > setups[i].y0) {
-            raster(&setups[i], w);
-        }
+        if (setups[i].y1 <= first || setups[i].y0 >= end || setups[i].y1 <= setups[i].y0) continue;
+        raster(&setups[i], w, first, end, sort_translucent);
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+        if (w->fragment_limit_hit) return;
+#endif
     }
-    for (y = first_row(w, 0); y < draw_h; y = next_row(w, y)) {
+}
+
+static void finish_rows(WORKER* w, int first, int end) {
+    int y, x, output_width = rd_width();
+    for (y = first_row(w, first); y < end; y = next_row(w, y)) {
         resolve_row(w, y);
         if (scale == 1) {
             for (x = 0; x < output_width; x++) {
@@ -950,6 +962,36 @@ static void work(WORKER* w) {
             }
         }
     }
+}
+
+/* Phase 0 sets up triangles. Phase 1 renders each worker's bands. */
+static void work(WORKER* w) {
+    if (phase == 0) {
+        int i, per = (ntotal + nworkers - 1) / nworkers;
+        int end = (w->index + 1) * per, base[RD_LISTS + 1], list = 0;
+        base[0] = 0;
+        for (i = 0; i < RD_LISTS; i++) base[i + 1] = base[i] + rd_frame->ntris[i];
+        for (i = w->index * per; i < end && i < ntotal; i++) {
+            while (i >= base[list + 1]) list++;
+            setup_tri(&setups[i], list, &rd_frame->tris[list][i - base[list]], i - base[list]);
+        }
+        return;
+    }
+    draw_rows(w, 0, draw_h, !nosort);
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+    if (w->fragment_limit_hit) {
+        /* Reuse the fragment pool for each band. Usually this keeps exact
+         * depth sorting even when an entire worker's share cannot fit. */
+        for (int first = w->index * BAND; first < draw_h; first += nworkers * BAND) {
+            int end = first + BAND < draw_h ? first + BAND : draw_h;
+            draw_rows(w, first, end, 1);
+            if (w->fragment_limit_hit) draw_rows(w, first, end, 0);
+            finish_rows(w, first, end);
+        }
+        return;
+    }
+#endif
+    finish_rows(w, 0, draw_h);
 }
 
 static int worker_main(void* arg) {

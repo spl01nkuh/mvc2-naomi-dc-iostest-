@@ -14,7 +14,6 @@ final class DevelopmentStore: ObservableObject {
     }
     @Published private(set) var isImporting = false
     @Published private(set) var hasImportedData = false
-    @Published private(set) var importMessage: String?
     @Published private(set) var importFailure: String?
     @Published private(set) var storageFailure: String?
     @Published private(set) var settingsFailure: String?
@@ -33,6 +32,7 @@ final class DevelopmentStore: ObservableObject {
     private var runtime: NativeGameplaySession!
     private var hostSuspended = true
     private var applicationInactive = true
+    private var needsAutomaticStart = true
     private var interruptions: AnyCancellable?
     private var applicationObservers: [AnyCancellable] = []
 
@@ -48,6 +48,13 @@ final class DevelopmentStore: ObservableObject {
         return nil
     }
     var storageLocation: String { "Documents/MVC2/GameData" }
+    var showsControlPreview: Bool {
+        #if targetEnvironment(simulator)
+        ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("--mvc2-controls-preview=") }
+        #else
+        false
+        #endif
+    }
 
     init() {
         let manager = FileManager.default
@@ -95,6 +102,10 @@ final class DevelopmentStore: ObservableObject {
         if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix(widescreenPrefix) }) {
             restored.nativeWidescreen = argument == widescreenPrefix + "on"
         }
+        let directionsPrefix = "--mvc2-directions-preview="
+        if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix(directionsPrefix) }) {
+            restored.transparentDirections = argument == directionsPrefix + "transparent"
+        }
         #endif
         settings = restored
         settingsURL = preferences
@@ -124,18 +135,26 @@ final class DevelopmentStore: ObservableObject {
     func importArchive(_ source: URL) async {
         guard let root = assetsRoot, !isImporting, !isStopping else { return }
         input.releaseAll()
+        needsAutomaticStart = false
         isImporting = true
-        importMessage = nil
         importFailure = nil
-        defer { isImporting = false }
+        synchronizeSuspension()
+        defer {
+            isImporting = false
+            synchronizeSuspension()
+            startAutomaticallyIfReady()
+        }
 
         // The importer may remove the previous committed set. Wait until the
         // permanent native owner has released all of its asset handles first.
         await runtime.stop()
+        gameStatus = .stopped
+        sessionHasFrame = false
+        isUserPaused = false
         do {
             _ = try await NativeAssetImporter.importROM(from: source, root: root)
             hasImportedData = true
-            importMessage = "ZIP imported and validated. Start Game launches the experimental native engine."
+            needsAutomaticStart = true
         } catch {
             importFailure = error.localizedDescription
             // The importer preserves the previous committed set on failure.
@@ -145,12 +164,14 @@ final class DevelopmentStore: ObservableObject {
 
     func startGame() {
         guard canStart, let root = assetsRoot, let saves = savesRoot else { return }
+        needsAutomaticStart = false
         guard let rom = NativeAssetImporter.existingROM(root: root) else {
             hasImportedData = false
             importFailure = "The validated game files are missing or changed. Import the complete ZIP again."
             return
         }
         input.releaseAll()
+        importFailure = nil
         isUserPaused = false
         audioWarning = nil
         sessionHasFrame = false
@@ -161,6 +182,7 @@ final class DevelopmentStore: ObservableObject {
 
     func stopGame() async {
         guard !isStopping else { return }
+        needsAutomaticStart = false
         isStopping = true
         input.releaseAll()
         await runtime.stop()
@@ -181,11 +203,20 @@ final class DevelopmentStore: ObservableObject {
         hostSuspended = suspended
         if suspended { input.releaseAll() }
         synchronizeSuspension()
+        startAutomaticallyIfReady()
+    }
+
+    private var sessionSuspended: Bool {
+        hostSuspended || applicationInactive || isUserPaused || isAudioInterrupted || isImporting
     }
 
     private func synchronizeSuspension() {
-        runtime.setSuspended(hostSuspended || applicationInactive || isUserPaused ||
-                             isAudioInterrupted || isImporting)
+        runtime.setSuspended(sessionSuspended)
+    }
+
+    private func startAutomaticallyIfReady() {
+        guard needsAutomaticStart, !sessionSuspended else { return }
+        startGame()
     }
 
     private func setApplicationActive(_ active: Bool) {
@@ -195,6 +226,7 @@ final class DevelopmentStore: ObservableObject {
             saveSettings()
         }
         synchronizeSuspension()
+        startAutomaticallyIfReady()
     }
 
     private func receive(_ event: NativeGameplayEvent) {
@@ -223,6 +255,7 @@ final class DevelopmentStore: ObservableObject {
         }
         input.releaseAll()
         synchronizeSuspension()
+        startAutomaticallyIfReady()
     }
 
     func reportPickerFailure(_ error: Error) {

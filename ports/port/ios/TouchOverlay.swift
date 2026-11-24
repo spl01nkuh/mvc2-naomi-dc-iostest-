@@ -157,6 +157,7 @@ final class TouchSurface: UIView {
                 if pressed & 0x3000 == 0x3000 { pressed &= ~UInt16(0x3000) }
                 if pressed & 0x0c00 == 0x0c00 { pressed &= ~UInt16(0x0c00) }
                 DirectionArtwork.draw(in: ctx, bounds: box, style: options.directionStyle,
+                                      transparent: options.transparentDirections,
                                       pressed: pressed, contact: directionContacts.first?.point,
                                       editing: editing)
                 if editing { drawSizeLabel(control, box: box) }

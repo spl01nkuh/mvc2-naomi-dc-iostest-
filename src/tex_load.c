@@ -507,8 +507,10 @@ void tex_load_0e( void )
 		file_load( FILE_DM0EPOL, ( void * )TEX_RAW( DM0A_OBJ_ADRS ), 0 ) ;
 		file_load( FILE_TEX( FILE_DM0EPOL ), ( void * )TEX_RAW( DM0A_TEX_ADRS ), 0 ) ;
 	}
+#ifndef HOST_NATIVE64
 	lz_unpack16( ( Sint16 * )TEX_RAW( DM0A_TEX_ADRS ), ( Uint16 * )TEX_RAW( TEX_ADRS ) ) ;
-#else
+#endif
+#elif !defined( HOST_NATIVE64 )
 	Uint16 *dst ;
 
 	if( 0 ) *( Uint16 ** )( DM0A_OBJ_ADRS + 0x20 ) = dst ;
@@ -516,6 +518,12 @@ void tex_load_0e( void )
 	if( Sys->cpu_level_type == 0 ){ }	/* tested, and nothing done either way */
 	*( Uint16 ** )( DM0A_OBJ_ADRS + 0x20 ) = dst ;
 	lz_unpack16( ( Sint16 * )TEX_RAW( DM0A_TEX_ADRS ), dst ) ;
+#endif
+#ifdef HOST_NATIVE64
+	/* Decode the registered pack into native storage. The original model
+	   bytes contain 32-bit addresses and must not receive native pointers. */
+	obj_dm0a = mvc2_model_store_get_packed_texture( TEX_RAW( DM0A_OBJ_ADRS ),
+		TEX_RAW( DM0A_TEX_ADRS ) ) ;
 #endif
 }
 
@@ -685,7 +693,12 @@ void tex_set_ranking( void )
 /****************************************************************/
 void tex_set_0e( void )
 {
+#ifdef HOST_NATIVE64
+	if( !obj_dm0a ) return ;	/* The card notice is optional. */
+	obj_tex_load( 0xd10, &obj_dm0a, obj_dm0a ) ;
+#else
 	obj_tex_load( 0xd10, &obj_dm0a, OBJ_AT( DM0A_OBJ_ADRS ) ) ;
+#endif
 	nlSetCommonTextureOffset( 0xd50 ) ;
 	nlSpriteLoadTexture( tex0e_thd, 0 ) ;
 }

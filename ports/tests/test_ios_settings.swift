@@ -37,6 +37,7 @@ struct IOSSettingsTests {
         options.screenOffsetX = -.infinity
         options.screenOffsetY = 40
         options.touchOpacity = -1
+        options.transparentDirections = false
         options.stickSensitivity = 100
         options.stickDeadZone = 1
         options.controls[0].x = .nan
@@ -59,6 +60,13 @@ struct IOSSettingsTests {
         let encoded = try JSONEncoder().encode(options)
         let restored = try JSONDecoder().decode(AppSettings.self, from: encoded)
         try check(restored.filter == .geom && restored.controls == options.controls, "Saved filter, custom bindings and identifiers must survive a round trip")
+        try check(!restored.transparentDirections, "Solid directional controls must survive a round trip")
+        var legacy = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+        legacy.removeValue(forKey: "transparentDirections")
+        let migrated = try JSONDecoder().decode(AppSettings.self,
+            from: JSONSerialization.data(withJSONObject: legacy))
+        try check(migrated.transparentDirections && migrated.controls == options.controls,
+                  "Older settings must gain transparent controls while preserving custom bindings")
         try check(NativeButton.allCases.reduce(UInt16(0)) { $0 | $1.rawValue } == NativeButton.validMask, "UI bindings must match MVC2's complete player switch mask")
         var emptyLayout = AppSettings()
         emptyLayout.controls.removeAll()

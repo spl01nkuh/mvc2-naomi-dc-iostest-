@@ -302,7 +302,15 @@ static void attract_copyright_move( void )
 			mes ++ ;
 		}
 	}
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+	if( Sys->timer0 == COPYRIGHT_TIME - 25 ){
+		/* The demo's fight setup returns early while title preloads are pending. */
+		if( load_ck() ) Sys->timer0 ++ ;
+		else demo_init() ;
+	}
+#else
 	if( Sys->timer0 == COPYRIGHT_TIME - 25 ) demo_init() ;
+#endif
 }
 
 /*==============================================================*/

@@ -16,5 +16,9 @@ int mvc2_model_store_written(void* destination, size_t size);
  * Successful refreshes retain the returned OBJ_FILE descriptor's address;
  * its mesh/table pointers may change. Reset releases all stored owners. */
 MVC2HostObjectFile* mvc2_model_store_get(void* model_bytes);
+/* The arcade card notice references an unpacked texture. Decode the registered
+ * packed file and bind its bytes without rewriting a serialized pointer. */
+MVC2HostObjectFile* mvc2_model_store_get_packed_texture(void* model_bytes,
+                                                       const void* packed_bytes);
 void mvc2_model_store_reset(void);
 #endif

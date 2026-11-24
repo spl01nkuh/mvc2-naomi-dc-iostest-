@@ -73,10 +73,9 @@ static void guard_pitch(const uint32_t* frame, int width) {
 }
 
 static void draw_scene(MVC2HostObjectFile* model, uint32_t* frame,
-                       int wide, const char* threads) {
+                       int prefer_wide, int stage, const char* threads) {
     assert(!setenv("MVC2_RDTHREADS", threads, 1));
-    rd_set_widescreen(wide);
-    assert(rd_width() == (wide ? 854 : 640) && rd_height() == 480);
+    rd_set_widescreen_preference(prefer_wide);
     _Alignas(32) MATRIX stack[9];
     assert(nlInitMatrix(stack, 8) == stack);
     nlInitLibrary(0, 0, 0);
@@ -92,7 +91,11 @@ static void draw_scene(MVC2HostObjectFile* model, uint32_t* frame,
     for (size_t i = 0; i < (size_t)PITCH * RD_HEIGHT; ++i) frame[i] = 0xdeadbeef;
     rd_quality("exact");
     rd_begin_frame();
+    assert(rd_width() == RD_WIDTH && rd_height() == RD_HEIGHT);
     rd_background(0xff223344);
+    if (stage) rd_begin_stage_scene();
+    int wide = prefer_wide && stage;
+    assert(rd_width() == (wide ? RD_MAX_WIDTH : RD_WIDTH));
     nlObjPut(model->obj[0]);
     assert(rd_frame->ntris[RD_OPAQUE] == 1);
     /* At z=-8 these two models project to logical x=-60 and x=700.
@@ -121,10 +124,12 @@ static void draw_scene(MVC2HostObjectFile* model, uint32_t* frame,
 }
 
 static void fade_covers_viewport(uint32_t* frame, const char* quality) {
-    rd_set_widescreen(1);
+    rd_set_widescreen_preference(1);
     rd_quality(quality);
     rd_begin_frame();
     rd_background(0xff223344);
+    rd_begin_stage_scene();
+    assert(rd_width() == RD_MAX_WIDTH);
     NLVERTEX00 vertices[4] = {
         {0, 0, .1f, 0xff000000}, {0, 480, .1f, 0xff000000},
         {640, 0, .1f, 0xff000000}, {640, 480, .1f, 0xff000000}};
@@ -160,21 +165,56 @@ static void artifact(const char* directory, const char* name,
     assert(!fclose(file));
 }
 
+static void dense_translucency_keeps_depth_order(uint32_t* frame) {
+    // Twenty-four full-width layers exceed the native fragment pool. A
+    // band redraw must still put the first (nearest) layer over later ones.
+    assert(!setenv("MVC2_RDTHREADS", "2", 1));
+    rd_set_widescreen_preference(1);
+    rd_quality("exact");
+    rd_begin_frame();
+    rd_begin_stage_scene();
+    rd_background(0xff000000);
+    const RD_STATE state = { .list = RD_TRANS, .depth = RD_ALWAYS,
+        .src = RD_ONE, .dst = RD_ZERO, .fog = RD_FOG_NONE };
+    const float left = -rd_widescreen_offset();
+    const float right = left + rd_width();
+    for (int layer = 0; layer < 24; ++layer) {
+        const float depth = (float)(24 - layer);
+        const uint32_t color = layer == 0 ? 0xffff0000 : 0xff00ff00;
+        const RD_VTX strip[] = {
+            {left, 0, depth, 0, 0, color, 0}, {right, 0, depth, 0, 0, color, 0},
+            {right, RD_HEIGHT, depth, 0, 0, color, 0}, {left, RD_HEIGHT, depth, 0, 0, color, 0}
+        };
+        rd_quad(&state, strip);
+    }
+    rd_end_frame(frame, PITCH);
+    for (int y = 0; y < RD_HEIGHT; ++y)
+        for (int x = 0; x < RD_MAX_WIDTH; ++x)
+            assert(frame[y * PITCH + x] == 0xffff0000);
+    rd_soft_shutdown();
+}
+
 int main(int argc, char** argv) {
     MVC2NativeModel* owner = fixture();
     MVC2HostObjectFile* model = mvc2_native_model_file(owner);
     size_t bytes = (size_t)PITCH * RD_HEIGHT * sizeof(uint32_t);
     uint32_t* normal = malloc(bytes), *wide = malloc(bytes), *again = malloc(bytes);
     assert(normal && wide && again);
-    draw_scene(model, normal, 0, "1");
-    draw_scene(model, wide, 1, "1");
+    draw_scene(model, normal, 0, 1, "1");
+    draw_scene(model, wide, 1, 1, "1");
     for (int y = 0; y < RD_HEIGHT; ++y)
         assert(!memcmp(normal + y * PITCH, wide + y * PITCH + 107, RD_WIDTH * sizeof(uint32_t)));
-    draw_scene(model, again, 0, "1");
+    /* Going directly from a wide stage to a title or menu frame leaves
+     * widescreen enabled in Settings but never reveals offscreen artwork. */
+    draw_scene(model, again, 1, 0, "1");
     assert(!memcmp(normal, again, bytes));
+    /* An accidental late call must not change the origin underneath geometry
+     * that already used the original clip bounds. */
+    rd_begin_stage_scene();
+    assert(rd_width() == RD_WIDTH);
     rd_soft_shutdown();
     for (int i = 0; i < 2; ++i) {
-        draw_scene(model, again, 1, i ? "4" : "2");
+        draw_scene(model, again, 1, 1, i ? "4" : "2");
         assert(!memcmp(wide, again, bytes));
         rd_soft_shutdown();
     }
@@ -184,8 +224,10 @@ int main(int argc, char** argv) {
     fade_covers_viewport(again, "exact");
     fade_covers_viewport(again, "half");
     rd_soft_shutdown();
-    rd_set_widescreen(0);
+    rd_set_widescreen_preference(0);
+    rd_begin_frame();
+    dense_translucency_keeps_depth_order(again);
     free(normal); free(wide); free(again); mvc2_native_model_free(owner);
-    puts("Native widescreen: extra world, unchanged centre/HUD pixels, full-width fades, worker parity, mode switching and pitch guards passed.");
+    puts("Native widescreen: expanded stages, original menu clipping, unchanged centre/HUD pixels, full-width fades and pitch guards passed.");
     return 0;
 }

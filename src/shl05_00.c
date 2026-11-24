@@ -14,11 +14,16 @@ typedef struct SHL05_00_LOCAL_W {
 } SHL05_00_LOCAL_W;
 #define SHL05_00_LW( w )	( ( SHL05_00_LOCAL_W * )&( w )->obj_flag )
 
+#ifdef HOST_NATIVE64
+/* Match the host setter's actual return type across translation units. */
+extern void *shl05_01_set( PLAYER_WORK *pl_w, Uint8 no );
+#else
 /* the arcade declares the setter as returning a whole effect work, so the call makes room for one */
 typedef struct EF_WORK {
 	Uint8	unk[0x1d0];
 } EF_WORK;
 extern EF_WORK shl05_01_set( PLAYER_WORK *pl_w, Uint8 no );
+#endif
 
 static SHL05_00_LOCAL_W *lw;	/* the running work's */
 static PL05_LOCAL_W *pl_lw;	/* Strider's */

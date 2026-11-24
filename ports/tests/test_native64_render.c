@@ -12,6 +12,7 @@
 #include "host_memory.h"
 #include "model_store.h"
 #include "rd_list.h"
+#include "load.h"
 
 extern MVC2HostMatrix* nlInitMatrix(MVC2HostMatrix* stack, int count);
 extern void nlMatrixMode(int mode);
@@ -37,6 +38,8 @@ extern void nlScreenPoint(float x, float y, float z, float* sx, float* sy, float
 extern void nlFastScreenPoint(NLVECTOR3* position, float* screen);
 extern int nlObjPutLoadTexture(int* object, const NLthd* headers);
 extern void nlObjPut(int* object);
+extern void tex_load_0e(void);
+MVC2HostObjectFile* obj_dm0a;
 
 enum { MODEL_BYTES = 280, OBJECT = 64, MESH = OBJECT + 24, PRIM = MESH + 80,
        BASE = 0x0c600000, PIXELS = 0x0d000000, PITCH = RD_WIDTH + 8 };
@@ -186,6 +189,43 @@ static void render(MVC2HostObjectFile* model, uint32_t* frame, const char* threa
     rd_soft_shutdown();
     nl_tex_free_all();
 }
+static void packed_notice(const uint8_t* model_file, uint32_t* frame, const uint32_t* expected) {
+    /* A literal 16-bit texel plus a 3-word repeat, then the explicit end. */
+    const uint8_t valid[] = {0, 0x60, 0, 0xf8, 1, 0x18, 0, 0, 0, 0};
+    uint8_t* model = host_native64_ram_pointer(DM0A_OBJ_ADRS, MODEL_BYTES);
+    uint8_t* pack = host_native64_ram_pointer(DM0A_TEX_ADRS, sizeof valid);
+    assert(model && pack);
+    memcpy(model, model_file, MODEL_BYTES);
+    /* The serialized texture address deliberately identifies no RAM file.
+     * The notice load should bind the unpacked bytes without changing it. */
+    word(model + 32, UINT32_C(0x10000000));
+    assert(mvc2_model_store_written(model, MODEL_BYTES));
+    assert(!mvc2_model_store_get(model));
+    memcpy(pack, valid, sizeof valid);
+    assert(mvc2_model_store_written(pack, sizeof valid));
+    tex_load_0e();
+    MVC2HostObjectFile* notice = obj_dm0a;
+    assert(notice && notice->cnt == 1);
+    assert(model[35] == 0x10);
+    assert(!memcmp(pack, valid, sizeof valid));
+    render(notice, frame, "2");
+    assert(!memcmp(frame, expected, (size_t)PITCH * RD_HEIGHT * sizeof(uint32_t)));
+    tex_load_0e();
+    assert(obj_dm0a == notice);
+    /* A truncated terminator or a repeat before the first literal must
+     * decline the notice without invalidating its prior decoded owner. */
+    assert(mvc2_model_store_written(pack, sizeof valid - 2));
+    tex_load_0e();
+    assert(!obj_dm0a);
+    pack[1] = 0xe0;
+    pack[2] = 1;
+    pack[3] = 0x08;
+    assert(mvc2_model_store_written(pack, sizeof valid));
+    tex_load_0e();
+    assert(!obj_dm0a);
+    render(notice, frame, "1");
+    assert(!memcmp(frame, expected, (size_t)PITCH * RD_HEIGHT * sizeof(uint32_t)));
+}
 int main(void) {
     projection();
     MVC2NativeModel* model = fixture();
@@ -210,6 +250,7 @@ int main(void) {
     word((uint8_t*)raw + 4, 1);
     assert(mvc2_model_store_written(raw, MODEL_BYTES));
     assert(mvc2_model_store_get(raw) == stored);
+    packed_notice(raw, parallel, serial);
     assert(mvc2_model_store_written(host_native64_ram_pointer(PIXELS, 8), 8));
     assert(mvc2_model_store_get(raw) == stored); /* stable descriptor after texture refresh */
     assert(mvc2_model_store_written((uint8_t*)raw + 1, 1));

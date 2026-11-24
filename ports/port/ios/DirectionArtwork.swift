@@ -12,20 +12,21 @@ enum DirectionArtwork {
     ]
 
     static func draw(in context: CGContext, bounds: CGRect, style: DirectionStyle,
-                     pressed: UInt16, contact: CGPoint?, editing: Bool) {
+                     transparent: Bool, pressed: UInt16, contact: CGPoint?, editing: Bool) {
         guard bounds.width > 0, bounds.height > 0 else { return }
         context.saveGState()
         context.translateBy(x: bounds.minX, y: bounds.minY)
         context.scaleBy(x: bounds.width / 200, y: bounds.height / 200)
         if style == .dpad {
-            drawPad(context, pressed: editing ? 0 : pressed)
+            drawPad(context, pressed: editing ? 0 : pressed, transparent: transparent)
         } else {
             let point = contact.map {
                 CGPoint(x: ($0.x - bounds.minX) * 200 / bounds.width,
                         y: ($0.y - bounds.minY) * 200 / bounds.height)
             }
             drawStick(context, pressed: editing ? 0 : pressed,
-                      contact: editing ? nil : point, hybrid: style == .hybrid)
+                      contact: editing ? nil : point, hybrid: style == .hybrid,
+                      transparent: transparent)
         }
         if editing {
             let guide = UIBezierPath(roundedRect: CGRect(x: 2, y: 2, width: 196, height: 196),
@@ -38,16 +39,20 @@ enum DirectionArtwork {
         context.restoreGState()
     }
 
-    private static func drawPad(_ context: CGContext, pressed: UInt16) {
+    private static func drawPad(_ context: CGContext, pressed: UInt16, transparent: Bool) {
         let rim = cross(outer: 10, shoulder: 68, radius: 8)
-        shadow(rim, offset: CGSize(width: 0, height: 5), blur: 7, context)
-        linear(rim, colors: [steel, dark], context)
-        stroke(rim, UIColor.white.withAlphaComponent(0.25), 1.2, context)
+        if transparent {
+            outline(rim, UIColor.white.withAlphaComponent(0.7), 2.2, context)
+        } else {
+            shadow(rim, offset: CGSize(width: 0, height: 5), blur: 7, context)
+            linear(rim, colors: [steel, dark], context)
+            stroke(rim, UIColor.white.withAlphaComponent(0.25), 1.2, context)
 
-        let face = cross(outer: 16, shoulder: 74, radius: 5)
-        linear(face, colors: [UIColor(white: 0.20, alpha: 1),
-                              UIColor(white: 0.065, alpha: 1)], context)
-        stroke(face, UIColor.black.withAlphaComponent(0.85), 1.6, context)
+            let face = cross(outer: 16, shoulder: 74, radius: 5)
+            linear(face, colors: [UIColor(white: 0.20, alpha: 1),
+                                  UIColor(white: 0.065, alpha: 1)], context)
+            stroke(face, UIColor.black.withAlphaComponent(0.85), 1.6, context)
+        }
 
         for index in 0..<4 {
             context.saveGState()
@@ -55,7 +60,7 @@ enum DirectionArtwork {
             context.rotate(by: CGFloat(index) * .pi / 2)
             context.translateBy(x: -100, y: -100)
             let active = pressed & directions[index] != 0
-            if active {
+            if active && !transparent {
                 let arm = UIBezierPath(roundedRect: CGRect(x: 77, y: 19, width: 46, height: 66),
                                        cornerRadius: 5)
                 linear(arm, colors: [cyan.withAlphaComponent(0.49),
@@ -65,19 +70,25 @@ enum DirectionArtwork {
                 edge.addLine(to: CGPoint(x: 116, y: 23))
                 stroke(edge, cyan.withAlphaComponent(0.9), 2, context)
             }
-            chevron(context, centerY: 48, active: active, subtle: false)
+            chevron(context, centerY: 48, active: active, subtle: false, transparent: transparent)
 
             // Separate each arm from the pivot with a recessed shoulder seam.
-            let seam = UIBezierPath()
-            seam.move(to: CGPoint(x: 79, y: 77))
-            seam.addLine(to: CGPoint(x: 88, y: 86))
-            seam.move(to: CGPoint(x: 121, y: 77))
-            seam.addLine(to: CGPoint(x: 112, y: 86))
-            stroke(seam, UIColor.black.withAlphaComponent(0.65), 1.5, context)
+            if !transparent {
+                let seam = UIBezierPath()
+                seam.move(to: CGPoint(x: 79, y: 77))
+                seam.addLine(to: CGPoint(x: 88, y: 86))
+                seam.move(to: CGPoint(x: 121, y: 77))
+                seam.addLine(to: CGPoint(x: 112, y: 86))
+                stroke(seam, UIColor.black.withAlphaComponent(0.65), 1.5, context)
+            }
             context.restoreGState()
         }
 
         let pivot = circle(center: CGPoint(x: 100, y: 100), radius: 17)
+        if transparent {
+            outline(pivot, UIColor.white.withAlphaComponent(0.48), 1.8, context)
+            return
+        }
         radial(pivot, center: CGPoint(x: 94, y: 92), radius: 31,
                colors: [UIColor(white: 0.25, alpha: 1), dark], context)
         stroke(pivot, UIColor.black.withAlphaComponent(0.8), 1.6, context)
@@ -88,21 +99,25 @@ enum DirectionArtwork {
     }
 
     private static func drawStick(_ context: CGContext, pressed: UInt16,
-                                  contact: CGPoint?, hybrid: Bool) {
+                                  contact: CGPoint?, hybrid: Bool, transparent: Bool) {
         let center = CGPoint(x: 100, y: 100)
         let rim = circle(center: center, radius: 91)
-        shadow(rim, offset: CGSize(width: 0, height: 4), blur: 7, context)
-        linear(rim, colors: [steel, dark], context)
-        stroke(rim, UIColor.white.withAlphaComponent(0.28), 1.2, context)
-        let base = circle(center: center, radius: 85)
-        linear(base, colors: [UIColor(red: 0.12, green: 0.15, blue: 0.19, alpha: 1), dark], context)
-        stroke(base, UIColor.black.withAlphaComponent(0.8), 1.7, context)
-        let well = circle(center: center, radius: 67)
-        radial(well, center: CGPoint(x: 94, y: 90), radius: 81,
-               colors: [UIColor(red: 0.09, green: 0.12, blue: 0.16, alpha: 1),
-                        UIColor(white: 0.025, alpha: 1)], context)
-        stroke(well, UIColor.white.withAlphaComponent(0.10), 1, context)
-        stroke(circle(center: center, radius: 64.5), UIColor.black.withAlphaComponent(0.7), 1, context)
+        if transparent {
+            outline(rim, UIColor.white.withAlphaComponent(0.7), 2.2, context)
+        } else {
+            shadow(rim, offset: CGSize(width: 0, height: 4), blur: 7, context)
+            linear(rim, colors: [steel, dark], context)
+            stroke(rim, UIColor.white.withAlphaComponent(0.28), 1.2, context)
+            let base = circle(center: center, radius: 85)
+            linear(base, colors: [UIColor(red: 0.12, green: 0.15, blue: 0.19, alpha: 1), dark], context)
+            stroke(base, UIColor.black.withAlphaComponent(0.8), 1.7, context)
+            let well = circle(center: center, radius: 67)
+            radial(well, center: CGPoint(x: 94, y: 90), radius: 81,
+                   colors: [UIColor(red: 0.09, green: 0.12, blue: 0.16, alpha: 1),
+                            UIColor(white: 0.025, alpha: 1)], context)
+            stroke(well, UIColor.white.withAlphaComponent(0.10), 1, context)
+            stroke(circle(center: center, radius: 64.5), UIColor.black.withAlphaComponent(0.7), 1, context)
+        }
 
         let gates: [UInt16] = [directions[0], directions[0] | directions[1],
                               directions[1], directions[1] | directions[2],
@@ -115,8 +130,12 @@ enum DirectionArtwork {
             let tick = UIBezierPath()
             tick.move(to: CGPoint(x: 100 + cos(angle) * inside, y: 100 + sin(angle) * inside))
             tick.addLine(to: CGPoint(x: 100 + cos(angle) * 81, y: 100 + sin(angle) * 81))
-            stroke(tick, active ? cyan : UIColor.white.withAlphaComponent(0.23),
-                   index.isMultiple(of: 2) ? 2.2 : 1.5, context)
+            let width: CGFloat = index.isMultiple(of: 2) ? 2.2 : 1.5
+            if transparent {
+                outline(tick, active ? cyan : UIColor.white.withAlphaComponent(0.65), width, context)
+            } else {
+                stroke(tick, active ? cyan : UIColor.white.withAlphaComponent(0.23), width, context)
+            }
         }
         if hybrid {
             for index in 0..<4 {
@@ -125,7 +144,7 @@ enum DirectionArtwork {
                 context.rotate(by: CGFloat(index) * .pi / 2)
                 context.translateBy(x: -100, y: -100)
                 chevron(context, centerY: 47, active: pressed & directions[index] != 0,
-                        subtle: true)
+                        subtle: true, transparent: transparent)
                 context.restoreGState()
             }
         }
@@ -138,6 +157,11 @@ enum DirectionArtwork {
             thumb = CGPoint(x: 100 + dx * travel, y: 100 + dy * travel)
         }
         let gripRim = circle(center: thumb, radius: 32)
+        if transparent {
+            outline(gripRim, contact == nil ? UIColor.white.withAlphaComponent(0.7) : cyan,
+                    2.5, context)
+            return
+        }
         shadow(gripRim, offset: CGSize(width: 0, height: 5), blur: 7, context)
         linear(gripRim, colors: [UIColor(white: 0.47, alpha: 1), dark], context)
         stroke(gripRim, contact == nil ? UIColor.white.withAlphaComponent(0.25) : cyan,
@@ -158,7 +182,7 @@ enum DirectionArtwork {
     }
 
     private static func chevron(_ context: CGContext, centerY: CGFloat,
-                                  active: Bool, subtle: Bool) {
+                                  active: Bool, subtle: Bool, transparent: Bool) {
         let path = UIBezierPath()
         path.move(to: CGPoint(x: 88, y: centerY + 3))
         path.addLine(to: CGPoint(x: 100, y: centerY - 9))
@@ -167,6 +191,11 @@ enum DirectionArtwork {
         path.addLine(to: CGPoint(x: 100, y: centerY + 1))
         path.addLine(to: CGPoint(x: 93, y: centerY + 8))
         path.close()
+        if transparent {
+            outline(path, active ? cyan : UIColor.white.withAlphaComponent(subtle ? 0.5 : 0.82),
+                    1.7, context)
+            return
+        }
         context.saveGState()
         context.translateBy(x: 0, y: 1.2)
         stroke(path, UIColor.white.withAlphaComponent(subtle ? 0.08 : 0.17), 1.3, context)
@@ -224,6 +253,13 @@ enum DirectionArtwork {
         context.setLineCap(.round)
         context.addPath(path.cgPath)
         context.strokePath()
+    }
+
+    // A thin dark keyline keeps light outlines legible on bright game art.
+    private static func outline(_ path: UIBezierPath, _ color: UIColor,
+                                _ width: CGFloat, _ context: CGContext) {
+        stroke(path, UIColor.black.withAlphaComponent(0.55), width + 2, context)
+        stroke(path, color, width, context)
     }
 
     private static func shadow(_ path: UIBezierPath, offset: CGSize, blur: CGFloat,

@@ -3,6 +3,16 @@
 #include "player.h"
 #include "char_tbl.h"
 
+#ifdef HOST_NATIVE64
+extern void rd_begin_stage_scene( void ) ;
+
+static int *native_stage_model( void )
+{
+	if( stage_no == 8 || !obj_stg || obj_stg->cnt <= 0 || !obj_stg->obj ) return NULL ;
+	return obj_stg->obj[0] ;
+}
+#endif
+
 extern void ef12_disp( PLAYER_WORK *w ) ;
 extern void scr_matrix_set( void ) ;	/* the camera for the stage */
 extern void scr_far_matrix_set( void ) ;	/* the camera for the far stage */
@@ -438,6 +448,12 @@ void game_disp( void )
 {
 	int mode ;
 
+#ifdef HOST_NATIVE64
+	/* This callback draws the fight scene. Its selection is independent of
+	   the logical task counters that may already name the following scene. */
+	if( native_stage_model() ) rd_begin_stage_scene() ;
+#endif
+
 	if( ( mode = flash_flag_get() ) ){
 		if( mode == 1 ){
 			far_obj2_disp() ;
@@ -566,12 +582,22 @@ static void ef_disp( PLAYER_WORK *w )
 /*==============================================================*/
 static void stage_disp( void )
 {
+#ifdef HOST_NATIVE64
+	int *model = native_stage_model() ;
+
+	if( !model ) return ;
+#else
 	if( stage_no == 8 ) return ;
+#endif
 	scr_matrix_set() ;
 	nlPushMatrix( 0 ) ;
 	nlUnitMatrix() ;
 	stage_fade_set() ;
+#ifdef HOST_NATIVE64
+	nlObjPutUseViewMatrix( model ) ;
+#else
 	nlObjPutUseViewMatrix( obj_stg->obj[0] ) ;
+#endif
 	nlPopMatrix( 1 ) ;
 }
 

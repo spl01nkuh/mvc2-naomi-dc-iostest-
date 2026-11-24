@@ -9,7 +9,7 @@ struct DevelopmentSettingsView: View {
             Section {
                 Text("Experimental native gameplay build")
                     .font(.headline)
-                Text("Start Game boots the native engine after a validated import. Device testing is still required. Gameplay and audio pause while settings are open.")
+                Text("Gameplay and audio pause while settings are open.")
                     .foregroundStyle(.secondary)
             }
 
@@ -17,7 +17,7 @@ struct DevelopmentSettingsView: View {
                 LabeledContent("Status", value: store.hasImportedData ? "Imported and validated" : "Not imported")
                 LabeledContent("Storage", value: store.storageLocation)
                     .font(.caption).textSelection(.enabled)
-                Text("Use Import ZIP on the main screen to choose the complete supported NAOMI mvsc2 archive from Files, then choose Start Game. Imported data and native save data stay in this app’s Documents folder. Dreamcast disc archives are not supported.")
+                Text("Choose the complete supported NAOMI mvsc2 archive from Files using Import ZIP. The game starts automatically after validation.")
                     .font(.caption).foregroundStyle(.secondary)
                 if let failure = store.storageFailure {
                     Text(failure).foregroundStyle(.orange)
@@ -67,12 +67,13 @@ struct DevelopmentSettingsView: View {
                 Picker("Direction control", selection: $store.settings.directionStyle) {
                     ForEach(DirectionStyle.allCases) { style in Text(style.title).tag(style) }
                 }
+                Toggle("Transparent D-pad / stick", isOn: $store.settings.transparentDirections)
                 PercentSlider(title: "Stick sensitivity", value: $store.settings.stickSensitivity, range: 0.01...1)
                     .disabled(store.settings.directionStyle == .dpad)
                 PercentSlider(title: "Stick dead zone", value: $store.settings.stickDeadZone, range: 0...0.35)
                     .disabled(store.settings.directionStyle == .dpad)
                 NavigationLink("Buttons and bindings") { ControlsList(settings: $store.settings) }
-                Text("Use Layout on the main screen to move controls by dragging. Custom buttons can hold several bindings at once.")
+                Text("Use Touch Layout in the game menu to move controls. Custom buttons can hold several bindings at once.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

@@ -71,7 +71,10 @@ int mvc2_gameplay_start(const char* rom, const char* saves, char* error, size_t 
     presented_width = presented_height = 0;
     audio_samples = NULL;
     rd_quality("exact");
-    rd_set_widescreen(wants_widescreen);
+    rd_set_widescreen_preference(wants_widescreen);
+    /* The cartridge reader can retain the entire 136 MiB image on desktop.
+     * Keep a bounded working set on iOS as stage and character loads overlap. */
+    naomi_rom_cache_bytes = 32u << 20;
     rd_begin_frame();
     rd_background(UINT32_C(0xff000000));
     if (!naomi_init(&arc_program, rom)) {
@@ -109,7 +112,7 @@ const uint32_t* mvc2_gameplay_frame(void) {
 void mvc2_gameplay_set_widescreen(int enabled) {
     if (!on_owner(0)) return;
     wants_widescreen = enabled != 0;
-    if (active) rd_set_widescreen(wants_widescreen);
+    if (active) rd_set_widescreen_preference(wants_widescreen);
 }
 
 int mvc2_gameplay_frame_width(void) {
