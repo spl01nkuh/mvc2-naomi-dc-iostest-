@@ -1,7 +1,7 @@
 name: iOS native gameplay IPA
 on:
   push:
-    branches: [native-ios-gameplay]
+    branches: [native-ios-gameplay-apple-fallback]
     paths:
       - ports/port/ios/**
       - ports/port/**
@@ -13,7 +13,7 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
