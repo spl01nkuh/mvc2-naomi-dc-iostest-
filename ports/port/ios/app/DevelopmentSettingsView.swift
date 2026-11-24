@@ -38,12 +38,12 @@ struct DevelopmentSettingsView: View {
 
             Section("Screen") {
                 Toggle("Native widescreen (16:9)", isOn: $store.settings.nativeWidescreen)
-                Text("Expands the stage view while keeping fighters and the HUD in proportion. Takes effect when gameplay resumes.")
+                Text("Widens supported 3D fights. Title, selection, and menus keep their original framing.")
                     .font(.caption).foregroundStyle(.secondary)
                 Picker("Aspect ratio", selection: $store.settings.aspect) {
                     ForEach(ScreenAspect.allCases) { aspect in
                         Text(store.settings.nativeWidescreen && aspect == .fourThree
-                             ? "Fit 16:9" : aspect.title).tag(aspect)
+                             ? "Fit game view" : aspect.title).tag(aspect)
                     }
                 }
                 PercentSlider(title: "Overall size", value: $store.settings.screenScale, range: 0.25...1)
