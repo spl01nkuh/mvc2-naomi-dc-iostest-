@@ -20,6 +20,7 @@ static void* wrong_thread(void* context) {
 int main(void) {
     char error[1024];
     const int16_t* samples = (const int16_t*)1;
+    assert(mvc2_gameplay_progress().task == -1);
     assert(!mvc2_gameplay_frame());
     assert(!mvc2_gameplay_frame_width() && !mvc2_gameplay_frame_height());
     assert(!mvc2_gameplay_audio(&samples) && !samples);

@@ -154,6 +154,10 @@ function(mvc2_core_test name)
 endfunction()
 mvc2_core_test(native64_load_queue "${PORT}/native64/tests/test_load_queue.c")
 mvc2_core_test(native64_attract_queue LEGACY_WARNINGS "${PORT}/native64/tests/test_attract_queue.c")
+mvc2_core_test(native64_attract_effects LEGACY_WARNINGS "${PORT}/native64/tests/test_attract_effects.c"
+    "${GAME}/src/at01_ef0.c" "${GAME}/src/hit_work.c" "${GAME}/src/work.c")
+mvc2_core_test(native64_attract_effects_dc DREAMCAST LEGACY_WARNINGS "${PORT}/native64/tests/test_attract_effects.c"
+    "${GAME}/src/at01_ef0.c" "${GAME}/src/hit_work.c" "${GAME}/src/work.c")
 mvc2_core_test(native64_effect_words LEGACY_WARNINGS "${PORT}/native64/tests/test_effect_words.c" "${GAME}/src/work.c")
 mvc2_core_test(native64_effect_thanos LEGACY_WARNINGS "${PORT}/native64/tests/test_effect_thanos.c"
     "${GAME}/src/pl_char.c" "${GAME}/src/hit_work.c" "${GAME}/src/work.c")

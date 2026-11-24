@@ -32,6 +32,7 @@ final class NativeGameplaySession {
 
     private let input: InputState
     private let frames: NativeFrameStore
+    private let checkpoint: URL?
     private let receive: @MainActor (NativeGameplayEvent) -> Void
     private let condition = NSCondition()
     private var commands: [Command] = []
@@ -39,10 +40,11 @@ final class NativeGameplaySession {
     private var widescreenRequested = false
     private var owner: Thread?
 
-    init(input: InputState, frames: NativeFrameStore,
+    init(input: InputState, frames: NativeFrameStore, checkpoint: URL?,
          receive: @escaping @MainActor (NativeGameplayEvent) -> Void) {
         self.input = input
         self.frames = frames
+        self.checkpoint = checkpoint
         self.receive = receive
         let thread = Thread { [weak self] in self?.run() }
         thread.name = "MVC2 native gameplay owner"
@@ -97,6 +99,9 @@ final class NativeGameplaySession {
         var active = false
         var paused = true
         var deliveredFrame = false
+        var frameNumber = 0
+        var lastScene = (task: Int32(-2), step: Int32(0), scene: Int32(0), routine: Int32(0))
+        var nextCheckpoint = 0.0
         var nextFrame = ProcessInfo.processInfo.systemUptime
 
         // This thread intentionally survives stopped sessions: native coroutine
@@ -120,10 +125,13 @@ final class NativeGameplaySession {
                     paused = true
                     audioActivationAttempted = false
                     deliveredFrame = false
+                    frameNumber = 0
+                    nextCheckpoint = 0
                     input.releaseAll()
                     frames.clear()
                     send(.audioWarning(nil))
                     send(.status(.starting))
+                    recordCheckpoint("Starting native engine")
                     var error = [CChar](repeating: 0, count: 2048)
                     let capacity = error.count
                     let result = rom.path.withCString { romPath in
@@ -133,17 +141,22 @@ final class NativeGameplaySession {
                     }
                     if result == 0 {
                         mvc2_gameplay_stop()
+                        clearCheckpoint()
                         send(.status(.failed(Self.message(error, fallback:
                             "The native engine could not start this game data."))))
                     } else {
                         active = true
                         // The next loop observes commands/suspension before it
                         // resumes audio or advances the first game frame.
-                        if shouldPause { send(.status(.paused)) }
+                        if shouldPause {
+                            clearCheckpoint()
+                            send(.status(.paused))
+                        }
                     }
                 case .stop(let continuation):
                     sound?.suspend()
                     if active { mvc2_gameplay_stop() }
+                    clearCheckpoint()
                     active = false
                     paused = true
                     audioActivationAttempted = false
@@ -162,6 +175,7 @@ final class NativeGameplaySession {
                     audioActivationAttempted = false
                     input.releaseAll()
                     paused = true
+                    clearCheckpoint()
                     send(.status(.paused))
                 }
                 continue
@@ -169,6 +183,7 @@ final class NativeGameplaySession {
             if paused {
                 paused = false
                 nextFrame = ProcessInfo.processInfo.systemUptime
+                nextCheckpoint = 0
                 send(.status(.running))
             }
 
@@ -193,9 +208,20 @@ final class NativeGameplaySession {
                 controls.test = 0
                 var error = [CChar](repeating: 0, count: 2048)
                 let capacity = error.count
+                let progress = mvc2_gameplay_progress()
+                let scene = (progress.task, progress.step, progress.scene, progress.routine)
+                let time = ProcessInfo.processInfo.systemUptime
+                frameNumber += 1
+                if scene != lastScene || time >= nextCheckpoint {
+                    recordCheckpoint("Advancing game frame \(frameNumber)",
+                                     progress: progress, widescreen: widescreen)
+                    lastScene = scene
+                    nextCheckpoint = time + 1
+                }
                 if mvc2_gameplay_step(&controls, &error, capacity) == 0 {
                     sound?.suspend()
                     mvc2_gameplay_stop()
+                    clearCheckpoint()
                     active = false
                     paused = true
                     input.releaseAll()
@@ -221,6 +247,8 @@ final class NativeGameplaySession {
                 // route can fail independently of starting the game engine.
                 if !audioActivationAttempted {
                     audioActivationAttempted = true
+                    recordCheckpoint("Activating audio after frame \(frameNumber)",
+                                     progress: progress, widescreen: widescreen)
                     let audio = sound ?? NativeAudioOutput()
                     sound = audio
                     do {
@@ -229,6 +257,7 @@ final class NativeGameplaySession {
                     } catch {
                         send(.audioWarning(error.localizedDescription))
                     }
+                    nextCheckpoint = 0
                 }
                 var samples: UnsafePointer<Int16>?
                 let sampleFrames = mvc2_gameplay_audio(&samples)
@@ -242,6 +271,24 @@ final class NativeGameplaySession {
             // Slow frames do not cause an unbounded burst of catch-up frames.
             if now - nextFrame > period * 2 { nextFrame = now + period }
         }
+    }
+
+    private func recordCheckpoint(_ action: String, progress: MVC2_GAMEPLAY_PROGRESS? = nil,
+                                  widescreen: Bool? = nil) {
+        guard let checkpoint else { return }
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        var report = "MVC2 build \(build)\n\(Date().ISO8601Format())\n\(action)\n"
+        if let progress {
+            report += "Task \(progress.task), step \(progress.step), scene \(progress.scene), "
+            report += "routine \(progress.routine), timer \(progress.timer)\n"
+        }
+        if let widescreen { report += "Native widescreen \(widescreen ? "on" : "off")\n" }
+        try? Data(report.utf8).write(to: checkpoint, options: .atomic)
+    }
+
+    private func clearCheckpoint() {
+        guard let checkpoint else { return }
+        try? FileManager.default.removeItem(at: checkpoint)
     }
 
     private static func message(_ error: [CChar], fallback: String) -> String {
