@@ -13,7 +13,9 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,7 +47,7 @@ jobs:
       - name: Launch simulator gameplay host
         timeout-minutes: 12
         run: |
-          device_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for group in d["devices"].values() for v in group if v["name"].startswith("iPhone")))')"
+          device_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for key,group in d["devices"].items() if "iOS-27-2" in key for v in group if v["name"] == "iPhone 17"))')"
           xcrun simctl bootstatus "$device_id" -b
           xcrun simctl install "$device_id" build/ios-development-simulator/Release-iphonesimulator/MVC2Development.app
           xcrun simctl launch "$device_id" com.spl01nkuh.mvc2.native.dev --mvc2-widescreen-preview=on
