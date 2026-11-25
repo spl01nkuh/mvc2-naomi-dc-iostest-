@@ -84,7 +84,7 @@ target_compile_options(mvc2_native_renderer PRIVATE -Wall -Wextra -Werror -ffp-c
 target_link_libraries(mvc2_native_renderer PUBLIC Threads::Threads m)
 add_executable(test_native64_render test_native64_render.c
     "${GAME}/src/tex_load.c"
-    "${PORT}/nl/nl_tex.c" "${PORT}/nl/nl_obj.c" "${PORT}/nl/nl_xmtr.c"
+    "${PORT}/nl/nl_tex.c" "${PORT}/nl/nl_obj.c" "${PORT}/nl/nl_xmtr.c" "${PORT}/nl/nl_sprite.c"
     "${PORT}/nl/nl_sys.c" "${PORT}/nl/nl_work.c" "${PORT}/naomi/naomi_board.c"
     "${GAME}/src/lib/libnaomi/nlproj.c")
 target_include_directories(test_native64_render PRIVATE "${PORT}/include" "${PORT}/sys"

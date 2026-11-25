@@ -16,6 +16,9 @@ extern "C" {
 int mvc2_gameplay_start(const char* rom_directory, const char* save_directory,
                         char* error, size_t capacity);
 int mvc2_gameplay_step(const HOST_INPUT* input, char* error, size_t capacity);
+/* Called by the native game coroutine when an asset needed by this frame
+ * cannot be installed. The message must have static lifetime. */
+void mvc2_gameplay_fail_frame(const char* message);
 /* Owning thread, between steps. Current state of the linked arcade task. */
 typedef struct {
     int task, step, scene, routine, timer;
