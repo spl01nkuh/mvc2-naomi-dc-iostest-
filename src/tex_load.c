@@ -8,6 +8,8 @@
 #include "host_memory.h"
 #include "model_store.h"
 #include "../ports/port/native64/engine/runtime.h"
+#include "naomi_host.h"
+#include <stdio.h>
 #define TEX_RAW( address ) host_native64_ram_pointer( ( Uint32 )( address ), 1 )
 #define TEX_STATIC( address ) HOST_NATIVE64_RAM_AT( address )
 #define OBJ_AT( address ) mvc2_model_store_get( TEX_RAW( address ) )
@@ -575,13 +577,17 @@ void tex_set_select( void )
 	int i ;
 
 #if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
-	obj_dm01 = mvc2_model_store_get_select( TEX_RAW( DM01_OBJ_ADRS ), DM01_TEX_ADRS ) ;
-	/* The selection effects index the model through entry 180. The initial
-	   plate scrolls a pair of adjacent models in place. */
+	static char select_error[256] ;
+
+	obj_dm01 = mvc2_model_store_get_mapped( TEX_RAW( DM01_OBJ_ADRS ), DM01_TEX_ADRS ) ;
+	/* The selection effects index the model through entry 180. */
 	if( !obj_dm01 || obj_dm01->cnt <= 180 ||
 	    !obj_dm01->obj[6] || !obj_dm01->obj[7] ){
+		const char *detail = obj_dm01 ? "The model is missing required selection objects." :
+			mvc2_model_store_last_error() ;
 		obj_dm01 = NULL ;
-		mvc2_gameplay_fail_frame( "The native engine could not load the character selection models and textures." ) ;
+		snprintf( select_error, sizeof select_error, "Could not load the character selection scene. %s", detail ) ;
+		mvc2_gameplay_fail_frame( select_error ) ;
 		return ;
 	}
 #else
@@ -774,11 +780,19 @@ void TexLoad( int no )
 		obj_tex_load( 0x810, &obj_dm07, OBJ_AT( DM07_OBJ_ADRS ) ) ;
 		break ;
 	case 12:
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+		/* Populate the live opening buffers before uploading their textures. */
+		tex_load_opening() ;
+		obj_dm08 = mvc2_model_store_get_mapped( TEX_RAW( DM08_OBJ_ADRS ), DM08_TEX_ADRS ) ;
+		if( obj_dm08 ) obj_tex_load( 0x810, &obj_dm08, obj_dm08 ) ;
+		else host_log( "Opening model unavailable: %s", mvc2_model_store_last_error() ) ;
+#else
 #ifdef TARGET_DC
 		memcpy( ( void * )TEX_RAW( DM08_OBJ_ADRS ), ( void * )TEX_RAW( DM08_KEEP_ADRS ), DM08_KEEP_SIZE ) ;
 #endif
 		obj_tex_load( 0x810, &obj_dm08, OBJ_AT( DM08_OBJ_ADRS ) ) ;
 		tex_load_opening() ;
+#endif
 		break ;
 	case 13:
 #ifdef TARGET_DC

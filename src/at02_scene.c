@@ -1,6 +1,9 @@
 /* The scene of the third attract demo: its 40 works of kind 11, the camera that follows the key
    lists they step through, and the scene's task entry. The demo's works are at03_ef*.c. */
 #include "player.h"
+#ifdef HOST_NATIVE64
+#include "naomi_host.h"
+#endif
 
 /* Kamui */
 extern int obj_scale_max( VEC3 *scale ) ;	/* the demo takes it for an int, disp.c's returns a Float */
@@ -57,8 +60,13 @@ typedef struct { Sint32 obj_flag, turn_x, turn_y, turn_z ; } AT02_LOCAL_W ;
 /* a work of the pool; AT02_NEXT_W steps a work pointer on to the work made after it */
 #ifdef HOST_NATIVE64
 typedef WORK_BUFF AT02_WORK_BUFF ;
+/* The opening's work records hold key data instead of list callbacks. */
+#define AT02_KEY_PTR( w ) w->native_work_ptr[0]
+#define AT02_NAME_BIT 1u
 #else
 typedef struct { Uint8 buff[0x1d0] ; } AT02_WORK_BUFF ;
+#define AT02_KEY_PTR( w ) w->work_func
+#define AT02_NAME_BIT 1
 #endif
 #ifdef HOST_PORT
 #define AT02_NEXT_W( w )	( ( w ) = ( PLAYER_WORK * )( ( AT02_WORK_BUFF * )( w ) + 1 ) )
@@ -634,14 +642,14 @@ static void at02_key_step( PLAYER_WORK *ew )
 		AT02_KEY_POS *k ;
 		Sint16 key ;
 
-		k = ew->work_func ;
+		k = AT02_KEY_PTR( ew ) ;
 		key = k[1].frame ;
 		if( key == -1 ) goto end ;
 		dt = k[1].frame - k[0].frame ;
 		ew->timer0 = dt ;
 		pt = k[1].v ;
 		pf = k[0].v ;
-		ew->work_func = &k[1] ;
+		AT02_KEY_PTR( ew ) = &k[1] ;
 		step = at02_vec_step( ew->timer0, pt, pf ) ;
 		ew->pos.z = *pf ++ * 10.0f ;
 		ew->scale.z = *pf ;
@@ -653,7 +661,7 @@ static void at02_key_step( PLAYER_WORK *ew )
 		AT02_KEY_B *k ;
 		Sint16 key ;
 
-		k = ew->work_func ;
+		k = AT02_KEY_PTR( ew ) ;
 		key = k[1].frame ;
 		if( key == -1 ) goto end ;
 		dt = k[1].frame - k[0].frame ;
@@ -669,38 +677,38 @@ static void at02_key_step( PLAYER_WORK *ew )
 		pf = k[0].v ;
 		step = at02_vec_step( ew->timer0, pt, pf ) ;
 		ew->acc = step ;
-		ew->work_func = &k[1] ;
+		AT02_KEY_PTR( ew ) = &k[1] ;
 		return ;
 	}
 	switch( ew->type ){
 	case 1: {
 		AT02_KEY_POS *k ;
 
-		k = ew->work_func ;
+		k = AT02_KEY_PTR( ew ) ;
 		nf = k[1].frame ;
 		if( nf == -1 ) goto end ;
 		dt = k[1].frame - k[0].frame ;
 		pt = k[1].v ;
 		pf = k[0].v ;
-		ew->work_func = &k[1] ;
+		AT02_KEY_PTR( ew ) = &k[1] ;
 		break ;
 	}
 	case 2: {
 		AT02_KEY_ANG *k ;
 
-		k = ew->work_func ;
+		k = AT02_KEY_PTR( ew ) ;
 		nf = k[1].frame ;
 		if( nf == -1 ) goto end ;
 		dt = k[1].frame - k[0].frame ;
 		at = k[1].ang ;
 		af = k[0].ang ;
-		ew->work_func = &k[1] ;
+		AT02_KEY_PTR( ew ) = &k[1] ;
 		break ;
 	}
 	case 3: {
 		AT02_KEY_POS *k ;
 
-		k = ew->work_func ;
+		k = AT02_KEY_PTR( ew ) ;
 		nf = k[1].frame ;
 		if( nf == -1 ) goto end ;
 		dt = k[1].frame - k[0].frame ;
@@ -708,25 +716,25 @@ static void at02_key_step( PLAYER_WORK *ew )
 		af = k[0].ang ;
 		pt = k[1].v ;
 		pf = k[0].v ;
-		ew->work_func = &k[1] ;
+		AT02_KEY_PTR( ew ) = &k[1] ;
 		break ;
 	}
 	case 4: {
 		AT02_KEY_SCL *k ;
 
-		k = ew->work_func ;
+		k = AT02_KEY_PTR( ew ) ;
 		nf = k[1].frame ;
 		if( nf == -1 ) goto end ;
 		dt = k[1].frame - k[0].frame ;
 		st = k[1].v ;
 		sf = k[0].v ;
-		ew->work_func = &k[1] ;
+		AT02_KEY_PTR( ew ) = &k[1] ;
 		break ;
 	}
 	case 5: {
 		AT02_KEY_POSSCL *k ;
 
-		k = ew->work_func ;
+		k = AT02_KEY_PTR( ew ) ;
 		nf = k[1].frame ;
 		if( nf == -1 ) goto end ;
 		dt = k[1].frame - k[0].frame ;
@@ -734,13 +742,13 @@ static void at02_key_step( PLAYER_WORK *ew )
 		pf = k[0].v ;
 		st = k[1].s ;
 		sf = k[0].s ;
-		ew->work_func = &k[1] ;
+		AT02_KEY_PTR( ew ) = &k[1] ;
 		break ;
 	}
 	case 6: {
 		AT02_KEY_SCL *k ;
 
-		k = ew->work_func ;
+		k = AT02_KEY_PTR( ew ) ;
 		nf = k[1].frame ;
 		if( nf == -1 ) goto end ;
 		if( nf == -3 ){
@@ -752,7 +760,7 @@ static void at02_key_step( PLAYER_WORK *ew )
 			af = n->ang ;
 			st = n->v ;
 			sf = k->v ;
-			ew->work_func = n ;
+			AT02_KEY_PTR( ew ) = n ;
 		} else {
 			AT02_KEY_SCL *n ;
 
@@ -763,7 +771,7 @@ static void at02_key_step( PLAYER_WORK *ew )
 			af = k->ang ;
 			st = n->v ;
 			sf = k->v ;
-			ew->work_func = n ;
+			AT02_KEY_PTR( ew ) = n ;
 		}
 		break ;
 	}
@@ -794,7 +802,13 @@ static void at02_key_step( PLAYER_WORK *ew )
 		}
 	}
 	if( ew->type & 4 ){
+#ifdef HOST_NATIVE64
+		/* Scale keys contain only X and Y. */
+		tmp.x = ( st[0] - sf[0] ) / ew->timer0 ;
+		tmp.y = ( st[1] - sf[1] ) / ew->timer0 ;
+#else
 		tmp = at02_vec_step( ew->timer0, st, sf ) ;
+#endif
 		if( nf != -3 ){
 			ew->scale.x = *sf ++ ;
 			ew->scale.y = *sf ;
@@ -835,7 +849,7 @@ void at02_w_set( int no, void *key )
 
 	if( !ew ) return ;
 	ew->disp_flag = 1 ;
-	ew->work_func = key ;
+	AT02_KEY_PTR( ew ) = key ;
 	ew->timer0 = 1 ;
 	ew->rot[0] = ew->rot[1] = ew->rot[2] = 0 ;
 	ew->scale.x = ew->scale.y = ew->scale.z = 1.0f ;
@@ -972,6 +986,11 @@ static void at02_w_main( PLAYER_WORK *ew )
 		ew->scale.y += ew->acc.y ;
 		ew->scale.z += ew->acc.z ;
 	}
+#ifdef HOST_NATIVE64
+	/* The final transit of these two works uses only the assigned speed.
+	   Their old key lists hold angles, not positions. */
+	if( ew->type == 1 && ( no == 3 || no == 4 ) ) return ;
+#endif
 	if( ew->type ){
 		if( -- ew->timer0 <= 0 ) at02_key_step( ew ) ;
 	}
@@ -1049,10 +1068,10 @@ static void at02_name_disp( void )
 			if( Sys->timer1 >= AT02_NAME2_IN ) ew->rot[1] = 4338 ;
 			else ew->rot[1] = 28343 ;
 			if( no < 32 ){
-				if( bits[0] & ( 1 << no ) ) on = 1 ;
+				if( bits[0] & ( AT02_NAME_BIT << no ) ) on = 1 ;
 				else on = 0 ;
 			} else {
-				if( bits[1] & ( 1 << ( no - 32 ) ) ) on = 1 ;
+				if( bits[1] & ( AT02_NAME_BIT << ( no - 32 ) ) ) on = 1 ;
 				else on = 0 ;
 			}
 			ew->fade.trnsl = ew->fade.r = ew->fade.g = ew->fade.b = on * 1.0f ;
@@ -1082,6 +1101,18 @@ static void at02_name_disp( void )
 /*			The work of the scene's record no, made ready to	*/
 /*			run its key list; 0 if its place has none			*/
 /****************************************************************/
+#ifdef HOST_NATIVE64
+static int at02_rec_kind( int kind )
+{
+	if( Sys->cpu_level_type ){
+		if( kind == 20 ) return 44 ;
+		if( kind == 22 ) return 41 ;
+		if( kind == 25 ) return 42 ;
+	}
+	return kind ;
+}
+#endif
+
 PLAYER_WORK *at02_rec_set( int no )
 {
 	AT02_REC *rec = &at02_rec[no] ;
@@ -1092,13 +1123,17 @@ PLAYER_WORK *at02_rec_set( int no )
 	ew = at02_w[rec->slot] ;
 	ew->be_flag = 1 ;
 	ew->disp_flag = 1 ;
-	ew->work_func = rec->key ;
+	AT02_KEY_PTR( ew ) = rec->key ;
+#ifdef HOST_NATIVE64
+	ew->sub_no = at02_rec_kind( rec->kind ) ;
+#else
 	ew->sub_no = rec->kind ;
 	if( Sys->cpu_level_type ){
 		if( ew->sub_no == 20 ) ew->sub_no = 44 ;
 		if( ew->sub_no == 22 ) ew->sub_no = 41 ;
 		if( ew->sub_no == 25 ) ew->sub_no = 42 ;
 	}
+#endif
 	ew->obj = obj_dm08->obj[ew->sub_no] ;
 	ew->type = rec->type ;
 	ew->fade.trnsl = 0.0f ;
@@ -1188,10 +1223,10 @@ static void at02_script( void )
 		AT02_NEXT_W( ew ) ;
 		ew->disp_flag = 0 ;
 		AT02_NEXT_W( ew ) ;
-		ew->work_func = &at02_key_k08[6] ;
+		AT02_KEY_PTR( ew ) = &at02_key_k08[6] ;
 		ew->timer0 = 1 ;
 		AT02_NEXT_W( ew ) ;
-		ew->work_func = &at02_key_k09[7] ;
+		AT02_KEY_PTR( ew ) = &at02_key_k09[7] ;
 		ew->timer0 = 1 ;
 		break ;
 	case AT02_NAME1_IN:
@@ -1239,7 +1274,7 @@ static void at02_script( void )
 			ew->disp_flag = 1 ;
 			if( i == 1 ){
 				ew->obj = obj_dm08->obj[2] ;
-				ew->work_func = at02_key_k01b ;
+				AT02_KEY_PTR( ew ) = at02_key_k01b ;
 				at02_key_step( ew ) ;
 			}
 		}
@@ -1255,10 +1290,10 @@ static void at02_script( void )
 		tex_req_flag = 1 ;
 		tex_req_no = 5 ;
 		ew = at02_w[5] ;
-		ew->work_func = &at02_key_k08[6] ;
+		AT02_KEY_PTR( ew ) = &at02_key_k08[6] ;
 		ew->timer0 = 1 ;
 		AT02_NEXT_W( ew ) ;
-		ew->work_func = &at02_key_k09[7] ;
+		AT02_KEY_PTR( ew ) = &at02_key_k09[7] ;
 		ew->timer0 = 1 ;
 		AT02_NEXT_W( ew ) ;
 		ew->disp_flag = 0 ;
@@ -1471,7 +1506,7 @@ static void at02_start( void )
 		nlMatrixMode( 1 ) ;
 		cam_w->obj_flag = 0 ;
 		cam_w->timer0 = 1 ;
-		cam_w->work_func = at02_cam_keys[at02_cam_no ++] ;
+		AT02_KEY_PTR( cam_w ) = at02_cam_keys[at02_cam_no ++] ;
 		break ;
 	case AT02_NAME1_IN:
 	case AT02_NAME2_IN:
@@ -1485,7 +1520,7 @@ static void at02_start( void )
 	case AT02_FRAME( 1445, 1467 ):
 		cam_w->obj_flag = 0 ;
 		cam_w->timer0 = 1 ;
-		cam_w->work_func = at02_cam_keys[at02_cam_no ++] ;
+		AT02_KEY_PTR( cam_w ) = at02_cam_keys[at02_cam_no ++] ;
 		break ;
 	case AT02_NAME2_OUT:
 		nlMatrixMode( 3 ) ;
@@ -1505,7 +1540,7 @@ static void at02_start( void )
 	}
 	if( -- cam_w->timer0 == 0 ){
 		no = cam_w->obj_flag ;
-		list = cam_w->work_func ;
+		list = AT02_KEY_PTR( cam_w ) ;
 		key = list + no ;
 		if( list[no + 1].frame != -1 ){
 			cam_w->timer0 = key[1].frame - key->frame ;
@@ -1542,6 +1577,26 @@ static void at02_start( void )
 /*==============================================================*/
 /*			The scene's set-up									*/
 /*==============================================================*/
+#ifdef HOST_NATIVE64
+static int at02_model_ready( void )
+{
+	/* Mesh 2 replaces a scripted work. 15, 17 and 53 are the unchanged
+	   sources for UV animation. 55 through 59 display name tiles. */
+	static const Uint8 extra_meshes[] = { 2, 15, 17, 53, 55, 56, 57, 58, 59 } ;
+	const AT02_REC *rec ;
+	size_t i ;
+
+	if( !obj_dm08 || !obj_dm08->obj || obj_dm08->cnt <= 59 ) return 0 ;
+	for( rec = at02_rec ; rec->frame >= 0 ; rec ++ ){
+		if( !obj_dm08->obj[at02_rec_kind( rec->kind )] ) return 0 ;
+	}
+	for( i = 0 ; i < sizeof( extra_meshes ) ; i ++ ){
+		if( !obj_dm08->obj[extra_meshes[i]] ) return 0 ;
+	}
+	return 1 ;
+}
+#endif
+
 static void at02_init( void )
 {
 	PLAYER_WORK **w ;
@@ -1564,6 +1619,14 @@ static void at02_init( void )
 	ex_sound_load2() ;
 	total_vol_init() ;
 	TexLoad( 12 ) ;
+#ifdef HOST_NATIVE64
+	if( !at02_model_ready() ){
+		host_log( "native opening: incomplete DM08 model, advancing to the title" ) ;
+		Sys->timer1 = 0 ;
+		Sys->task_step ++ ;
+		return ;
+	}
+#endif
 #ifdef TARGET_DC
 	fight_load_start( 5 ) ;	/* read the title's files meanwhile */
 #endif
@@ -1632,6 +1695,9 @@ static void at02_main( void )
 void attract_opening_main( void )
 {
 	if( !Sys->scene_no ) at02_init() ;
+#ifdef HOST_NATIVE64
+	if( !Sys->scene_no ) return ;
+#endif
 	at02_main() ;
 }
 

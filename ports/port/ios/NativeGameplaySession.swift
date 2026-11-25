@@ -5,7 +5,7 @@ enum NativeGameplayStatus: Equatable {
     case starting
     case running
     case paused
-    case failed(String)
+    case failed(String, report: URL?)
 
     var isOpen: Bool {
         switch self {
@@ -140,10 +140,11 @@ final class NativeGameplaySession {
                         }
                     }
                     if result == 0 {
+                        let message = Self.message(error, fallback: "The native engine could not start this game data.")
+                        let report = saveFailure("Starting native engine", message: message)
                         mvc2_gameplay_stop()
                         clearCheckpoint()
-                        send(.status(.failed(Self.message(error, fallback:
-                            "The native engine could not start this game data."))))
+                        send(.status(.failed(message, report: report)))
                     } else {
                         active = true
                         // The next loop observes commands/suspension before it
@@ -219,6 +220,9 @@ final class NativeGameplaySession {
                     nextCheckpoint = time + 1
                 }
                 if mvc2_gameplay_step(&controls, &error, capacity) == 0 {
+                    let message = Self.message(error, fallback: "The native engine stopped while advancing a game frame.")
+                    let report = saveFailure("Advancing game frame \(frameNumber)", message: message,
+                                             progress: progress, widescreen: widescreen)
                     sound?.suspend()
                     mvc2_gameplay_stop()
                     clearCheckpoint()
@@ -226,8 +230,7 @@ final class NativeGameplaySession {
                     paused = true
                     input.releaseAll()
                     frames.clear()
-                    send(.status(.failed(Self.message(error, fallback:
-                        "The native engine stopped while advancing a game frame."))))
+                    send(.status(.failed(message, report: report)))
                     return
                 }
 
@@ -276,6 +279,25 @@ final class NativeGameplaySession {
     private func recordCheckpoint(_ action: String, progress: MVC2_GAMEPLAY_PROGRESS? = nil,
                                   widescreen: Bool? = nil) {
         guard let checkpoint else { return }
+        try? reportData(action, progress: progress, widescreen: widescreen)
+            .write(to: checkpoint, options: .atomic)
+    }
+
+    private func saveFailure(_ action: String, message: String, progress: MVC2_GAMEPLAY_PROGRESS? = nil,
+                             widescreen: Bool? = nil) -> URL? {
+        guard let checkpoint else { return nil }
+        let report = checkpoint.deletingLastPathComponent().appendingPathComponent("LastEngineFailure.txt")
+        do {
+            try reportData("\(action)\nEngine error: \(message)",
+                           progress: progress, widescreen: widescreen).write(to: report, options: .atomic)
+            return report
+        } catch {
+            return nil
+        }
+    }
+
+    private func reportData(_ action: String, progress: MVC2_GAMEPLAY_PROGRESS?,
+                            widescreen: Bool?) -> Data {
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
         var report = "MVC2 build \(build)\n\(Date().ISO8601Format())\n\(action)\n"
         if let progress {
@@ -283,7 +305,7 @@ final class NativeGameplaySession {
             report += "routine \(progress.routine), timer \(progress.timer)\n"
         }
         if let widescreen { report += "Native widescreen \(widescreen ? "on" : "off")\n" }
-        try? Data(report.utf8).write(to: checkpoint, options: .atomic)
+        return Data(report.utf8)
     }
 
     private func clearCheckpoint() {

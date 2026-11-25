@@ -45,7 +45,7 @@ add_library(mvc2_native_model_store STATIC "${PORT}/native64/model_store.c")
 target_include_directories(mvc2_native_model_store PUBLIC "${PORT}/native64")
 target_compile_options(mvc2_native_model_store PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(mvc2_native_model_store PUBLIC mvc2_native_model mvc2_native_game_memory)
-add_executable(test_native64_model test_native64_model.c
+add_executable(test_native64_model test_native64_model.c "${GAME}/src/obj_uv.c"
     "${PORT}/nl/nl_tex.c" "${PORT}/naomi/naomi_board.c")
 target_include_directories(test_native64_model PRIVATE "${PORT}/include" "${PORT}/sys" "${PORT}/snd" "${GAME}/include")
 target_compile_definitions(test_native64_model PRIVATE HOST_NATIVE64=1 _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
@@ -158,6 +158,10 @@ mvc2_core_test(native64_attract_effects LEGACY_WARNINGS "${PORT}/native64/tests/
     "${GAME}/src/at01_ef0.c" "${GAME}/src/hit_work.c" "${GAME}/src/work.c")
 mvc2_core_test(native64_attract_effects_dc DREAMCAST LEGACY_WARNINGS "${PORT}/native64/tests/test_attract_effects.c"
     "${GAME}/src/at01_ef0.c" "${GAME}/src/hit_work.c" "${GAME}/src/work.c")
+mvc2_core_test(native64_attract_opening LEGACY_WARNINGS "${PORT}/native64/tests/test_attract_opening.c"
+    "${PORT}/game/at02_scene_host.c" "${GAME}/src/hit_work.c" "${GAME}/src/work.c"
+    "${GAME}/src/obj_uv.c" "${GAME}/src/lib/libnaomi/nlmath.c")
+target_include_directories(test_native64_attract_opening PRIVATE "${GAME}/src")
 mvc2_core_test(native64_effect_words LEGACY_WARNINGS "${PORT}/native64/tests/test_effect_words.c" "${GAME}/src/work.c")
 mvc2_core_test(native64_effect_thanos LEGACY_WARNINGS "${PORT}/native64/tests/test_effect_thanos.c"
     "${GAME}/src/pl_char.c" "${GAME}/src/hit_work.c" "${GAME}/src/work.c")

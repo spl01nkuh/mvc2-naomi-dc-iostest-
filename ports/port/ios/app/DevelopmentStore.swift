@@ -45,8 +45,12 @@ final class DevelopmentStore: ObservableObject {
         gameStatus == .running || gameStatus == .paused
     }
     var gameFailure: String? {
-        if case .failed(let message) = gameStatus { return "Native engine failed: \(message)" }
+        if case .failed(let message, _) = gameStatus { return "Native engine failed: \(message)" }
         return nil
+    }
+    var sessionReport: URL? {
+        if case .failed(_, let report) = gameStatus { return report }
+        return interruptedSessionReport
     }
     var storageLocation: String { "Documents/MVC2/GameData" }
     var showsControlPreview: Bool {

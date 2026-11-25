@@ -22,8 +22,8 @@ jobs:
       - name: Test native character selection assets, attract mode and presentation
         run: |
           cmake -S ports/tests -B build/ipa-validation -DCMAKE_BUILD_TYPE=Release
-          cmake --build build/ipa-validation --target test_native64_render test_native64_attract_effects test_native64_widescreen --parallel 4
-          ctest --test-dir build/ipa-validation --output-on-failure -R '^native64_(render|attract_effects|widescreen)$'
+          cmake --build build/ipa-validation --target test_native64_model test_native64_render test_native64_attract_effects test_native64_attract_opening test_native64_widescreen --parallel 4
+          ctest --test-dir build/ipa-validation --output-on-failure -R '^native64_(model|render|attract_effects|attract_opening|widescreen)$'
           swift ports/tests/test_metal_presentation.swift ports/port/ios/display/Presentation.metal
       - name: Build device native gameplay IPA
         env:
@@ -67,6 +67,40 @@ jobs:
           grep -Fx 'Simulated interruption during game frame 800' "$container/Documents/MVC2/LastInterruptedSession.txt"
           xcrun simctl io "$device_id" screenshot build/ios-development-simulator/recovery.png
           xcrun simctl terminate "$device_id" com.spl01nkuh.mvc2.native.dev
+          python3 - "$container/Documents/MVC2/GameData" <<'PY'
+          import json
+          from pathlib import Path
+          import re
+          import sys
+          import uuid
+
+          # Simulate a committed import whose files were changed after import.
+          # The unchanged native CRC check rejects these sparse zero files.
+          assets = Path(sys.argv[1])
+          identifier = str(uuid.uuid4())
+          rom = assets / "sets" / identifier
+          manifest = Path("ports/port/ios/assets/mvc2_rom.c").read_text()
+          files = re.findall(r'\{"([^"]+)",\s*(0x[0-9a-f]+),', manifest)
+          assert files
+          rom.mkdir(parents=True)
+          for name, size in files:
+              with (rom / name).open("xb") as file:
+                  file.truncate(int(size, 16))
+          (rom / "validated.json").write_text(json.dumps({"version": 1, "fileCount": len(files)}))
+          (assets / "active.json").write_text(json.dumps({"version": 1, "directory": identifier}))
+          PY
+          xcrun simctl launch "$device_id" com.spl01nkuh.mvc2.native.dev
+          for attempt in {1..15}; do
+            if [[ -f "$container/Documents/MVC2/LastEngineFailure.txt" &&
+                  ! -e "$container/Documents/MVC2/.active-session.txt" ]]; then
+              break
+            fi
+            sleep 1
+          done
+          grep -F 'Engine error: Incorrect ROM revision or damaged file:' "$container/Documents/MVC2/LastEngineFailure.txt"
+          test ! -e "$container/Documents/MVC2/.active-session.txt"
+          xcrun simctl io "$device_id" screenshot build/ios-development-simulator/engine-error.png
+          xcrun simctl terminate "$device_id" com.spl01nkuh.mvc2.native.dev
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: MVC2-Gameplay-simulator-launch
@@ -74,5 +108,6 @@ jobs:
             build/ios-development-simulator/launch.png
             build/ios-development-simulator/controls-*.png
             build/ios-development-simulator/recovery.png
+            build/ios-development-simulator/engine-error.png
             build/ipa-validation/widescreen-fixtures/*.ppm
           if-no-files-found: error

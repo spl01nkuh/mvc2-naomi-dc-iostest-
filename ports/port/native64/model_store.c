@@ -1,6 +1,8 @@
 #include "model_store.h"
 #include "model.h"
 #include "../include/host_memory.h"
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -13,7 +15,7 @@ typedef struct ModelEntry {
     size_t offset;
     uint64_t model_generation, texture_generation;
     int packed_texture;
-    uint32_t select_texture_address;
+    uint32_t mapped_texture_address;
     MVC2HostObjectFile file;
     MVC2NativeModel* owner;
 } ModelEntry;
@@ -21,6 +23,18 @@ static FileExtent files[MAX_FILES];
 static ModelEntry* models[MAX_MODELS];
 static size_t file_count, model_count;
 static uint64_t generation;
+static char last_error[256];
+
+static MVC2HostObjectFile* fail(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    vsnprintf(last_error, sizeof last_error, format, args);
+    va_end(args);
+    return NULL;
+}
+const char* mvc2_model_store_last_error(void) {
+    return last_error;
+}
 
 static uint16_t le16(const uint8_t* bytes) {
     return (uint16_t)(bytes[0] | (uint16_t)bytes[1] << 8);
@@ -113,30 +127,42 @@ static int unpack_lz16(const uint8_t* input, size_t input_size, uint8_t* output,
     return 0;
 }
 static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes,
-                                     uint32_t select_texture_address) {
+                                     uint32_t mapped_texture_address) {
     size_t offset;
-    if (!ram_offset(model_bytes, 16, &offset)) return NULL;
+    last_error[0] = '\0';
+    if (!ram_offset(model_bytes, 16, &offset))
+        return fail("Model source is outside the native game RAM backing.");
+    uint32_t model_address = MVC2_NATIVE_RAM_BASE + (uint32_t)offset;
     const FileExtent* source = find_file(offset);
-    if (!source || source->size < 16) return NULL;
+    if (!source || source->size < 16)
+        return fail("Model %08X has no complete registered source file.", model_address);
     const uint8_t* bytes = model_bytes;
     uint32_t table = le32(bytes), texture_table = le32(bytes + 8);
-    if (table < 16 || texture_table < table - 16) return NULL;
+    if (table < 16 || texture_table < table - 16)
+        return fail("Model %08X has invalid object/texture table addresses %08X/%08X.",
+                    model_address, table, texture_table);
     size_t relative = texture_table - (table - 16);
-    if (relative > source->size || source->size - relative < 2) return NULL;
+    if (relative > source->size || source->size - relative < 2)
+        return fail("Model %08X texture table %08X is outside its %zu-byte source file.",
+                    model_address, texture_table, source->size);
     const FileExtent* textures = NULL;
-    if (packed_bytes || select_texture_address || le16(bytes + relative)) {
+    if (packed_bytes || mapped_texture_address || le16(bytes + relative)) {
         size_t texture_offset;
         if (packed_bytes) {
-            if (!ram_offset(packed_bytes, 1, &texture_offset)) return NULL;
-        } else if (select_texture_address) {
-            if (mvc2_memory_offset(select_texture_address, 1, &texture_offset) != MVC2_MEMORY_OK)
-                return NULL;
+            if (!ram_offset(packed_bytes, 1, &texture_offset))
+                return fail("Model %08X packed texture source is outside game RAM.", model_address);
+        } else if (mapped_texture_address) {
+            if (mvc2_memory_offset(mapped_texture_address, 1, &texture_offset) != MVC2_MEMORY_OK)
+                return fail("Model %08X texture bank %08X is outside game RAM.",
+                            model_address, mapped_texture_address);
         } else if (source->size - relative < 16 ||
                    mvc2_memory_offset(le32(bytes + relative + 8), 1, &texture_offset) != MVC2_MEMORY_OK) {
-            return NULL;
+            return fail("Model %08X first texture address cannot resolve in game RAM.", model_address);
         }
         textures = find_file(texture_offset);
-        if (!textures) return NULL;
+        if (!textures)
+            return fail("Model %08X texture bank %08X has no complete registered file.",
+                        model_address, MVC2_NATIVE_RAM_BASE + (uint32_t)texture_offset);
     }
     ModelEntry* entry = NULL;
     for (size_t i = 0; i < model_count; ++i)
@@ -144,7 +170,7 @@ static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes
     uint64_t texture_generation = textures ? textures->generation : 0;
     if (entry && entry->model_generation == source->generation &&
         entry->texture_generation == texture_generation &&
-        entry->select_texture_address == select_texture_address &&
+        entry->mapped_texture_address == mapped_texture_address &&
         entry->packed_texture == (packed_bytes != NULL)) return &entry->file;
 
     const uint8_t* texture_bytes = textures ? host_native64_ram + textures->offset : NULL;
@@ -153,25 +179,29 @@ static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes
     if (packed_bytes) {
         size_t decoded_size;
         if (!unpack_lz16(texture_bytes, texture_size, NULL, MAX_PACKED_TEXTURE_BYTES,
-                         &decoded_size) || !decoded_size) return NULL;
+                         &decoded_size) || !decoded_size)
+            return fail("Model %08X packed texture stream is invalid or too large.", model_address);
         unpacked = malloc(decoded_size);
-        if (!unpacked) return NULL;
+        if (!unpacked) return fail("Model %08X could not allocate its unpacked texture.", model_address);
         if (!unpack_lz16(texture_bytes, texture_size, unpacked, decoded_size, &decoded_size)) {
             free(unpacked);
-            return NULL;
+            return fail("Model %08X packed texture stream changed while decoding.", model_address);
         }
         texture_bytes = unpacked;
         texture_size = decoded_size;
     }
     MVC2NativeModel* owner = NULL;
     MVC2NativeModelStatus status;
-    if (select_texture_address) {
-        /* sel_sub.c assembles two 256x256 portrait atlases and two 96x96
-         * portraits here. These are live RAM, not registered ROM files. */
+    if (mapped_texture_address) {
+        /* The board's model links textures throughout shared RAM, including
+         * the selection atlases, name pictures and packed-picture scratch
+         * buffers (sel_sub.c). Physical, cached and uncached SH-4 aliases
+         * resolve to the same bounded native backing, never process casts.
+         * Each complete texture read is still checked by the decoder. */
         const MVC2ModelTextureSpan spans[] = {
-            { select_texture_address, host_native64_ram + textures->offset, textures->size },
-            { 0x0cdb0000, HOST_NATIVE64_RAM_AT(0x0cdb0000), 0x40000 },
-            { 0x0cdf0000, HOST_NATIVE64_RAM_AT(0x0cdf0000), 0x9000 },
+            { MVC2_NATIVE_RAM_BASE, host_native64_ram, MVC2_NATIVE_RAM_SIZE },
+            { MVC2_NATIVE_RAM_BASE | UINT32_C(0x80000000), host_native64_ram, MVC2_NATIVE_RAM_SIZE },
+            { MVC2_NATIVE_RAM_BASE | UINT32_C(0xa0000000), host_native64_ram, MVC2_NATIVE_RAM_SIZE },
         };
         status = mvc2_native_model_decode_mapped(bytes, source->size, spans,
                                                   sizeof spans / sizeof spans[0], &owner);
@@ -179,11 +209,19 @@ static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes
         status = mvc2_native_model_decode(bytes, source->size, texture_bytes, texture_size, &owner);
     }
     free(unpacked);
-    if (status != MVC2_NATIVE_MODEL_OK) return NULL;
+    if (status != MVC2_NATIVE_MODEL_OK)
+        return fail("Model %08X (%zu bytes): %s.", model_address, source->size,
+                    mvc2_native_model_status_string(status));
     if (!entry) {
-        if (model_count == MAX_MODELS) { mvc2_native_model_free(owner); return NULL; }
+        if (model_count == MAX_MODELS) {
+            mvc2_native_model_free(owner);
+            return fail("Model %08X exceeds the native model-cache capacity.", model_address);
+        }
         entry = calloc(1, sizeof(*entry));
-        if (!entry) { mvc2_native_model_free(owner); return NULL; }
+        if (!entry) {
+            mvc2_native_model_free(owner);
+            return fail("Model %08X could not allocate its native cache entry.", model_address);
+        }
         entry->offset = offset;
         models[model_count++] = entry;
     }
@@ -192,7 +230,7 @@ static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes
     entry->owner = owner;
     entry->model_generation = source->generation;
     entry->texture_generation = texture_generation;
-    entry->select_texture_address = select_texture_address;
+    entry->mapped_texture_address = mapped_texture_address;
     entry->packed_texture = packed_bytes != NULL;
     mvc2_native_model_free(previous);
     return &entry->file;
@@ -200,12 +238,14 @@ static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes
 MVC2HostObjectFile* mvc2_model_store_get(void* model_bytes) {
     return get_model(model_bytes, NULL, 0);
 }
-MVC2HostObjectFile* mvc2_model_store_get_select(void* model_bytes, uint32_t texture_address) {
-    return texture_address ? get_model(model_bytes, NULL, texture_address) : NULL;
+MVC2HostObjectFile* mvc2_model_store_get_mapped(void* model_bytes, uint32_t texture_address) {
+    return texture_address ? get_model(model_bytes, NULL, texture_address) :
+        fail("Mapped texture bank address is zero.");
 }
 MVC2HostObjectFile* mvc2_model_store_get_packed_texture(void* model_bytes,
                                                        const void* packed_bytes) {
-    return packed_bytes ? get_model(model_bytes, packed_bytes, 0) : NULL;
+    return packed_bytes ? get_model(model_bytes, packed_bytes, 0) :
+        fail("Packed texture source is missing.");
 }
 void mvc2_model_store_reset(void) {
     for (size_t i = 0; i < model_count; ++i) {
@@ -216,4 +256,5 @@ void mvc2_model_store_reset(void) {
     memset(files, 0, sizeof files);
     model_count = file_count = 0;
     generation = 0;
+    last_error[0] = '\0';
 }
