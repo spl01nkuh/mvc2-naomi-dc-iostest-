@@ -60,6 +60,25 @@ static MVC2NativeModelStatus texture_extent(int32_t type, unsigned w, unsigned h
         MVC2_NATIVE_MODEL_UNSUPPORTED_TEXTURE;
 }
 
+static MVC2NativeModelStatus vertex_records(const uint8_t* model, size_t size,
+                                             size_t* cursor, size_t end, size_t vertices) {
+    if (vertices > (end - *cursor) / 8) return MVC2_NATIVE_MODEL_PRIMITIVE;
+    for (size_t i = 0; i < vertices; ++i) {
+        if (!span(*cursor, 8, end)) return MVC2_NATIVE_MODEL_PRIMITIVE;
+        if (le32(model + *cursor) & 1) {
+            if (!span(*cursor, 32, end)) return MVC2_NATIVE_MODEL_PRIMITIVE;
+            *cursor += 32;
+        } else {
+            int64_t destination = (int64_t)*cursor + 8 + (int32_t)le32(model + *cursor + 4);
+            if (destination < 0 || (destination & 3) ||
+                !span((size_t)destination, 32, size))
+                return MVC2_NATIVE_MODEL_REFERENCE;
+            *cursor += 8;
+        }
+    }
+    return MVC2_NATIVE_MODEL_OK;
+}
+
 static MVC2NativeModelStatus primitives(const uint8_t* model, size_t size,
                                          size_t begin, size_t end) {
     size_t cursor = begin;
@@ -77,22 +96,42 @@ static MVC2NativeModelStatus primitives(const uint8_t* model, size_t size,
             vertices *= 3;
         }
         else if (count > MAX_VERTEX_STRIP) return MVC2_NATIVE_MODEL_PRIMITIVE;
-        if (vertices > (end - cursor) / 8) return MVC2_NATIVE_MODEL_PRIMITIVE;
-        for (size_t i = 0; i < vertices; ++i) {
-            if (!span(cursor, 8, end)) return MVC2_NATIVE_MODEL_PRIMITIVE;
-            if (le32(model + cursor) & 1) {
-                if (!span(cursor, 32, end)) return MVC2_NATIVE_MODEL_PRIMITIVE;
-                cursor += 32;
-            } else {
-                int64_t destination = (int64_t)cursor + 8 + (int32_t)le32(model + cursor + 4);
-                if (destination < 0 || (destination & 3) ||
-                    !span((size_t)destination, 32, size))
-                    return MVC2_NATIVE_MODEL_REFERENCE;
-                cursor += 8;
-            }
-        }
+        MVC2NativeModelStatus status = vertex_records(model, size, &cursor, end, vertices);
+        if (status != MVC2_NATIVE_MODEL_OK) return status;
     }
     return MVC2_NATIVE_MODEL_OK;
+}
+
+/* Negative object kinds are not submitted to nlObjPutLoadTexture. Some are
+ * UV sources used by obj_uv_next: after the 24-byte object header they have
+ * primitive records directly, without an 80-byte material header. Its count
+ * rule is bit 0x10 for a strip, otherwise triangles; this differs from the
+ * drawing backend's bit-0x08 rule. Preserve these raw records and their file-
+ * relative short references in the owned copy just like normal groups. */
+static MVC2NativeModelStatus uv_template_extent(const uint8_t* bytes, size_t size,
+                                                 size_t start, size_t* extent) {
+    size_t cursor = start + 24;
+    for (;;) {
+        if (!span(cursor, 4, size)) return MVC2_NATIVE_MODEL_PRIMITIVE;
+        uint32_t head = le32(bytes + cursor);
+        if (!head) {
+            *extent = cursor + 4 - start;
+            return MVC2_NATIVE_MODEL_OK;
+        }
+        if (head & UINT32_C(0x80000000) || !span(cursor, 8, size))
+            return MVC2_NATIVE_MODEL_PRIMITIVE;
+        uint32_t count = le32(bytes + cursor + 4);
+        cursor += 8;
+        /* A zero count still makes the original UV helper read one record. */
+        if (!count || count & UINT32_C(0x80000000)) return MVC2_NATIVE_MODEL_PRIMITIVE;
+        size_t vertices = count;
+        if (!(head & 0x10u)) {
+            if (vertices > SIZE_MAX / 3) return MVC2_NATIVE_MODEL_PRIMITIVE;
+            vertices *= 3;
+        } else if (count > MAX_VERTEX_STRIP) return MVC2_NATIVE_MODEL_PRIMITIVE;
+        MVC2NativeModelStatus status = vertex_records(bytes, size, &cursor, size, vertices);
+        if (status != MVC2_NATIVE_MODEL_OK) return status;
+    }
 }
 
 static MVC2NativeModelStatus object_extent(const uint8_t* bytes, size_t size,
@@ -100,6 +139,11 @@ static MVC2NativeModelStatus object_extent(const uint8_t* bytes, size_t size,
                                             size_t* extent) {
     if (!span(start, 24, size) || start % 4) return MVC2_NATIVE_MODEL_REFERENCE;
     size_t cursor = start + 24;
+    if ((le32(bytes + start) & UINT32_C(0x80000000)) && span(cursor, 4, size)) {
+        uint32_t head = le32(bytes + cursor);
+        if (head && !(head & UINT32_C(0x80000000)))
+            return uv_template_extent(bytes, size, start, extent);
+    }
     for (;;) {
         if (!span(cursor, 4, size)) return MVC2_NATIVE_MODEL_HEADER;
         if (!le32(bytes + cursor)) {

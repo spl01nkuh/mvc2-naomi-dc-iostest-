@@ -16,8 +16,13 @@ int mvc2_model_store_written(void* destination, size_t size);
  * Successful refreshes retain the returned OBJ_FILE descriptor's address;
  * its mesh/table pointers may change. Reset releases all stored owners. */
 MVC2HostObjectFile* mvc2_model_store_get(void* model_bytes);
-/* The arcade select model also references portraits assembled separately in RAM. */
-MVC2HostObjectFile* mvc2_model_store_get_select(void* model_bytes, uint32_t texture_address);
+/* Resolve texture references across the complete bounded game RAM arena and
+ * its documented aliases. The named bank must be a registered loaded file
+ * and participates in cache invalidation alongside the model source. */
+MVC2HostObjectFile* mvc2_model_store_get_mapped(void* model_bytes, uint32_t texture_address);
+/* Diagnostic for the latest get attempt, valid until the next attempt or
+ * reset. Empty after success. All store calls use the owning game thread. */
+const char* mvc2_model_store_last_error(void);
 /* The arcade card notice references an unpacked texture. Decode the registered
  * packed file and bind its bytes without rewriting a serialized pointer. */
 MVC2HostObjectFile* mvc2_model_store_get_packed_texture(void* model_bytes,

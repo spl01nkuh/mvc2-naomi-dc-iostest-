@@ -3,12 +3,18 @@
  * so the real host_log is retained without unrelated board/game entry points.
  * Fixtures contain generated metadata/pixels only, never commercial assets. */
 #include <assert.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "model.h"
 #include "player.h"
+
+extern int obj_uv_begin(int* source, int* destination);
+extern int obj_uv_next(void);
+extern int obj_uv_get(float* u, float* v);
+extern int obj_uv_put(float* u, float* v);
 
 enum { MODEL_SIZE = 512, TEX_SIZE = 10, OBJECT_OFFSET = 128,
        MESH_OFFSET = OBJECT_OFFSET + 24, PRIMITIVE_OFFSET = MESH_OFFSET + 80,
@@ -258,12 +264,125 @@ static void test_source_extents(void) {
     assert(mvc2_native_model_texture_source_bytes(NULL, SIZE_MAX) == 0);
 }
 
+enum { TEMPLATE_OBJECT = 64, TEMPLATE_PRIMITIVE = TEMPLATE_OBJECT + 24,
+       TEMPLATE_VERTEX = TEMPLATE_PRIMITIVE + 8, TEMPLATE_CAPACITY = 384 };
+
+static void template_vertex(uint8_t* vertex, unsigned index) {
+    uint32_t bits;
+    float u = (float)index + .25f, v = (float)index + .5f;
+    memset(vertex, 0, 32);
+    word(vertex, 0x3f800001); /* full-vertex tag */
+    memcpy(&bits, &u, sizeof bits); word(vertex + 24, bits);
+    memcpy(&bits, &v, sizeof bits); word(vertex + 28, bits);
+}
+static size_t template_fixture(uint8_t* bytes, uint32_t head, uint32_t count, unsigned vertices) {
+    memset(bytes, 0, TEMPLATE_CAPACITY);
+    word(bytes, BASE + 16); word(bytes + 4, 1); word(bytes + 8, BASE + 32);
+    word(bytes + 16, BASE + TEMPLATE_OBJECT);
+    word(bytes + TEMPLATE_OBJECT, UINT32_MAX);
+    word(bytes + TEMPLATE_PRIMITIVE, head); word(bytes + TEMPLATE_PRIMITIVE + 4, count);
+    for (unsigned i = 0; i < vertices; ++i) template_vertex(bytes + TEMPLATE_VERTEX + i * 32, i);
+    return TEMPLATE_VERTEX + (size_t)vertices * 32 + 4; /* zero terminator */
+}
+static void template_uv_round_trip(MVC2NativeModel* native, unsigned full_vertices) {
+    int* object = mvc2_native_model_object(native, 0, NULL);
+    assert(object && object[0] == -1);
+    /* Both sides have identical primitive-only structure. A source without
+     * material headers is not a compatible cursor for a grouped drawable. */
+    assert(obj_uv_begin(object, object) == 0);
+    for (unsigned i = 0; i < full_vertices; ++i) {
+        float u, v;
+        assert(obj_uv_next() == 0);
+        assert(obj_uv_get(&u, &v) == 0);
+        assert(fabsf(u - ((float)i + .25f)) < .00001f);
+        assert(fabsf(v - ((float)i + .5f)) < .00001f);
+        u += 10; v += 20;
+        assert(obj_uv_put(&u, &v) == 0);
+    }
+    assert(obj_uv_next() == -1);
+}
+static void test_primitive_only_uv_templates(void) {
+    uint8_t bytes[TEMPLATE_CAPACITY], before[TEMPLATE_CAPACITY];
+    /* No bit 0x10 means triangles to obj_uv_next even when drawing bit 0x08
+     * is absent. Conversely 0x58 has both bits, but the UV count is a strip. */
+    const struct { uint32_t head, count; unsigned vertices; } cases[] = {
+        {0x48, 1, 3}, {0x40, 1, 3}, {0x58, 2, 2}, {0x50, 3, 3}
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; ++i) {
+        size_t size = template_fixture(bytes, cases[i].head, cases[i].count, cases[i].vertices);
+        memcpy(before, bytes, sizeof bytes);
+        MVC2NativeModel* native = decode(bytes, size, NULL, 0);
+        size_t extent = 0;
+        assert(mvc2_native_model_object(native, 0, &extent));
+        assert(extent == size - TEMPLATE_OBJECT);
+        template_uv_round_trip(native, cases[i].vertices); /* production iterator */
+        assert(memcmp(bytes, before, sizeof bytes) == 0);
+        mvc2_native_model_free(native);
+        reject(bytes, size - 4, NULL, 0); /* complete vertices, missing terminator */
+        reject(bytes, size - 8, NULL, 0); /* truncated last full vertex */
+        word(bytes + TEMPLATE_OBJECT, 0); /* normal objects still need materials */
+        reject(bytes, size, NULL, 0);
+    }
+    /* A template may contain more than one primitive before its terminator. */
+    size_t size = template_fixture(bytes, 0x40, 1, 3);
+    size_t second = size - 4;
+    word(bytes + second, 0x58); word(bytes + second + 4, 2);
+    template_vertex(bytes + second + 8, 3);
+    template_vertex(bytes + second + 40, 4);
+    size = second + 72 + 4;
+    MVC2NativeModel* native = decode(bytes, size, NULL, 0);
+    template_uv_round_trip(native, 5);
+    mvc2_native_model_free(native);
+    size = template_fixture(bytes, 0x48, 1, 3);
+    word(bytes + TEMPLATE_PRIMITIVE + 4, 0); reject(bytes, size, NULL, 0);
+    word(bytes + TEMPLATE_PRIMITIVE + 4, UINT32_MAX); reject(bytes, size, NULL, 0);
+    word(bytes + TEMPLATE_PRIMITIVE + 4, 0x7fffffff); reject(bytes, size, NULL, 0);
+    size = template_fixture(bytes, 0x50, 4097, 3); reject(bytes, size, NULL, 0);
+    size = template_fixture(bytes, 0x48, 1, 3);
+    word(bytes + size - 4, 0x80000000); reject(bytes, size, NULL, 0);
+
+    /* The second record is a relative reference to the first, then another
+     * full vertex. The UV helper skips the short record; the decoder still
+     * checks its serialized destination against the complete owned file. */
+    size = template_fixture(bytes, 0x48, 1, 3);
+    size_t short_at = TEMPLATE_VERTEX + 32;
+    template_vertex(bytes + short_at + 8, 1);
+    word(bytes + short_at, 0);
+    word(bytes + short_at + 4, (uint32_t)(int32_t)-40);
+    size = short_at + 8 + 32 + 4;
+    word(bytes + size - 4, 0);
+    native = decode(bytes, size, NULL, 0);
+    template_uv_round_trip(native, 2);
+    mvc2_native_model_free(native);
+    const uint32_t bad_references[] = {0x70000000, 0x80000000, (uint32_t)(int32_t)-39};
+    for (size_t i = 0; i < sizeof bad_references / sizeof bad_references[0]; ++i) {
+        word(bytes + short_at + 4, bad_references[i]);
+        reject(bytes, size, NULL, 0);
+    }
+    /* A destination can begin inside the file but lack a complete 32-byte
+     * record; checking only its start address would still permit an overread. */
+    word(bytes + short_at + 4, (uint32_t)(size - 16 - (short_at + 8)));
+    reject(bytes, size, NULL, 0);
+
+    /* Negative kinds can also retain ordinary negative material headers;
+     * the existing mesh validation must still run for that layout. */
+    uint8_t model[MODEL_SIZE], textures[TEX_SIZE];
+    fixture(model, textures);
+    word(model + OBJECT_OFFSET, UINT32_MAX);
+    word(model + MESH_OFFSET, 0x82000008);
+    native = decode(model, sizeof model, textures, sizeof textures);
+    mvc2_native_model_free(native);
+    word(model + MESH_OFFSET + 32, 2);
+    reject(model, sizeof model, textures, sizeof textures);
+}
+
 int main(void) {
     test_owned_descriptors_and_real_backend();
     test_relative_vertex_references();
     test_truncations_and_bad_metadata();
     test_source_extents();
     test_texture_source_alignment();
+    test_primitive_only_uv_templates();
     if (sizeof(void*) > 4)
         printf("Native model high-address allocation cases exercised: %u (allocator-dependent).\n", high_address_cases);
     puts("Native model descriptors: bounded references, owned copies and real texture backend passed.");

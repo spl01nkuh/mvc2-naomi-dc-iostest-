@@ -154,16 +154,18 @@ struct DevelopmentContentView: View {
                         Text(failure)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
-                    } else if let report = store.interruptedSessionReport {
+                    } else if store.interruptedSessionReport != nil {
                         Text("The previous game session was interrupted. You can retry or share the last recorded status.")
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
-                        ShareLink(item: report) {
-                            Label("Share session report", systemImage: "square.and.arrow.up")
-                        }
                     } else if !store.hasImportedData {
                         Text("Import your complete NAOMI mvsc2 ZIP to start playing.")
                             .foregroundStyle(.secondary)
+                    }
+                    if let report = store.sessionReport {
+                        ShareLink(item: report) {
+                            Label("Share session report", systemImage: "square.and.arrow.up")
+                        }
                     }
                     HStack {
                         if store.canStart {

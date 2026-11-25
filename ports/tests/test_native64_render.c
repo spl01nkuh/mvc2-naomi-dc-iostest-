@@ -43,9 +43,11 @@ extern void tex_set_select(void);
 MVC2HostObjectFile* obj_dm0a;
 MVC2HostObjectFile* obj_dm01;
 static const char* frame_failure;
+static char frame_failure_text[512];
 
 void mvc2_gameplay_fail_frame(const char* message) {
-    frame_failure = message;
+    snprintf(frame_failure_text, sizeof frame_failure_text, "%s", message);
+    frame_failure = frame_failure_text;
 }
 
 enum { MODEL_BYTES = 280, OBJECT = 64, MESH = OBJECT + 24, PRIM = MESH + 80,
@@ -235,21 +237,23 @@ static void packed_notice(const uint8_t* model_file, uint32_t* frame, const uint
 }
 
 static void selection_textures(const uint8_t* model_file) {
-    enum { OBJECTS = 181, HEADERS = 16 + OBJECTS * 4,
-           SELECT_OBJECT = HEADERS + 4 * 16, OBJECT_BYTES = MODEL_BYTES - OBJECT,
-           SELECT_BYTES = SELECT_OBJECT + 3 * OBJECT_BYTES };
+    enum { OBJECTS = 181, TEXTURES = 7, HEADERS = 16 + OBJECTS * 4,
+           SELECT_OBJECT = HEADERS + (TEXTURES + 1) * 16, OBJECT_BYTES = MODEL_BYTES - OBJECT,
+           SELECT_BYTES = SELECT_OBJECT + TEXTURES * OBJECT_BYTES };
     uint8_t* model = host_native64_ram_pointer(DM01_OBJ_ADRS, SELECT_BYTES);
     uint8_t* bank = host_native64_ram_pointer(DM01_TEX_ADRS, 8);
     uint8_t* atlas = host_native64_ram_pointer(0x0cdb0000, 0x20000);
     uint8_t* portrait = host_native64_ram_pointer(0x0cdf4800, 0x4800);
-    assert(model && bank && atlas && portrait);
+    uint8_t* names = host_native64_ram_pointer(0x0c720000, 0x20000);
+    uint8_t* ram_end = host_native64_ram_pointer(0x0dfffff8, 8);
+    assert(model && bank && atlas && portrait && names && ram_end);
     memset(model, 0, SELECT_BYTES);
     word(model, DM01_OBJ_ADRS + 16);
     word(model + 4, OBJECTS);
     word(model + 8, DM01_OBJ_ADRS + HEADERS);
     for (unsigned i = 0; i < OBJECTS; ++i)
-        word(model + 16 + i * 4, DM01_OBJ_ADRS + SELECT_OBJECT + (i % 3) * OBJECT_BYTES);
-    for (unsigned i = 0; i < 3; ++i) {
+        word(model + 16 + i * 4, DM01_OBJ_ADRS + SELECT_OBJECT + (i % TEXTURES) * OBJECT_BYTES);
+    for (unsigned i = 0; i < TEXTURES; ++i) {
         uint8_t* object = model + SELECT_OBJECT + i * OBJECT_BYTES;
         memcpy(object, model_file + OBJECT, OBJECT_BYTES);
         word(object + MESH - OBJECT + 32, i);
@@ -263,6 +267,17 @@ static void selection_textures(const uint8_t* model_file) {
     word(model + HEADERS + 32, 96 | 96u << 16);
     word(model + HEADERS + 36, 0xb01);
     word(model + HEADERS + 40, 0x0cdf4800);
+    /* Name pictures use a different generated-RAM region than the faces.
+       The board's cached/uncached aliases must share those same bytes. */
+    for (unsigned i = 3; i < 6; ++i) {
+        word(model + HEADERS + i * 16, 256 | 256u << 16);
+        word(model + HEADERS + i * 16 + 4, 0x901);
+        word(model + HEADERS + i * 16 + 8,
+             0x0c720000u | (i == 4 ? 0x80000000u : i == 5 ? 0xa0000000u : 0));
+    }
+    word(model + HEADERS + 6 * 16, 2 | 2u << 16);
+    word(model + HEADERS + 6 * 16 + 4, 0x901);
+    word(model + HEADERS + 6 * 16 + 8, 0x0dfffff8);
     assert(mvc2_model_store_written(model, SELECT_BYTES));
     assert(mvc2_model_store_written(bank, 8));
     assert(!mvc2_model_store_get(model)); /* one ROM extent cannot resolve the live portraits */
@@ -272,20 +287,27 @@ static void selection_textures(const uint8_t* model_file) {
     assert(obj_dm01->thd[0].address == atlas);
     assert(obj_dm01->thd[1].address == bank);
     assert(obj_dm01->thd[2].address == portrait);
-    for (unsigned i = 0; i < 3; ++i) assert(nl_tex[0x810 + i].loaded);
+    for (unsigned i = 3; i < 6; ++i) assert(obj_dm01->thd[i].address == names);
+    assert(obj_dm01->thd[6].address == ram_end);
+    for (unsigned i = 0; i < TEXTURES; ++i) assert(nl_tex[0x810 + i].loaded);
     assert(nl_tex[0x910].loaded);
     atlas[0] = 0x9a;
     assert(*(uint8_t*)obj_dm01->thd[0].address == 0x9a);
+    names[0] = 0x4c;
+    for (unsigned i = 3; i < 6; ++i) assert(*(uint8_t*)obj_dm01->thd[i].address == 0x4c);
+    assert(!*mvc2_model_store_last_error());
     MVC2HostObjectFile* selected = obj_dm01;
     tex_set_select();
     assert(!frame_failure && obj_dm01 == selected);
 
-    /* A portrait that would straddle the end of its backing RAM is rejected
+    /* A texture that would straddle the end of its backing RAM is rejected
        before the first selection effect can dereference the model. */
-    word(model + HEADERS + 40, 0x0cdf4802);
+    word(model + HEADERS + 6 * 16 + 8, 0x0dfffffa);
     assert(mvc2_model_store_written(model, SELECT_BYTES));
     tex_set_select();
     assert(!obj_dm01 && frame_failure && strstr(frame_failure, "character selection"));
+    assert(strstr(mvc2_model_store_last_error(), "0D0C6000"));
+    assert(strstr(mvc2_model_store_last_error(), "serialized reference"));
     assert(selected->thd[2].address == portrait);
     nl_tex_free_all();
 }
