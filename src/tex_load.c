@@ -7,6 +7,7 @@
 #ifdef HOST_NATIVE64
 #include "host_memory.h"
 #include "model_store.h"
+#include "../ports/port/native64/engine/runtime.h"
 #define TEX_RAW( address ) host_native64_ram_pointer( ( Uint32 )( address ), 1 )
 #define TEX_STATIC( address ) HOST_NATIVE64_RAM_AT( address )
 #define OBJ_AT( address ) mvc2_model_store_get( TEX_RAW( address ) )
@@ -573,7 +574,19 @@ void tex_set_select( void )
 {
 	int i ;
 
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+	obj_dm01 = mvc2_model_store_get_select( TEX_RAW( DM01_OBJ_ADRS ), DM01_TEX_ADRS ) ;
+	/* The selection effects index the model through entry 180. The initial
+	   plate scrolls a pair of adjacent models in place. */
+	if( !obj_dm01 || obj_dm01->cnt <= 180 ||
+	    !obj_dm01->obj[6] || !obj_dm01->obj[7] ){
+		obj_dm01 = NULL ;
+		mvc2_gameplay_fail_frame( "The native engine could not load the character selection models and textures." ) ;
+		return ;
+	}
+#else
 	obj_dm01 = OBJ_AT( DM01_OBJ_ADRS ) ;
+#endif
 	nlSetCommonTextureOffset( 0x810 ) ;
 	for( i = 0 ; i < obj_dm01->cnt ; i ++ ){
 		nlObjPutLoadTexture( obj_dm01->obj[i], obj_dm01->thd ) ;

@@ -48,6 +48,18 @@ MVC2NativeModelStatus mvc2_native_model_decode(
     const void* model_bytes, size_t model_size,
     const void* texture_bytes, size_t texture_size,
     MVC2NativeModel** output);
+
+/* Some arcade models mix a loaded texture bank with textures generated in
+ * game RAM. Resolve their original addresses against the specified spans.
+ * Texture bytes remain backed by the caller until the model is released. */
+typedef struct {
+    uint32_t address;
+    uint8_t* bytes;
+    size_t size;
+} MVC2ModelTextureSpan;
+MVC2NativeModelStatus mvc2_native_model_decode_mapped(
+    const void* model_bytes, size_t model_size, const MVC2ModelTextureSpan* spans,
+    size_t span_count, MVC2NativeModel** output);
 void mvc2_native_model_free(MVC2NativeModel* model);
 /* Same native type as HOST_NATIVE64's OBJ_FILE, usable by game code without
  * aliasing serialized bytes. Owned by model; structural fields must stay

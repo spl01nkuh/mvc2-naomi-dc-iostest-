@@ -29,6 +29,7 @@ static HOST_INPUT controls;
 static uint32_t pixels[RD_MAX_WIDTH * RD_HEIGHT];
 static const int16_t* audio_samples;
 static int audio_frames;
+static const char* frame_failure;
 static char save_directory[PATH_MAX];
 static char save_file[PATH_MAX];
 static void* kept_block;
@@ -98,11 +99,17 @@ int mvc2_gameplay_step(const HOST_INPUT* input, char* error, size_t capacity) {
     has_frame = 0;
     audio_frames = 0;
     audio_samples = NULL;
+    frame_failure = NULL;
     naomi_run_frame();
+    if (frame_failure) return failure(error, capacity, frame_failure);
     snd_prepare();
     audio_frames = snd_frame(&audio_samples);
     if (!has_frame) return failure(error, capacity, "The native game did not present a frame.");
     return 1;
+}
+
+void mvc2_gameplay_fail_frame(const char* message) {
+    if (!frame_failure) frame_failure = message;
 }
 
 const uint32_t* mvc2_gameplay_frame(void) {

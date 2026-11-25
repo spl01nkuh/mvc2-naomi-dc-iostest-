@@ -39,6 +39,18 @@ static int offset_for(uint32_t address, uint32_t base, size_t size, size_t* offs
     *offset = (size_t)(address - base);
     return 1;
 }
+
+static uint8_t* mapped_texture(const MVC2ModelTextureSpan* spans, size_t count,
+                               uint32_t address, size_t bytes) {
+    for (size_t i = 0; i < count; ++i) {
+        size_t offset;
+        if (offset_for(address, spans[i].address, spans[i].size, &offset) &&
+            span(offset, bytes, spans[i].size))
+            return spans[i].bytes + offset;
+    }
+    return NULL;
+}
+
 /* Exact source reads in nl_tex.c, including its padding/mipmap prefixes.
  * These are source byte extents, not the untwiddled allocation sizes. */
 static MVC2NativeModelStatus texture_extent(int32_t type, unsigned w, unsigned h, size_t* bytes) {
@@ -126,9 +138,10 @@ void mvc2_native_model_free(MVC2NativeModel* model) {
     free(model);
 }
 
-MVC2NativeModelStatus mvc2_native_model_decode(
+static MVC2NativeModelStatus decode(
     const void* model_bytes, size_t model_size,
     const void* texture_bytes, size_t texture_size,
+    const MVC2ModelTextureSpan* spans, size_t span_count,
     MVC2NativeModel** output) {
     if (!model_bytes || !output || (!texture_bytes && texture_size)) return MVC2_NATIVE_MODEL_ARGUMENT;
     if (model_size > MAX_FILE_BYTES || texture_size > MAX_FILE_BYTES) return MVC2_NATIVE_MODEL_LIMIT;
@@ -155,22 +168,28 @@ MVC2NativeModelStatus mvc2_native_model_decode(
         int16_t h = (int16_t)le16(source + cursor + 2);
         if (w < 0 || h <= 0 || w > 1024 || h > 1024) return MVC2_NATIVE_MODEL_TEXTURE;
         uint32_t address = le32(source + cursor + 8);
-        if (!texture_count) {
+        if (!spans && !texture_count) {
             texture_base = address;
             if ((uint64_t)address + texture_size > UINT64_C(0x100000000))
                 return MVC2_NATIVE_MODEL_REFERENCE;
         }
-        size_t offset, needed;
-        if (!offset_for(address, texture_base, texture_size, &offset))
+        size_t offset = 0, needed;
+        if (!spans && !offset_for(address, texture_base, texture_size, &offset))
             return MVC2_NATIVE_MODEL_REFERENCE;
         MVC2NativeModelStatus result = texture_extent((int32_t)le32(source + cursor + 4),
                                                       (unsigned)w, (unsigned)h, &needed);
         if (result != MVC2_NATIVE_MODEL_OK) return result;
         unsigned kind = le32(source + cursor + 4) >> 8 & 255u;
-        /* nl_tex reads direct/VQ payloads through uint16_t pointers. A malloc
-         * aligned base is insufficient if a later texture has an odd offset. */
-        if ((kind < 5 || kind > 8) && (offset & 1u)) return MVC2_NATIVE_MODEL_TEXTURE;
-        if (!span(offset, needed, texture_size) || !texture_bytes) return MVC2_NATIVE_MODEL_TEXTURE;
+        int word_aligned = kind < 5 || kind > 8;
+        if (spans) {
+            uint8_t* mapped = mapped_texture(spans, span_count, address, needed);
+            if (!mapped) return MVC2_NATIVE_MODEL_REFERENCE;
+            if (word_aligned && ((uintptr_t)mapped & 1u)) return MVC2_NATIVE_MODEL_TEXTURE;
+        } else {
+            /* The owned payload has a malloc-aligned base. */
+            if (word_aligned && (offset & 1u)) return MVC2_NATIVE_MODEL_TEXTURE;
+            if (!span(offset, needed, texture_size) || !texture_bytes) return MVC2_NATIVE_MODEL_TEXTURE;
+        }
         ++texture_count;
         cursor += 16;
     }
@@ -199,10 +218,13 @@ MVC2NativeModelStatus mvc2_native_model_decode(
         target->width = (int16_t)le16(entry);
         target->height = (int16_t)le16(entry + 2);
         target->type = (int32_t)le32(entry + 4);
-        target->address = model->texture_bytes + (le32(entry + 8) - texture_base);
         target->globl_index = (int32_t)le32(entry + 12);
         (void)texture_extent(target->type, (unsigned)target->width,
                              (unsigned)target->height, &model->texture_sizes[i]);
+        uint32_t address = le32(entry + 8);
+        target->address = spans
+            ? mapped_texture(spans, span_count, address, model->texture_sizes[i])
+            : model->texture_bytes + (address - texture_base);
     }
     for (size_t i = 0; i < count; ++i) {
         uint32_t address = le32(source + 16 + i * 4);
@@ -238,6 +260,23 @@ failure:
     free(offsets);
     mvc2_native_model_free(model);
     return result;
+}
+
+MVC2NativeModelStatus mvc2_native_model_decode(
+    const void* model_bytes, size_t model_size,
+    const void* texture_bytes, size_t texture_size, MVC2NativeModel** output) {
+    return decode(model_bytes, model_size, texture_bytes, texture_size, NULL, 0, output);
+}
+
+MVC2NativeModelStatus mvc2_native_model_decode_mapped(
+    const void* model_bytes, size_t model_size, const MVC2ModelTextureSpan* spans,
+    size_t span_count, MVC2NativeModel** output) {
+    if (!spans || !span_count) return MVC2_NATIVE_MODEL_ARGUMENT;
+    for (size_t i = 0; i < span_count; ++i)
+        if (!spans[i].bytes || !spans[i].size ||
+            spans[i].size > UINT64_C(0x100000000) - spans[i].address)
+            return MVC2_NATIVE_MODEL_ARGUMENT;
+    return decode(model_bytes, model_size, NULL, 0, spans, span_count, output);
 }
 
 MVC2HostObjectFile* mvc2_native_model_file(MVC2NativeModel* model) {

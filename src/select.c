@@ -358,6 +358,9 @@ speed_end :
 	}
 	sel_pl_clr() ;
 	TexLoad( 5 ) ;
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+	if( !obj_dm01 ) return ;	/* The native host reports the asset load error. */
+#endif
 	fade_init() ;
 	fog_init() ;
 	bright_init() ;
@@ -1577,6 +1580,9 @@ static void sel_main_init( void )
 	sel_w.heart_flag = 0 ;
 	sel_pl_clr() ;
 	TexLoad( 5 ) ;
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+	if( !obj_dm01 ) return ;	/* The native host reports the asset load error. */
+#endif
 	scene_song_req( 1, 22 ) ;
 	sel_w.join_flag = 3 ;
 	sel_back_w = sel_back_set() ;

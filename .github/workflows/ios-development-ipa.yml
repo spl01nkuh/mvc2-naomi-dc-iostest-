@@ -21,11 +21,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Test native attract mode, widescreen and CRT presentation
+      - name: Test native character selection assets, attract mode and presentation
         run: |
           cmake -S ports/tests -B build/ipa-validation -DCMAKE_BUILD_TYPE=Release
-          cmake --build build/ipa-validation --target test_native64_attract_effects test_native64_widescreen --parallel 4
-          ctest --test-dir build/ipa-validation --output-on-failure -R '^native64_(attract_effects|widescreen)$'
+          cmake --build build/ipa-validation --target test_native64_render test_native64_attract_effects test_native64_widescreen --parallel 4
+          ctest --test-dir build/ipa-validation --output-on-failure -R '^native64_(render|attract_effects|widescreen)$'
           swift ports/tests/test_metal_presentation.swift ports/port/ios/display/Presentation.metal
       - name: Build device native gameplay IPA
         env:

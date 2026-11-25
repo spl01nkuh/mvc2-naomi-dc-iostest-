@@ -39,7 +39,14 @@ extern void nlFastScreenPoint(NLVECTOR3* position, float* screen);
 extern int nlObjPutLoadTexture(int* object, const NLthd* headers);
 extern void nlObjPut(int* object);
 extern void tex_load_0e(void);
+extern void tex_set_select(void);
 MVC2HostObjectFile* obj_dm0a;
+MVC2HostObjectFile* obj_dm01;
+static const char* frame_failure;
+
+void mvc2_gameplay_fail_frame(const char* message) {
+    frame_failure = message;
+}
 
 enum { MODEL_BYTES = 280, OBJECT = 64, MESH = OBJECT + 24, PRIM = MESH + 80,
        BASE = 0x0c600000, PIXELS = 0x0d000000, PITCH = RD_WIDTH + 8 };
@@ -226,6 +233,63 @@ static void packed_notice(const uint8_t* model_file, uint32_t* frame, const uint
     render(notice, frame, "1");
     assert(!memcmp(frame, expected, (size_t)PITCH * RD_HEIGHT * sizeof(uint32_t)));
 }
+
+static void selection_textures(const uint8_t* model_file) {
+    enum { OBJECTS = 181, HEADERS = 16 + OBJECTS * 4,
+           SELECT_OBJECT = HEADERS + 4 * 16, OBJECT_BYTES = MODEL_BYTES - OBJECT,
+           SELECT_BYTES = SELECT_OBJECT + 3 * OBJECT_BYTES };
+    uint8_t* model = host_native64_ram_pointer(DM01_OBJ_ADRS, SELECT_BYTES);
+    uint8_t* bank = host_native64_ram_pointer(DM01_TEX_ADRS, 8);
+    uint8_t* atlas = host_native64_ram_pointer(0x0cdb0000, 0x20000);
+    uint8_t* portrait = host_native64_ram_pointer(0x0cdf4800, 0x4800);
+    assert(model && bank && atlas && portrait);
+    memset(model, 0, SELECT_BYTES);
+    word(model, DM01_OBJ_ADRS + 16);
+    word(model + 4, OBJECTS);
+    word(model + 8, DM01_OBJ_ADRS + HEADERS);
+    for (unsigned i = 0; i < OBJECTS; ++i)
+        word(model + 16 + i * 4, DM01_OBJ_ADRS + SELECT_OBJECT + (i % 3) * OBJECT_BYTES);
+    for (unsigned i = 0; i < 3; ++i) {
+        uint8_t* object = model + SELECT_OBJECT + i * OBJECT_BYTES;
+        memcpy(object, model_file + OBJECT, OBJECT_BYTES);
+        word(object + MESH - OBJECT + 32, i);
+    }
+    word(model + HEADERS, 256 | 256u << 16);
+    word(model + HEADERS + 4, 0x901);
+    word(model + HEADERS + 8, 0x0cdb0000);
+    word(model + HEADERS + 16, 2 | 2u << 16);
+    word(model + HEADERS + 20, 0x901);
+    word(model + HEADERS + 24, DM01_TEX_ADRS);
+    word(model + HEADERS + 32, 96 | 96u << 16);
+    word(model + HEADERS + 36, 0xb01);
+    word(model + HEADERS + 40, 0x0cdf4800);
+    assert(mvc2_model_store_written(model, SELECT_BYTES));
+    assert(mvc2_model_store_written(bank, 8));
+    assert(!mvc2_model_store_get(model)); /* one ROM extent cannot resolve the live portraits */
+
+    tex_set_select();
+    assert(!frame_failure && obj_dm01 && obj_dm01->cnt == OBJECTS);
+    assert(obj_dm01->thd[0].address == atlas);
+    assert(obj_dm01->thd[1].address == bank);
+    assert(obj_dm01->thd[2].address == portrait);
+    for (unsigned i = 0; i < 3; ++i) assert(nl_tex[0x810 + i].loaded);
+    assert(nl_tex[0x910].loaded);
+    atlas[0] = 0x9a;
+    assert(*(uint8_t*)obj_dm01->thd[0].address == 0x9a);
+    MVC2HostObjectFile* selected = obj_dm01;
+    tex_set_select();
+    assert(!frame_failure && obj_dm01 == selected);
+
+    /* A portrait that would straddle the end of its backing RAM is rejected
+       before the first selection effect can dereference the model. */
+    word(model + HEADERS + 40, 0x0cdf4802);
+    assert(mvc2_model_store_written(model, SELECT_BYTES));
+    tex_set_select();
+    assert(!obj_dm01 && frame_failure && strstr(frame_failure, "character selection"));
+    assert(selected->thd[2].address == portrait);
+    nl_tex_free_all();
+}
+
 int main(void) {
     projection();
     MVC2NativeModel* model = fixture();
@@ -251,6 +315,7 @@ int main(void) {
     assert(mvc2_model_store_written(raw, MODEL_BYTES));
     assert(mvc2_model_store_get(raw) == stored);
     packed_notice(raw, parallel, serial);
+    selection_textures(raw);
     assert(mvc2_model_store_written(host_native64_ram_pointer(PIXELS, 8), 8));
     assert(mvc2_model_store_get(raw) == stored); /* stable descriptor after texture refresh */
     assert(mvc2_model_store_written((uint8_t*)raw + 1, 1));

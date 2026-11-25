@@ -13,6 +13,7 @@ typedef struct ModelEntry {
     size_t offset;
     uint64_t model_generation, texture_generation;
     int packed_texture;
+    uint32_t select_texture_address;
     MVC2HostObjectFile file;
     MVC2NativeModel* owner;
 } ModelEntry;
@@ -111,7 +112,8 @@ static int unpack_lz16(const uint8_t* input, size_t input_size, uint8_t* output,
     }
     return 0;
 }
-static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes) {
+static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes,
+                                     uint32_t select_texture_address) {
     size_t offset;
     if (!ram_offset(model_bytes, 16, &offset)) return NULL;
     const FileExtent* source = find_file(offset);
@@ -122,10 +124,13 @@ static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes
     size_t relative = texture_table - (table - 16);
     if (relative > source->size || source->size - relative < 2) return NULL;
     const FileExtent* textures = NULL;
-    if (packed_bytes || le16(bytes + relative)) {
+    if (packed_bytes || select_texture_address || le16(bytes + relative)) {
         size_t texture_offset;
         if (packed_bytes) {
             if (!ram_offset(packed_bytes, 1, &texture_offset)) return NULL;
+        } else if (select_texture_address) {
+            if (mvc2_memory_offset(select_texture_address, 1, &texture_offset) != MVC2_MEMORY_OK)
+                return NULL;
         } else if (source->size - relative < 16 ||
                    mvc2_memory_offset(le32(bytes + relative + 8), 1, &texture_offset) != MVC2_MEMORY_OK) {
             return NULL;
@@ -139,6 +144,7 @@ static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes
     uint64_t texture_generation = textures ? textures->generation : 0;
     if (entry && entry->model_generation == source->generation &&
         entry->texture_generation == texture_generation &&
+        entry->select_texture_address == select_texture_address &&
         entry->packed_texture == (packed_bytes != NULL)) return &entry->file;
 
     const uint8_t* texture_bytes = textures ? host_native64_ram + textures->offset : NULL;
@@ -158,8 +164,20 @@ static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes
         texture_size = decoded_size;
     }
     MVC2NativeModel* owner = NULL;
-    MVC2NativeModelStatus status = mvc2_native_model_decode(bytes, source->size,
-                                                           texture_bytes, texture_size, &owner);
+    MVC2NativeModelStatus status;
+    if (select_texture_address) {
+        /* sel_sub.c assembles two 256x256 portrait atlases and two 96x96
+         * portraits here. These are live RAM, not registered ROM files. */
+        const MVC2ModelTextureSpan spans[] = {
+            { select_texture_address, host_native64_ram + textures->offset, textures->size },
+            { 0x0cdb0000, HOST_NATIVE64_RAM_AT(0x0cdb0000), 0x40000 },
+            { 0x0cdf0000, HOST_NATIVE64_RAM_AT(0x0cdf0000), 0x9000 },
+        };
+        status = mvc2_native_model_decode_mapped(bytes, source->size, spans,
+                                                  sizeof spans / sizeof spans[0], &owner);
+    } else {
+        status = mvc2_native_model_decode(bytes, source->size, texture_bytes, texture_size, &owner);
+    }
     free(unpacked);
     if (status != MVC2_NATIVE_MODEL_OK) return NULL;
     if (!entry) {
@@ -174,16 +192,20 @@ static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes
     entry->owner = owner;
     entry->model_generation = source->generation;
     entry->texture_generation = texture_generation;
+    entry->select_texture_address = select_texture_address;
     entry->packed_texture = packed_bytes != NULL;
     mvc2_native_model_free(previous);
     return &entry->file;
 }
 MVC2HostObjectFile* mvc2_model_store_get(void* model_bytes) {
-    return get_model(model_bytes, NULL);
+    return get_model(model_bytes, NULL, 0);
+}
+MVC2HostObjectFile* mvc2_model_store_get_select(void* model_bytes, uint32_t texture_address) {
+    return texture_address ? get_model(model_bytes, NULL, texture_address) : NULL;
 }
 MVC2HostObjectFile* mvc2_model_store_get_packed_texture(void* model_bytes,
                                                        const void* packed_bytes) {
-    return packed_bytes ? get_model(model_bytes, packed_bytes) : NULL;
+    return packed_bytes ? get_model(model_bytes, packed_bytes, 0) : NULL;
 }
 void mvc2_model_store_reset(void) {
     for (size_t i = 0; i < model_count; ++i) {
