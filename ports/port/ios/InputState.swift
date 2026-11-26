@@ -6,6 +6,8 @@ import Foundation
 final class InputState: ObservableObject {
     private let lock = NSLock()
     private var sources: [String: UInt16] = [:]
+    private var unsampledTouches: [String: UInt16] = [:]
+    private var releasedTaps: UInt16 = 0
     private var pendingCoins: UInt32 = 0
 
     var buttons: UInt16 {
@@ -14,8 +16,8 @@ final class InputState: ObservableObject {
         return normalizedButtons()
     }
 
-    private func normalizedButtons() -> UInt16 {
-        let value = sources.values.reduce(0, |)
+    private func normalizedButtons(including pending: UInt16 = 0) -> UInt16 {
+        let value = sources.values.reduce(pending, |)
         // Opposing directions are neutral, including overlapping custom buttons.
         var result = value
         if value & 0x3000 == 0x3000 { result &= ~UInt16(0x3000) }
@@ -30,20 +32,53 @@ final class InputState: ObservableObject {
         defer { lock.unlock() }
         let coin = pendingCoins > 0
         if coin { pendingCoins -= 1 }
-        return (normalizedButtons(), coin)
+        let buttons = normalizedButtons(including: releasedTaps)
+        unsampledTouches.removeAll(keepingCapacity: true)
+        releasedTaps = 0
+        return (buttons, coin)
     }
 
-    func set(source: String, buttons: UInt16) {
+    /// Remember action buttons until the game samples them. For a custom
+    /// button, keep its complete chord, including any bound direction.
+    func set(source: String, buttons: UInt16, retainTap: Bool = false) {
         lock.lock()
+        defer { lock.unlock() }
         let valid = buttons & NativeButton.validMask
+        let previous = sources[source] ?? 0
         if valid == 0 { sources.removeValue(forKey: source) }
         else { sources[source] = valid }
+        if previous != valid {
+            if retainTap && valid & ~NativeButton.directions != 0 {
+                unsampledTouches[source] = valid
+            } else {
+                unsampledTouches.removeValue(forKey: source)
+            }
+        }
+    }
+
+    /// A touch that lifts between frames still gets one frame of action.
+    /// UIKit cancellation, by contrast, drops the unplayed tap.
+    func endTouch(source: String, cancelled: Bool = false) {
+        lock.lock()
+        sources.removeValue(forKey: source)
+        let unsampled = unsampledTouches.removeValue(forKey: source) ?? 0
+        if !cancelled { releasedTaps |= unsampled }
+        lock.unlock()
+    }
+
+    func cancelTouches(sources touchSources: [String]) {
+        lock.lock()
+        for source in touchSources { sources.removeValue(forKey: source) }
+        unsampledTouches.removeAll(keepingCapacity: true)
+        releasedTaps = 0
         lock.unlock()
     }
 
     func releaseAll() {
         lock.lock()
         sources.removeAll()
+        unsampledTouches.removeAll(keepingCapacity: true)
+        releasedTaps = 0
         pendingCoins = 0
         lock.unlock()
     }

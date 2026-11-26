@@ -542,8 +542,47 @@ void tex_load_gauge( void )
 	void *pic ;
 	int i, j, n ;
 
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+	{
+		static char gauge_error[256] ;
+		const char *detail = NULL ;
+		uintptr_t destination ;
+
+		/* The gauge includes live portrait textures at 0x0ce60000, which
+		   pl_pic_send/pl_pic_send2 update outside the loaded texture bank. */
+		obj_dm00 = mvc2_model_store_get_mapped( TEX_RAW( DM00_OBJ_ADRS ), DM00_TEX_ADRS ) ;
+		if( !obj_dm00 ) detail = mvc2_model_store_last_error() ;
+		/* gauge_team_obj_tbl reaches object 121 during the match HUD. */
+		else if( obj_dm00->cnt < 122 )
+			detail = "The match gauge has fewer than 122 required objects." ;
+		else if( !obj_dm00->obj[0] || !obj_dm00->obj[1] ||
+		         !obj_dm00->obj[2] || !obj_dm00->obj[3] )
+			detail = "The gauge model is missing its four colour objects." ;
+		else {
+			thd = obj_dm00->thd ;
+			for( i = 0 ; i < 22 && thd[i].width > 0 ; i ++ ) ;
+			if( i != 22 ) detail = "The gauge model has fewer than 22 textures." ;
+			else for( i = 10 ; i < 22 ; i ++ ){
+				/* Each portrait copy writes 2048 bytes into the same bounded
+				   arena used by the mapped texture decoder. */
+				destination = ( uintptr_t )thd[i].address - ( uintptr_t )host_native64_ram ;
+				if( destination > MVC2_NATIVE_RAM_SIZE - 0x800 ){
+					detail = "A gauge team portrait exceeds the native RAM backing." ;
+					break ;
+				}
+			}
+		}
+		if( detail ){
+			snprintf( gauge_error, sizeof gauge_error, "Could not load the match gauge. %s", detail ) ;
+			obj_dm00 = NULL ;
+			mvc2_gameplay_fail_frame( gauge_error ) ;
+			return ;
+		}
+	}
+#else
 	obj_dm00 = SEL_OBJ ;
 	thd = SEL_OBJ->thd ;
+#endif
 	for( i = 0 ; i < 6 ; i ++ ){
 		pl_w = &pl_work[i] ;
 		if( !Sys->cpu_level_type ){
@@ -750,6 +789,9 @@ void TexLoad( int no )
 		obj_file_reloc( OBJ_RAW_AT( DM00_OBJ_ADRS ), ( Uint8 * )TEX_RAW( DM00_TEX_ADRS ) ) ;
 #endif
 		tex_load_gauge() ;
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+		if( !obj_dm00 ) return ;
+#endif
 		obj_col_get( obj_dm00 ) ;
 		break ;
 	case 5:

@@ -221,6 +221,14 @@ static int next_index(int c, uint32_t i, uint32_t* next, int* looped) {
 /* a channel that has ended: its KYONB goes too, so the next KYONEX does not start it again */
 static void channel_stop(int c) {
     ch_on[c] = 0;
+#ifdef HOST_NATIVE64
+    /* Upstream f136a17: the driver recognizes a free slot by its silent,
+     * released envelope and zero current address, not KYONB alone. */
+    ch[c].pos = 0;
+    ch[c].frac = 0;
+    ch[c].eg_state = ch[c].feg_state = EG_RELEASE;
+    ch[c].eg = 0x3FF << 16;
+#endif
     reg[c * 0x80 + 1] &= (uint8_t)~0x40;
 }
 
@@ -1717,7 +1725,8 @@ static void reverb_step(int32_t in, int32_t* l, int32_t* r) {
     *l = d + sl + (sl >> 2) + (sl >> 3);                    /* the tail, 11/8 */
     *r = d + sr + (sr >> 2) + (sr >> 3);
     if (++rv_pos + RV_E_OUTR >= RV_SIZE) {
-        memmove(rv_ring, &rv_ring[rv_pos], (RV_E_OUTR + 1) * sizeof rv_ring[0]);
+        /* The next step writes the newest slot after the retained samples. */
+        memmove(rv_ring, &rv_ring[rv_pos], RV_E_OUTR * sizeof rv_ring[0]);
         rv_pos = 0;
     }
 }

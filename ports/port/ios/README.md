@@ -32,9 +32,9 @@ begin a match. The importer supports NAOMI cartridge ZIPs.
   atomically reads the button mask and consumes one `HOST_INPUT.coin` event per
   game frame.
 - `NativeFrameStore` starts empty. The runtime can publish genuine frames from
-  `rd_end_frame` with `NativeCanvasFrame(width:height:argb:)`, which explicitly
-  converts numeric ARGB words to RGBA bytes. `clear()` removes the stopped
-  session's image. `NativeCanvasView(settings:frames:)` remains black until a
+  `rd_end_frame` with `NativeCanvasFrame(width:height:argb:)`, which copies the
+  renderer's words directly into an owned BGRA frame. `clear()` removes the
+  stopped session's image. `NativeCanvasView(settings:frames:)` remains black until a
   frame is supplied, and shows Metal initialization or GPU errors.
 - `display/Presentation.metal` presents real frames with ten filter modes,
   strength, aspect ratio, size, independent width/height and offsets. The named

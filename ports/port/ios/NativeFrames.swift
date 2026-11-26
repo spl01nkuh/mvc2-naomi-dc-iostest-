@@ -5,18 +5,8 @@ import Foundation
 struct NativeCanvasFrame {
     let width: Int
     let height: Int
-    let rgba: [UInt8]
+    let bgra: Data
 
-    init?(width: Int, height: Int, rgba: [UInt8]) {
-        guard width > 0, height > 0, width <= 4096, height <= 4096,
-              rgba.count == width * height * 4 else { return nil }
-        self.width = width
-        self.height = height
-        self.rgba = rgba
-    }
-
-    /// `rd_end_frame` writes numeric 0xAARRGGBB words. Convert their components
-    /// explicitly so presentation never depends on the CPU's byte order.
     init?(width: Int, height: Int, argb: [UInt32]) {
         guard let frame = argb.withUnsafeBufferPointer({
             NativeCanvasFrame(width: width, height: height, argb: $0)
@@ -24,21 +14,18 @@ struct NativeCanvasFrame {
         self = frame
     }
 
-    /// Copy the native renderer's borrowed pixels before its next step.
+    /// Copy the renderer's borrowed 0xAARRGGBB words before the next step.
+    /// On Apple CPUs their byte order already matches the Metal BGRA texture.
     init?(width: Int, height: Int, argb: UnsafeBufferPointer<UInt32>) {
         guard width > 0, height > 0, width <= 4096, height <= 4096,
               argb.count == width * height else { return nil }
-        var pixels = [UInt8](repeating: 0, count: argb.count * 4)
-        for (index, word) in argb.enumerated() {
-            let offset = index * 4
-            pixels[offset] = UInt8(truncatingIfNeeded: word >> 16)
-            pixels[offset + 1] = UInt8(truncatingIfNeeded: word >> 8)
-            pixels[offset + 2] = UInt8(truncatingIfNeeded: word)
-            pixels[offset + 3] = UInt8(truncatingIfNeeded: word >> 24)
-        }
         self.width = width
         self.height = height
-        self.rgba = pixels
+        #if _endian(little)
+        bgra = Data(buffer: argb)
+        #else
+        bgra = argb.map(\.littleEndian).withUnsafeBufferPointer { Data(buffer: $0) }
+        #endif
     }
 }
 

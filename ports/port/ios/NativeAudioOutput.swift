@@ -29,15 +29,22 @@ final class NativeAudioOutput {
     private var availableBuffers = NativeAudioOutput.allBuffersAvailable
     private var queuedFrames = 0
 
+    /// A route or device format change can stop the engine without sending a
+    /// session interruption. This is checked on the owning gameplay thread.
+    var needsRestart: Bool { running && (!engine.isRunning || !player.isPlaying) }
+
     func resume() throws {
-        guard !running else { return }
+        guard !running || needsRestart else { return }
+        if running { stopPlayback() }
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default)
-            try session.setPreferredSampleRate(Self.sampleRate)
-            try session.setPreferredIOBufferDuration(512 / Self.sampleRate)
-            try session.setActive(true)
-            sessionActive = true
+            if !sessionActive {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, mode: .default)
+                try session.setPreferredSampleRate(Self.sampleRate)
+                try session.setPreferredIOBufferDuration(512 / Self.sampleRate)
+                try session.setActive(true)
+                sessionActive = true
+            }
             try prepareGraph()
             try engine.start()
             player.play()
@@ -51,6 +58,15 @@ final class NativeAudioOutput {
     /// Stop pending playback before another game frame can reuse its buffers.
     /// Do not hold completionLock across stop(): it may invoke completions.
     func suspend() {
+        stopPlayback()
+        if sessionActive {
+            try? AVAudioSession.sharedInstance().setActive(false,
+                                                          options: .notifyOthersOnDeactivation)
+            sessionActive = false
+        }
+    }
+
+    private func stopPlayback() {
         running = false
         completionLock.lock()
         generation &+= 1
@@ -61,17 +77,12 @@ final class NativeAudioOutput {
             player.stop()
             engine.pause()
         }
-        if sessionActive {
-            try? AVAudioSession.sharedInstance().setActive(false,
-                                                          options: .notifyOthersOnDeactivation)
-            sessionActive = false
-        }
     }
 
     /// Copies native 44.1 kHz interleaved stereo samples before the next native
     /// step invalidates them. Excess sound is dropped instead of growing latency.
     func enqueue(interleaved samples: UnsafePointer<Int16>, frames: Int) {
-        guard running, engine.isRunning, frames > 0,
+        guard running, !needsRestart, frames > 0,
               frames <= Int(Self.bufferCapacity) else { return }
 
         completionLock.lock()

@@ -153,6 +153,13 @@ function(mvc2_core_test name)
     add_test(NAME ${name} COMMAND test_${name})
 endfunction()
 mvc2_core_test(native64_load_queue "${PORT}/native64/tests/test_load_queue.c")
+mvc2_core_test(native64_aica LEGACY_WARNINGS test_native64_aica.c
+    "${PORT}/snd/aica.c" "${PORT}/snd/arm7.c" "${PORT}/snd/snd_drv.c"
+    "${PORT}/native64/engine/runtime.c" "${PORT}/naomi/naomi_board.c")
+target_include_directories(test_native64_aica PRIVATE
+    "${PORT}/sys" "${PORT}/snd" "${PORT}/nl" "${PORT}/render")
+target_compile_definitions(test_native64_aica PRIVATE _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
+target_link_libraries(test_native64_aica PRIVATE Threads::Threads)
 mvc2_core_test(native64_attract_queue LEGACY_WARNINGS "${PORT}/native64/tests/test_attract_queue.c")
 mvc2_core_test(native64_attract_effects LEGACY_WARNINGS "${PORT}/native64/tests/test_attract_effects.c"
     "${GAME}/src/at01_ef0.c" "${GAME}/src/hit_work.c" "${GAME}/src/work.c")
@@ -178,6 +185,12 @@ mvc2_core_test(native64_player_loading LEGACY_WARNINGS test_native64_player_load
     "${GAME}/src/am_load.c" "${GAME}/src/pl_data_tbl.c" "${GAME}/src/pl_char.c"
     "${GAME}/src/sprite.c" "${GAME}/src/work.c")
 target_link_libraries(test_native64_player_loading PRIVATE mvc2_native_game_memory)
+mvc2_core_test(native64_match_textures LEGACY_WARNINGS test_native64_match_textures.c
+    "${GAME}/src/tex_load.c" "${GAME}/src/pl_char.c" "${GAME}/src/work.c"
+    "${PORT}/nl/nl_tex.c" "${PORT}/nl/nl_obj.c" "${PORT}/naomi/naomi_board.c")
+target_include_directories(test_native64_match_textures PRIVATE "${PORT}/nl" "${PORT}/sys" "${PORT}/snd")
+target_compile_definitions(test_native64_match_textures PRIVATE _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
+target_link_libraries(test_native64_match_textures PRIVATE mvc2_native_model_store mvc2_native_renderer mvc2_native_host_alloc)
 mvc2_core_test(native64_sprite LEGACY_WARNINGS test_native64_sprite.c
     "${GAME}/src/sprite.c" "${GAME}/src/pl_char.c" "${GAME}/src/pl_data_tbl.c"
     "${GAME}/src/spr_pos_tbl.c" "${GAME}/src/work.c" "${GAME}/src/lib/libnaomi/nlmath.c"
