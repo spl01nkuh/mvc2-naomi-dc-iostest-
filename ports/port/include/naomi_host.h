@@ -75,6 +75,8 @@ int naomi_init(const HOST_PROGRAM* program, const char* rom_path);
 /* Native C tables must already be linked. Nonempty serialized relocation
  * lists are rejected; they cannot contain full-width native pointers. */
 int board_start(const HOST_PROGRAM* program);
+/* Set the native board's coin and attract-audio switches before boot. */
+void host_set_arcade_switches(int free_play, int demo_sound);
 #else
 void board_start(const HOST_PROGRAM* program);  /* a program loaded in RAM */
 #endif

@@ -31,6 +31,13 @@ static NLA_CREDIT_CONF credit_conf_data = {
     1,
 };
 
+#ifdef HOST_NATIVE64
+void host_set_arcade_switches(int free_play, int demo_sound) {
+    credit_conf_data.CoinFlag = free_play ? NLA_FREEPLAY : NLA_COINOPE;
+    system_flag.SoundFlag = demo_sound ? NLA_ADVSND_ON : NLA_ADVSND_OFF;
+}
+#endif
+
 void nlaGetBootFlag(void) {
 }
 

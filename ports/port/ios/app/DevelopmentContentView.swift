@@ -235,6 +235,8 @@ struct DevelopmentContentView: View {
                     Text("Normal").tag(1)
                     Text("Turbo").tag(2)
                 }
+            } header: {
+                EmptyView()
             } footer: {
                 Text("Changes apply the next time the game starts.")
             }
