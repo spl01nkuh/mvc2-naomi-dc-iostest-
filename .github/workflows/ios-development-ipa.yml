@@ -27,9 +27,9 @@ jobs:
           cmake --build build/ipa-validation --parallel 4 --target \
             test_native64_model test_native64_render test_native64_match_textures \
             test_native64_attract_effects test_native64_attract_opening \
-            test_native64_widescreen test_native64_aica
+            test_native64_widescreen test_native64_aica test_ios_viewport
           ctest --test-dir build/ipa-validation --output-on-failure \
-            -R '^native64_(model|render|match_textures|attract_effects|attract_opening|widescreen|aica)$'
+            -R '^(native64_(model|render|match_textures|attract_effects|attract_opening|widescreen|aica)|ios_viewport)$'
           clang -I ports/port/include -c ports/port/ios/input/input.c -o build/ipa-validation/input.o
           swiftc -swift-version 5 -D MVC2_TEST_NATIVE_BRIDGE -I ports/port/ios -I ports/port/include \
             -import-objc-header ports/port/ios/NativeBridge.h ports/port/ios/AppSettings.swift \

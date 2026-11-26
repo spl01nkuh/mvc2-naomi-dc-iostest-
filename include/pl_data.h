@@ -122,7 +122,7 @@ extern Sint16 walk_spd_armor_tbl[][2];
 /* each character's files, and where each player work's are loaded */
 extern const Uint16 pl_file_tbl[];	/* the player data file */
 extern const Uint16 pic_file_tbl[];	/* the picture file */
-extern const Uint16 vs_file_tbl[];	/* the versus model's pictures */
+extern const Uint16 vs_file_tbl[60];	/* the versus model's pictures */
 extern Uint8 * const pl_data_adrs_tbl[];	/* by work: where its player data is loaded */
 extern Uint8 * const spr_set_buff_tbl[];	/* and its sprite set's buffer */
 extern Sint32 * const pic_adrs_tbl[];	/* and its picture file */

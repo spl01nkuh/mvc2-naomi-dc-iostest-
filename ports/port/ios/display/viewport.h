@@ -12,7 +12,8 @@ typedef struct MVC2Viewport {
 typedef enum MVC2Aspect {
     MVC2_ASPECT_FOUR_THREE = 0,
     MVC2_ASPECT_SOURCE = 1,
-    MVC2_ASPECT_FILL = 2
+    MVC2_ASPECT_FILL = 2,
+    MVC2_ASPECT_SIXTEEN_NINE = 3
 } MVC2Aspect;
 
 /* Returns an unclipped rectangle: deliberate zooming may crop the picture.

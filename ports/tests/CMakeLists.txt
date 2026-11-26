@@ -187,6 +187,7 @@ mvc2_core_test(native64_player_loading LEGACY_WARNINGS test_native64_player_load
 target_link_libraries(test_native64_player_loading PRIVATE mvc2_native_game_memory)
 mvc2_core_test(native64_match_textures LEGACY_WARNINGS test_native64_match_textures.c
     "${GAME}/src/tex_load.c" "${GAME}/src/pl_char.c" "${GAME}/src/work.c"
+    "${GAME}/src/sel_sub.c" "${GAME}/src/pl_data_tbl.c"
     "${PORT}/nl/nl_tex.c" "${PORT}/nl/nl_obj.c" "${PORT}/naomi/naomi_board.c")
 target_include_directories(test_native64_match_textures PRIVATE "${PORT}/nl" "${PORT}/sys" "${PORT}/snd")
 target_compile_definitions(test_native64_match_textures PRIVATE _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)

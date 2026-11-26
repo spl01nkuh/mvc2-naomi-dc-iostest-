@@ -20,7 +20,7 @@ extern void fight_load_start( int no );	/* am_load.c: asks the disc for a scene'
 extern void adx_pause( int flag );	/* pl_sw.c: holds the music */
 #endif
 
-static void rank_disp_set( void );
+static int rank_disp_set( void );
 static void ranking_init( void );
 static void ranking_move( void );
 static void ranking_end( void );
@@ -81,7 +81,7 @@ static const Uint8 rank_chr_tbl[0x60] = {
 /*			The scene's models, camera, fog and the				*/
 /*			ranking's pages										*/
 /*==============================================================*/
-static void rank_disp_set( void )
+static int rank_disp_set( void )
 {
 	static VEC3 light_dir = { 0.0f, 1.0f, 1.0f } ;
 	int rank ;
@@ -102,6 +102,9 @@ static void rank_disp_set( void )
 	Palette_Init() ;
 	Texture_Init() ;
 	TexLoad( 10 ) ;
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+	if( !obj_dm06 ) return 0 ;
+#endif
 	scr_work_init() ;
 	scr_work.scr_type = 1 ;
 	scr_work.scr_routine[1] = 3 ;
@@ -199,6 +202,7 @@ static void rank_disp_set( void )
 #ifdef TARGET_DC
 	fight_load_start( 8 ) ;
 #endif
+	return 1 ;
 }
 
 /****************************************************************/
@@ -238,7 +242,10 @@ static void ranking_init( void )
 	rank_disp_set() ;
 	adx_pause( 0 ) ;
 #else
-	rank_disp_set() ;
+	if( !rank_disp_set() ){
+		ranking_end() ;
+		return ;
+	}
 	se_vol_up( 0, 1 ) ;
 	se_vol_up( 1, 1 ) ;
 	scene_song_req( 8, 27 ) ;
@@ -370,7 +377,10 @@ static void rank_demo_init( void )
 	pl_work[0].score_rank = 0 ;
 	pl_work[0].win_rank = 0 ;
 	Sys->rank_char = rd->load_type[0] ;
-	rank_disp_set() ;
+	if( !rank_disp_set() ){
+		rank_demo_end() ;
+		return ;
+	}
 	se_vol_up( 0, 1 ) ;
 	se_vol_up( 1, 1 ) ;
 	scene_song_req( 6, 26 ) ;

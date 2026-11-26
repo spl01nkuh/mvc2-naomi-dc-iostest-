@@ -145,21 +145,26 @@ struct IOSSettingsTests {
     static func widescreenSettings() throws {
         var settings = AppSettings()
         settings.nativeWidescreen = true
+        settings.arcade.freePlay = true
+        settings.arcade.difficulty = 6
         settings.controls.append(TouchControl(label: "LP + HP", x: 0.5, y: 0.5,
             buttons: NativeButton.lp.rawValue | NativeButton.hp.rawValue, custom: true))
         let encoded = try JSONEncoder().encode(settings)
         let restored = try JSONDecoder().decode(AppSettings.self, from: encoded)
         try check(restored.nativeWidescreen && restored.controls == settings.controls,
                   "Native widescreen and the custom layout must survive relaunch")
+        try check(restored.arcade == settings.arcade, "Arcade settings must survive relaunch")
         try check(restored.presentationAspect(sourceWidth: 854, sourceHeight: 480) == .native,
                   "The original default fit must preserve a widescreen source's proportions")
 
         var legacy = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
         legacy.removeValue(forKey: "nativeWidescreen")
+        legacy.removeValue(forKey: "arcade")
         let legacyData = try JSONSerialization.data(withJSONObject: legacy)
         let migrated = try JSONDecoder().decode(AppSettings.self, from: legacyData)
         try check(!migrated.nativeWidescreen && migrated.controls == settings.controls,
                   "An older settings file must preserve its layout and keep the original 4:3 mode")
+        try check(migrated.arcade == ArcadeSettings(), "Older settings must use the arcade defaults")
         try check(migrated.presentationAspect(sourceWidth: 640, sourceHeight: 480) == .fourThree,
                   "Disabling native widescreen must retain the original display fit")
 
@@ -171,8 +176,8 @@ struct IOSSettingsTests {
         try check(settings.presentationAspect(sourceWidth: 640, sourceHeight: 480) == .fourThree,
                   "The first new 4:3 frame must restore the original display fit")
         settings.nativeWidescreen = true
-        try check(settings.presentationAspect(sourceWidth: 640, sourceHeight: 480) == .native,
-                  "Enabling widescreen while paused must fit the retained 4:3 source without stretching it")
+        try check(settings.presentationAspect(sourceWidth: 640, sourceHeight: 480) == .sixteenNine,
+                  "Widescreen must fit 4:3 non-fight frames into a 16:9 viewport")
 
         settings.aspect = .fill
         try check(settings.presentationAspect(sourceWidth: 854, sourceHeight: 480) == .fill,

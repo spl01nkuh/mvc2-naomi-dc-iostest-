@@ -10,16 +10,18 @@ final class NativeAudioOutput {
     }
 
     private static let sampleRate = 44_100.0
-    private static let bufferCount = 6
+    private static let bufferCount = 10
     private static let bufferCapacity: AVAudioFrameCount = 4_096
     private static let maximumQueuedFrames = 6_615 // At most 150 ms of sound.
-    private static let allBuffersAvailable: UInt8 = 0x3f
+    private static let prerollFrames = 2_205 // Three game frames, about 50 ms.
+    private static let allBuffersAvailable = (UInt16(1) << bufferCount) - 1
 
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private var buffers: [AVAudioPCMBuffer] = []
     private var graphReady = false
     private var running = false
+    private var playing = false
     private var sessionActive = false
 
     // No graph work, PCM conversion, allocation or unbounded queue runs in the
@@ -31,7 +33,7 @@ final class NativeAudioOutput {
 
     /// A route or device format change can stop the engine without sending a
     /// session interruption. This is checked on the owning gameplay thread.
-    var needsRestart: Bool { running && (!engine.isRunning || !player.isPlaying) }
+    var needsRestart: Bool { running && (!engine.isRunning || (playing && !player.isPlaying)) }
 
     func resume() throws {
         guard !running || needsRestart else { return }
@@ -47,7 +49,6 @@ final class NativeAudioOutput {
             }
             try prepareGraph()
             try engine.start()
-            player.play()
             running = true
         } catch {
             suspend()
@@ -68,6 +69,7 @@ final class NativeAudioOutput {
 
     private func stopPlayback() {
         running = false
+        playing = false
         completionLock.lock()
         generation &+= 1
         availableBuffers = Self.allBuffersAvailable
@@ -91,10 +93,12 @@ final class NativeAudioOutput {
             completionLock.unlock()
             return
         }
+        let underrun = playing && queuedFrames == 0
         let index = availableBuffers.trailingZeroBitCount
-        let slot = UInt8(1) << index
+        let slot = UInt16(1) << index
         availableBuffers &= ~slot
         queuedFrames += frames
+        let startPlayback = queuedFrames >= Self.prerollFrames
         let scheduledGeneration = generation
         completionLock.unlock()
 
@@ -113,6 +117,10 @@ final class NativeAudioOutput {
             channels[1][frame] = Float(samples[frame * 2 + 1]) / 32_768
         }
 
+        if underrun {
+            player.pause()
+            playing = false
+        }
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             guard let self else { return }
             self.completionLock.lock()
@@ -121,6 +129,10 @@ final class NativeAudioOutput {
                 self.queuedFrames -= frames
             }
             self.completionLock.unlock()
+        }
+        if !playing && startPlayback {
+            player.play()
+            playing = true
         }
     }
 

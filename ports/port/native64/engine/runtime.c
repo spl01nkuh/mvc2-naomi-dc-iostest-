@@ -3,6 +3,7 @@
 #include "engine_state.h"
 #include "game_memory.h"
 #include "naomi_host.h"
+#include "naomi.h"
 #include "rd.h"
 #include "snd.h"
 #include "../../ios/assets/mvc2_rom.h"
@@ -34,6 +35,8 @@ static char save_directory[PATH_MAX];
 static char save_file[PATH_MAX];
 static void* kept_block;
 static size_t kept_size;
+static MVC2_ARCADE_SETTINGS arcade_settings;
+static int has_arcade_settings;
 
 static int failure(char* error, size_t capacity, const char* message) {
     if (error && capacity) snprintf(error, capacity, "%s", message);
@@ -52,7 +55,8 @@ static int on_owner(int establish) {
     return result;
 }
 
-int mvc2_gameplay_start(const char* rom, const char* saves, char* error, size_t capacity) {
+int mvc2_gameplay_start(const char* rom, const char* saves, const MVC2_ARCADE_SETTINGS* settings,
+                        char* error, size_t capacity) {
     struct stat status;
     if (error && capacity) error[0] = 0;
     if (!on_owner(1)) return failure(error, capacity, "The native game must stay on its owning thread.");
@@ -77,6 +81,12 @@ int mvc2_gameplay_start(const char* rom, const char* saves, char* error, size_t 
      * Keep a bounded working set on iOS as stage and character loads overlap. */
     naomi_rom_cache_bytes = 32u << 20;
     host_unlock = 1;
+    has_arcade_settings = settings != NULL;
+    if (settings) {
+        arcade_settings = *settings;
+        nlaGetCreditConf()->CoinFlag = settings->free_play ? NLA_FREEPLAY : NLA_COINOPE;
+        nlaGetSystemFlag()->SoundFlag = settings->demo_sound ? NLA_ADVSND_ON : NLA_ADVSND_OFF;
+    }
     rd_begin_frame();
     rd_background(UINT32_C(0xff000000));
     if (!naomi_init(&arc_program, rom)) {
@@ -84,12 +94,17 @@ int mvc2_gameplay_start(const char* rom, const char* saves, char* error, size_t 
         rd_soft_shutdown();
         mvc2_game_memory_close();
         mvc2_engine_restore();
+        has_arcade_settings = 0;
         save_directory[0] = 0;
         return failure(error, capacity, "The native engine could not load this NAOMI cartridge's program data.");
     }
     active = 1;
     host_log("native iOS gameplay: upstream 0.2.1, linked ARM64 C, software rendering");
     return 1;
+}
+
+const MVC2_ARCADE_SETTINGS* mvc2_gameplay_arcade_settings(void) {
+    return has_arcade_settings ? &arcade_settings : NULL;
 }
 
 int mvc2_gameplay_step(const HOST_INPUT* input, char* error, size_t capacity) {
@@ -146,6 +161,7 @@ void mvc2_gameplay_stop(void) {
     mvc2_game_memory_close();
     mvc2_engine_restore();
     active = has_frame = audio_frames = 0;
+    has_arcade_settings = 0;
     presented_width = presented_height = 0;
     audio_samples = NULL;
     memset(&controls, 0, sizeof controls);
