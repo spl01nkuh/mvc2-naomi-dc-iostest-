@@ -3,7 +3,6 @@
 #include "engine_state.h"
 #include "game_memory.h"
 #include "naomi_host.h"
-#include "naomi.h"
 #include "rd.h"
 #include "snd.h"
 #include "../../ios/assets/mvc2_rom.h"
@@ -84,8 +83,7 @@ int mvc2_gameplay_start(const char* rom, const char* saves, const MVC2_ARCADE_SE
     has_arcade_settings = settings != NULL;
     if (settings) {
         arcade_settings = *settings;
-        nlaGetCreditConf()->CoinFlag = settings->free_play ? NLA_FREEPLAY : NLA_COINOPE;
-        nlaGetSystemFlag()->SoundFlag = settings->demo_sound ? NLA_ADVSND_ON : NLA_ADVSND_OFF;
+        host_set_arcade_switches(settings->free_play, settings->demo_sound);
     }
     rd_begin_frame();
     rd_background(UINT32_C(0xff000000));
