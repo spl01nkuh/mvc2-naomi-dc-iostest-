@@ -222,7 +222,22 @@ static int lattack_ck( PLAYER_WORK *pl_w )
 	Uint16 sw ;
 
 	if( !sw_now_ck( pl_w, 0x0140, &sw, 4 ) ) return 0 ;
+#ifdef HOST_NATIVE64
+	{
+		/* The arcade reads the high half of its return address six bytes
+		   past sw. Preserve that board value without reading the native stack. */
+		COM_WORK cw = { 0 } ;
+#ifdef TARGET_DC
+		/* Serialized S_PL_ADRS, before any native RAM translation. */
+		cw.sw = ( 0x0ce30000u + ( Uint32 )pl_w->pl_index * 0x8000u ) >> 16 ;
+#else
+		cw.sw = 0x0c0f ;
+#endif
+		com_sw_set( pl_w, &cw ) ;
+	}
+#else
 	com_sw_set( pl_w, ( COM_WORK * )&sw ) ;
+#endif
 	if( pl_w->ground_y + DOT_Y( 32.0f ) > pl_w->pos.y && ( pl_w->pl_sw_new & KEY_DOWN ) ) return 0 ;
 	if( pl_w->act_st == N_SPECIAL && pl_w->pl_sp_type == pl2a_sp_lattack ){
 		if( pl_w->tlocal[TL_DASH_WAIT] ) return 0 ;

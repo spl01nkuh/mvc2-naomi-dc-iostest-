@@ -95,6 +95,7 @@ final class NativeGameplaySession {
         // Prepare the system audio graph only once a game is ready to run.
         var sound: NativeAudioOutput?
         var audioActivationAttempted = false
+        var nextAudioRestart = 0.0
         let period = 858.0 * 525.0 / 27_000_000.0
         var active = false
         var paused = true
@@ -248,9 +249,11 @@ final class NativeGameplaySession {
                 }
                 // A successful native frame precedes audio activation. A
                 // route can fail independently of starting the game engine.
-                if !audioActivationAttempted {
+                let restartAudio = sound?.needsRestart == true && time >= nextAudioRestart
+                if !audioActivationAttempted || restartAudio {
                     audioActivationAttempted = true
-                    recordCheckpoint("Activating audio after frame \(frameNumber)",
+                    nextAudioRestart = time + 1
+                    recordCheckpoint("\(restartAudio ? "Restarting" : "Activating") audio after frame \(frameNumber)",
                                      progress: progress, widescreen: widescreen)
                     let audio = sound ?? NativeAudioOutput()
                     sound = audio

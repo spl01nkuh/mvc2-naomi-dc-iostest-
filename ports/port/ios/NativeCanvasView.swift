@@ -233,7 +233,7 @@ private final class NativeMetalPresenter: NSObject, MTKViewDelegate {
         // matching texture can be reused without overwriting GPU input.
         if texture?.width != frame.width || texture?.height != frame.height {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: .rgba8Unorm, width: frame.width, height: frame.height, mipmapped: false
+                pixelFormat: .bgra8Unorm, width: frame.width, height: frame.height, mipmapped: false
             )
             descriptor.usage = .shaderRead
             descriptor.storageMode = .shared
@@ -241,7 +241,7 @@ private final class NativeMetalPresenter: NSObject, MTKViewDelegate {
             texture = next
         }
         guard let texture else { return false }
-        return frame.rgba.withUnsafeBytes { bytes in
+        return frame.bgra.withUnsafeBytes { bytes in
             guard let pixels = bytes.baseAddress else { return false }
             texture.replace(region: MTLRegionMake2D(0, 0, frame.width, frame.height),
                             mipmapLevel: 0, withBytes: pixels, bytesPerRow: frame.width * 4)

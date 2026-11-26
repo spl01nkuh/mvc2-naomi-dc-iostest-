@@ -235,7 +235,15 @@ static void play_init( void )
 	Texture_Init() ;
 	TexLoad( 1 ) ;
 	TexLoad( 2 ) ;
+#ifdef HOST_NATIVE64
+	if( Sys->play_mode != 64 ){
+		TexLoad( 4 ) ;
+		/* The runtime reports the loader's reason after this coroutine yields. */
+		if( !obj_dm00 ) return ;
+	}
+#else
 	if( Sys->play_mode != 64 ) TexLoad( 4 ) ;
+#endif
 	for( i = 0 ; i < 6 ; i ++ ){
 		pl_w = &pl_work[i] ;
 		pl_data_set( pl_w, i ) ;

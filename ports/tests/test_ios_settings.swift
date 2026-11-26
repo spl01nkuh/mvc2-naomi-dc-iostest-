@@ -17,6 +17,7 @@ struct IOSSettingsTests {
         try persistence()
         try widescreenSettings()
         try heldSources()
+        try shortTouchActions()
         try concurrentSources()
         try coinEvents()
         try frames()
@@ -91,6 +92,56 @@ struct IOSSettingsTests {
         try check(input.buttons == 0, "Modal and background cancellation must clear every held input")
     }
 
+    static func shortTouchActions() throws {
+        let input = InputState()
+        let start = NativeButton.start.rawValue
+        let lp = NativeButton.lp.rawValue
+        let hp = NativeButton.hp.rawValue
+        let left = NativeButton.left.rawValue
+        let right = NativeButton.right.rawValue
+        let combo = left | lp | hp
+
+        input.set(source: "finger", buttons: start, retainTap: true)
+        input.endTouch(source: "finger")
+        try check(input.buttons == 0, "Released buttons must appear released immediately")
+        try check(input.snapshotForFrame().buttons == start,
+                  "A START tap between frames must reach the game")
+        try check(input.snapshotForFrame().buttons == 0, "A short tap must expire after one frame")
+
+        input.set(source: "finger", buttons: combo, retainTap: true)
+        input.endTouch(source: "finger")
+        try check(input.snapshotForFrame().buttons == combo,
+                  "A short custom tap must preserve all bindings in its chord")
+
+        input.set(source: "hold", buttons: right | hp)
+        input.set(source: "finger", buttons: combo, retainTap: true)
+        input.endTouch(source: "finger")
+        try check(input.snapshotForFrame().buttons == lp | hp,
+                  "Buffered and held actions must neutralize conflicting directions")
+        try check(input.snapshotForFrame().buttons == right | hp,
+                  "A buffered tap must expire independently of overlapping holds")
+        input.releaseAll()
+
+        input.set(source: "finger", buttons: lp, retainTap: true)
+        try check(input.snapshotForFrame().buttons == lp, "A held button must respond in the current frame")
+        input.set(source: "finger", buttons: lp, retainTap: true)
+        input.endTouch(source: "finger")
+        try check(input.snapshotForFrame().buttons == 0, "Releasing an observed hold must not repeat its press")
+
+        input.set(source: "finger", buttons: lp, retainTap: true)
+        input.endTouch(source: "finger", cancelled: true)
+        try check(input.snapshotForFrame().buttons == 0, "UIKit cancellation must discard an unplayed tap")
+        input.set(source: "finger", buttons: lp, retainTap: true)
+        input.endTouch(source: "finger")
+        input.cancelTouches(sources: [])
+        try check(input.snapshotForFrame().buttons == 0, "Removing the overlay must clear already released taps")
+
+        input.set(source: "finger", buttons: start, retainTap: true)
+        input.endTouch(source: "finger")
+        input.releaseAll()
+        try check(input.snapshotForFrame().buttons == 0, "Suspending play must clear released taps")
+    }
+
     static func widescreenSettings() throws {
         var settings = AppSettings()
         settings.nativeWidescreen = true
@@ -150,17 +201,22 @@ struct IOSSettingsTests {
     static func frames() throws {
         let frames = NativeFrameStore()
         try check(frames.snapshot().0 == nil, "A new session must wait for actual pixels")
-        try check(NativeCanvasFrame(width: 0, height: 1, rgba: []) == nil, "Empty frames are invalid")
-        try check(NativeCanvasFrame(width: 1, height: 1, rgba: [0]) == nil, "A truncated RGBA pixel must be rejected")
+        try check(NativeCanvasFrame(width: 0, height: 1, argb: []) == nil, "Empty frames are invalid")
+        try check(NativeCanvasFrame(width: 2, height: 1, argb: [0]) == nil, "A truncated frame must be rejected")
         try check(NativeCanvasFrame(width: 4097, height: 1, argb: []) == nil, "Frame dimensions must be bounded before allocation")
-        guard let frame = NativeCanvasFrame(width: 2, height: 1, argb: [0x7f123456, 0xffaabbcc]) else {
+        var rendererPixels: [UInt32] = [0x7f123456, 0xffaabbcc]
+        let copiedFrame = rendererPixels.withUnsafeBufferPointer {
+            NativeCanvasFrame(width: 2, height: 1, argb: $0)
+        }
+        rendererPixels[0] = 0
+        guard let frame = copiedFrame else {
             throw TestFailure(description: "A complete native ARGB frame must be accepted")
         }
-        try check(frame.rgba == [0x12, 0x34, 0x56, 0x7f, 0xaa, 0xbb, 0xcc, 0xff],
-                  "Native ARGB words must become explicit RGBA component bytes")
+        try check(Array(frame.bgra) == [0x56, 0x34, 0x12, 0x7f, 0xcc, 0xbb, 0xaa, 0xff],
+                  "The frame must retain its BGRA bytes after the renderer reuses its buffer")
         frames.publish(frame: frame)
         let (published, generation) = frames.snapshot()
-        try check(published?.rgba == frame.rgba && generation == 1, "Publishing must retain complete frame pixels")
+        try check(published?.bgra == frame.bgra && generation == 1, "Publishing must retain complete frame pixels")
         frames.clear()
         let (cleared, nextGeneration) = frames.snapshot()
         try check(cleared == nil && nextGeneration == generation + 1, "Stopping a session must remove its old game frame")
@@ -178,7 +234,7 @@ struct IOSSettingsTests {
         let (publishedWide, _) = frames.snapshot()
         try check(publishedWide?.width == 854 && publishedWide?.height == 480,
                   "A native aspect change must publish the actual frame dimensions")
-        try check(Array(wide.rgba.suffix(4)) == [0xab, 0xcd, 0xef, 0xff],
+        try check(Array(wide.bgra.suffix(4)) == [0xef, 0xcd, 0xab, 0xff],
                   "Widescreen frame copying must preserve the last native pixel")
     }
 

@@ -7,6 +7,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef HOST_NATIVE64
+#include <limits.h>
+#endif
 
 #include "naomi.h"
 #include "naomi_host.h"
@@ -157,6 +160,26 @@ static int load_file(const char* name, char* p, int size) {
 
 /* through a temporary file, never half written */
 static void save_file(const char* name, const char* p, int size) {
+#ifdef HOST_NATIVE64
+    if (!name || size < 0) {
+        return;
+    }
+    char tmp[PATH_MAX];
+    int length = snprintf(tmp, sizeof tmp, "%s.tmp", name);
+    if (length < 0 || (size_t)length >= sizeof tmp) {
+        return;
+    }
+    FILE* f = fopen(tmp, "wb");
+    if (f == NULL) {
+        return;
+    }
+    /* A buffered write can succeed before a full disk is reported by fclose. */
+    int complete = fwrite(p, 1, (size_t)size, f) == (size_t)size;
+    int closed = fclose(f) == 0;
+    if (!complete || !closed || rename(tmp, name) != 0) {
+        remove(tmp);
+    }
+#else
     char tmp[256];
     FILE* f;
     snprintf(tmp, sizeof tmp, "%s.tmp", name);
@@ -170,6 +193,7 @@ static void save_file(const char* name, const char* p, int size) {
     } else {
         fclose(f);
     }
+#endif
 }
 
 /* a test run keeps them in the current folder */

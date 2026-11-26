@@ -63,7 +63,7 @@ final class TouchSurface: UIView {
     private func source(_ key: ObjectIdentifier) -> String { "touch-\(key)" }
 
     @objc func cancelInput() {
-        for key in contacts.keys { input.set(source: source(key), buttons: 0) }
+        input.cancelTouches(sources: contacts.keys.map(source))
         contacts.removeAll()
         setNeedsDisplay()
     }
@@ -85,7 +85,7 @@ final class TouchSurface: UIView {
         for touch in touches {
             let key = ObjectIdentifier(touch)
             if editing, let contact = contacts[key], !contact.moved, let id = contact.control { onSelect?(id) }
-            input.set(source: source(key), buttons: 0)
+            input.endTouch(source: source(key))
             contacts.removeValue(forKey: key)
         }
         setNeedsDisplay()
@@ -93,7 +93,7 @@ final class TouchSurface: UIView {
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
             let key = ObjectIdentifier(touch)
-            input.set(source: source(key), buttons: 0)
+            input.endTouch(source: source(key), cancelled: true)
             contacts.removeValue(forKey: key)
         }
         setNeedsDisplay()
@@ -121,7 +121,8 @@ final class TouchSurface: UIView {
                 input.set(source: source(key), buttons: directions(contact.point, frame(initial)))
             } else {
                 let current = hit(contact.point)
-                input.set(source: source(key), buttons: current?.isDirection == false ? current!.buttons : 0)
+                let buttons = current.flatMap { $0.isDirection ? nil : $0.buttons } ?? 0
+                input.set(source: source(key), buttons: buttons, retainTap: true)
             }
             contacts[key] = contact
         }

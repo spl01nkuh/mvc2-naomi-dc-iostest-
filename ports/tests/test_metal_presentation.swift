@@ -39,7 +39,7 @@ func run() throws {
     let pipeline = try device.makeRenderPipelineState(descriptor: pipelineDescription)
     let inputWidth = 160, inputHeight = 120, outputWidth = 640, outputHeight = 480
     let inputDescription = MTLTextureDescriptor.texture2DDescriptor(
-        pixelFormat: .rgba8Unorm, width: inputWidth, height: inputHeight, mipmapped: false)
+        pixelFormat: .bgra8Unorm, width: inputWidth, height: inputHeight, mipmapped: false)
     inputDescription.storageMode = .shared
     inputDescription.usage = .shaderRead
     guard let input = device.makeTexture(descriptor: inputDescription) else {
@@ -49,9 +49,9 @@ func run() throws {
     for y in 0..<inputHeight {
         for x in 0..<inputWidth {
             let offset = (y * inputWidth + x) * 4
-            sourcePixels[offset] = UInt8(x * 255 / (inputWidth - 1))
+            sourcePixels[offset + 2] = UInt8(x * 255 / (inputWidth - 1))
             sourcePixels[offset + 1] = UInt8(y * 255 / (inputHeight - 1))
-            sourcePixels[offset + 2] = ((x / 3 + y / 3) & 1) == 0 ? 230 : 30
+            sourcePixels[offset] = ((x / 3 + y / 3) & 1) == 0 ? 230 : 30
         }
     }
     sourcePixels.withUnsafeBytes { bytes in
@@ -133,7 +133,7 @@ func run() throws {
     // shader keeps its square marker square and presents both extra margins.
     let wideWidth = 854, wideHeight = 480
     let wideDescription = MTLTextureDescriptor.texture2DDescriptor(
-        pixelFormat: .rgba8Unorm, width: wideWidth, height: wideHeight, mipmapped: false)
+        pixelFormat: .bgra8Unorm, width: wideWidth, height: wideHeight, mipmapped: false)
     wideDescription.storageMode = .shared
     wideDescription.usage = .shaderRead
     guard let wideTexture = device.makeTexture(descriptor: wideDescription) else {
@@ -144,7 +144,7 @@ func run() throws {
         for x in 0..<wideWidth {
             let offset = (y * wideWidth + x) * 4
             widePixels[offset + 3] = 255
-            if x < 107 { widePixels[offset] = 255 }
+            if x < 107 { widePixels[offset + 2] = 255 }
             if x >= 747 { widePixels[offset + 1] = 255 }
             if abs(x - 427) < 32 && abs(y - 240) < 32 {
                 widePixels[offset] = 255
