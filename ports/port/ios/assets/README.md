@@ -12,8 +12,8 @@ Supported archives use ordinary ZIP store/deflate, optional data descriptors,
 and either root filenames or one shared enclosing directory. Nested folders are
 accepted when all required chips share that folder. ZIP64, split ZIPs,
 encryption, symbolic links, absolute paths, traversal components, duplicate
-required basenames, mixed asset directories, files over 8 MiB, and archives over
-160 MiB are rejected. Safe unrelated files are ignored. Archive paths never
+required basenames, mixed asset directories, ROM chips over 8 MiB, and archives
+larger than the classic ZIP limit are rejected. Safe unrelated files are ignored. Archive paths never
 become output paths; output names come only from the fixed manifest. Existing
 destinations are never overwritten. All newly written files are removed if any
 chip fails, including a late checksum failure. No BIOS or EEPROM is required by

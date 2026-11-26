@@ -126,6 +126,27 @@ static int unpack_lz16(const uint8_t* input, size_t input_size, uint8_t* output,
     }
     return 0;
 }
+int mvc2_model_store_unpack_picture(const MVC2HostObjectFile* model, size_t texture,
+                                    const void* picture, size_t part) {
+    size_t offset;
+    if (!ram_offset(picture, 4, &offset)) return 0;
+    const FileExtent* file = find_file(offset);
+    if (!file || part >= file->size / 4) return 0;
+    const uint8_t* bytes = picture;
+    uint32_t begin = le32(bytes + part * 4);
+    if (begin < (part + 1) * 4 || begin >= file->size || (begin & 1u)) return 0;
+    for (size_t i = 0; i < model_count; ++i) {
+        ModelEntry* entry = models[i];
+        if (model != &entry->file || !entry->mapped_texture_address) continue;
+        const NLthd* target = mvc2_native_model_texture(entry->owner, texture);
+        if (!target) return 0;
+        size_t capacity = mvc2_native_model_texture_source_bytes(entry->owner, texture), decoded;
+        return unpack_lz16(bytes + begin, file->size - begin, target->address, capacity, &decoded)
+            && decoded != 0;
+    }
+    return 0;
+}
+
 static MVC2HostObjectFile* get_model(void* model_bytes, const void* packed_bytes,
                                      uint32_t mapped_texture_address) {
     size_t offset;

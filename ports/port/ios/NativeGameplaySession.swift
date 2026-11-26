@@ -33,6 +33,8 @@ final class NativeGameplaySession {
     private let input: InputState
     private let frames: NativeFrameStore
     private let checkpoint: URL?
+    private let checkpointQueue = DispatchQueue(label: "MVC2 session reports", qos: .utility)
+    private let periodicCheckpoint = DispatchSemaphore(value: 1)
     private let receive: @MainActor (NativeGameplayEvent) -> Void
     private let condition = NSCondition()
     private var commands: [Command] = []
@@ -185,6 +187,7 @@ final class NativeGameplaySession {
             if paused {
                 paused = false
                 nextFrame = ProcessInfo.processInfo.systemUptime
+                lastScene.task = -2
                 nextCheckpoint = 0
                 send(.status(.running))
             }
@@ -214,9 +217,11 @@ final class NativeGameplaySession {
                 let scene = (progress.task, progress.step, progress.scene, progress.routine)
                 let time = ProcessInfo.processInfo.systemUptime
                 frameNumber += 1
-                if scene != lastScene || time >= nextCheckpoint {
+                let sceneChanged = scene != lastScene
+                if sceneChanged || time >= nextCheckpoint {
                     recordCheckpoint("Advancing game frame \(frameNumber)",
-                                     progress: progress, widescreen: widescreen)
+                                     progress: progress, widescreen: widescreen,
+                                     immediate: sceneChanged)
                     lastScene = scene
                     nextCheckpoint = time + 1
                 }
@@ -274,16 +279,24 @@ final class NativeGameplaySession {
 
             nextFrame += period
             let now = ProcessInfo.processInfo.systemUptime
-            // Slow frames do not cause an unbounded burst of catch-up frames.
-            if now - nextFrame > period * 2 { nextFrame = now + period }
+            // Drop accumulated debt without adding an idle frame after a stall.
+            if now - nextFrame > period * 2 { nextFrame = now }
         }
     }
 
     private func recordCheckpoint(_ action: String, progress: MVC2_GAMEPLAY_PROGRESS? = nil,
-                                  widescreen: Bool? = nil) {
+                                  widescreen: Bool? = nil, immediate: Bool = true) {
         guard let checkpoint else { return }
-        try? reportData(action, progress: progress, widescreen: widescreen)
-            .write(to: checkpoint, options: .atomic)
+        let data = reportData(action, progress: progress, widescreen: widescreen)
+        if immediate {
+            // Commit scene transitions before entering the new native code.
+            checkpointQueue.sync { _ = try? data.write(to: checkpoint, options: .atomic) }
+        } else if periodicCheckpoint.wait(timeout: .now()) == .success {
+            checkpointQueue.async { [periodicCheckpoint] in
+                defer { periodicCheckpoint.signal() }
+                try? data.write(to: checkpoint, options: .atomic)
+            }
+        }
     }
 
     private func saveFailure(_ action: String, message: String, progress: MVC2_GAMEPLAY_PROGRESS? = nil,
@@ -313,7 +326,8 @@ final class NativeGameplaySession {
 
     private func clearCheckpoint() {
         guard let checkpoint else { return }
-        try? FileManager.default.removeItem(at: checkpoint)
+        // Order deletion after any pending periodic write.
+        checkpointQueue.sync { _ = try? FileManager.default.removeItem(at: checkpoint) }
     }
 
     private static func message(_ error: [CChar], fallback: String) -> String {

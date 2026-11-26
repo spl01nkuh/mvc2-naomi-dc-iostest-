@@ -11,11 +11,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <zlib.h>
 
-#define MAX_ARCHIVE_SIZE (160u * 1024u * 1024u)
 #define MAX_CHIP_SIZE (8u * 1024u * 1024u)
 #define MAX_MANIFEST_FILES 64
 #define MAX_ZIP_ENTRIES 4096
@@ -155,8 +155,8 @@ int mvc2_zip_extract_manifest(const char *zip_path, const char *destination,
     if (!entries) { fail(error, error_size, "Not enough memory to inspect ROM ZIP."); goto done; }
     if (fseeko(source, 0, SEEK_END)) { fail(error, error_size, "Cannot seek in ROM ZIP."); goto done; }
     off_t file_size = ftello(source);
-    if (file_size < 22 || file_size > MAX_ARCHIVE_SIZE) {
-        fail(error, error_size, "ROM ZIP is truncated or exceeds the 160 MiB import limit."); goto done;
+    if (file_size < 22 || (uint64_t)file_size > UINT32_MAX) {
+        fail(error, error_size, "ROM ZIP is truncated or exceeds classic ZIP's 4 GiB limit."); goto done;
     }
     size_t tail_size = file_size < 65557 ? (size_t)file_size : 65557;
     tail = malloc(tail_size);
@@ -180,7 +180,7 @@ int mvc2_zip_extract_manifest(const char *zip_path, const char *destination,
     }
     uint32_t cursor = central_offset;
     char prefix[MAX_NAME + 1] = {0};
-    int have_prefix = 0;
+    int have_prefix = 0, has_disc_image = 0;
     for (unsigned number_index = 0; number_index < number; ++number_index) {
         unsigned char header[46];
         if (cursor > eocd_offset || eocd_offset - cursor < sizeof(header) ||
@@ -203,6 +203,12 @@ int mvc2_zip_extract_manifest(const char *zip_path, const char *destination,
         }
         const char *base = strrchr(name, '/');
         base = base ? base + 1 : name;
+        const char *extension = strrchr(base, '.');
+        if (extension && (!strcasecmp(extension, ".gdi") ||
+                          !strcasecmp(extension, ".cdi") ||
+                          !strcasecmp(extension, ".chd") ||
+                          !strcasecmp(extension, ".cue")))
+            has_disc_image = 1;
         for (size_t i = 0; i < count; ++i) {
             if (strcmp(base, manifest[i].name)) continue;
             Entry *entry = &entries[i];
@@ -230,7 +236,13 @@ int mvc2_zip_extract_manifest(const char *zip_path, const char *destination,
     }
     if (cursor != eocd_offset) { fail(error, error_size, "Unexpected bytes in ZIP directory."); goto done; }
     for (size_t i = 0; i < count; ++i)
-        if (!entries[i].found) { fail(error, error_size, "Missing ROM chip: %s. Import the complete mvsc2 set.", manifest[i].name); goto done; }
+        if (!entries[i].found) {
+            if (has_disc_image)
+                fail(error, error_size, "This build requires the NAOMI mvsc2 ROM ZIP. Dreamcast disc images require a Dreamcast build.");
+            else
+                fail(error, error_size, "Missing ROM chip: %s. Import the complete mvsc2 set.", manifest[i].name);
+            goto done;
+        }
     for (size_t i = 0; i < count; ++i) {
         Entry *entry = &entries[i];
         unsigned char local[30];
