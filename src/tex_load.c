@@ -457,7 +457,11 @@ void tex_load_ranking( void )
 	dst = ( Uint16 * )Sys->tex_buff ;
 	lz_unpack16( src, dst ) ;
 #else
+	#ifdef HOST_NATIVE64
 	PLAYER_WORK *pl_w ;
+	#else
+	PLAYER_WORK *pl_w, *em_w ;
+	#endif
 	int side ;
 	int i ;
 
@@ -478,6 +482,8 @@ void tex_load_ranking( void )
 		pl_w = vs_sys_work.team_w[side][i] ;
 #ifdef HOST_NATIVE64
 		if( !pl_w || ( unsigned )pl_w->load_type >= sizeof vs_file_tbl / sizeof vs_file_tbl[0] ) return ;
+#else
+		em_w = vs_sys_work.team_w[side ^ 1][i] ;
 #endif
 		file_load2( vs_file_tbl[pl_w->load_type], pl_data_adrs_tbl[i] + 0x130000, 1 ) ;
 	}
@@ -730,15 +736,15 @@ void tex_set_ranking( void )
 	static const Uint8 score_pos_tbl[16] = {	/* the score's cells, by digit */
 		0x05, 0x07, 0x0d, 0x0f, 0x04, 0x06, 0x0c, 0x0e, 0x01, 0x03, 0x09, 0x0b, 0x00, 0x02, 0x08, 0x0a
 	} ;
-	NLthd *thd ;
 #if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+	NLthd *thd ;
 	void *original_address ;
 	static const unsigned required_objects[] = {
 		0, 1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 28, 29, 30, 31
 	} ;
 #else
-	NLthd *src, *dst ;
+	NLthd *src, *dst, *thd ;
 #endif
 	PLAYER_WORK *pl_w ;
 	int side ;
@@ -794,6 +800,7 @@ void tex_set_ranking( void )
 #ifdef HOST_NATIVE64
 		if( !mvc2_model_store_unpack_texture( obj_dm06, i + 17, pl_data_adrs_tbl[i] + 0x130000 ) ) goto unavailable ;
 #else
+		pl_w = vs_sys_work.team_w[side][i] ;	/* unused: left from tex_load_ranking's loop */
 		obj_tex_unpack( i + 17, ( Sint16 * )( pl_data_adrs_tbl[i] + 0x130000 ), obj_dm06 ) ;
 #endif
 	}

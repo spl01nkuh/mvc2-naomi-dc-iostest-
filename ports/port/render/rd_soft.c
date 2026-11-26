@@ -1090,9 +1090,12 @@ void rd_end_frame(uint32_t* frame, int pitch) {
         ntotal += rd_frame->ntris[list];
     }
     if (ntotal > maxsetups) {
-        int capacity = maxsetups ? maxsetups : 1024;
+        int capacity = ntotal;
+#if defined(HOST_NATIVE64) || defined(RD_NATIVE_SYSTEM)
+        capacity = maxsetups ? maxsetups : 1024;
         while (capacity < ntotal) capacity *= 2;
         if (capacity > RD_POOL_TRIS) capacity = RD_POOL_TRIS;
+#endif
         SETUP* p = realloc(setups, (size_t)capacity * sizeof *p);
         if (p == NULL) {
             return;
