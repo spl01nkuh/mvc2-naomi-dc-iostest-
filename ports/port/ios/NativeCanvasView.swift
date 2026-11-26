@@ -253,6 +253,7 @@ private final class NativeMetalPresenter: NSObject, MTKViewDelegate {
         let aspect: MVC2Aspect
         switch settings.presentationAspect(sourceWidth: sourceWidth, sourceHeight: sourceHeight) {
         case .fourThree: aspect = MVC2_ASPECT_FOUR_THREE
+        case .sixteenNine: aspect = MVC2_ASPECT_SIXTEEN_NINE
         case .native: aspect = MVC2_ASPECT_SOURCE
         case .fill: aspect = MVC2_ASPECT_FILL
         }

@@ -16,6 +16,10 @@ int main(void)
     close_to(rect.x, 240); close_to(rect.y, 0);
     close_to(rect.width, 1440); close_to(rect.height, 1080);
 
+    rect = mvc2_viewport(2622, 1206, 640, 480, MVC2_ASPECT_SIXTEEN_NINE, 1, 1, 1, 0, 0);
+    close_to(rect.width, 1206.0 * 16.0 / 9.0); close_to(rect.height, 1206);
+    close_to(rect.x, (2622.0 - rect.width) / 2); close_to(rect.y, 0);
+
     rect = mvc2_viewport(1920, 1080, 854, 480,
                          MVC2_ASPECT_SOURCE, 1, 1, 1, 0, 0);
     close_to(rect.width, 1920);

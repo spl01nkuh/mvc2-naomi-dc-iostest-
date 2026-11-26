@@ -8,6 +8,12 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#include <pthread/qos.h>
+#endif
+#endif
 
 struct RD_SEM {
     pthread_mutex_t lock;
@@ -68,7 +74,19 @@ RD_THREAD* rd_thread_create(int (*entry)(void*), const char* name, void* context
     if (!thread) return NULL;
     thread->entry = entry;
     thread->context = context;
-    if (pthread_create(&thread->thread, NULL, thread_main, thread)) {
+    int status;
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    pthread_attr_t attributes;
+    if (pthread_attr_init(&attributes) == 0) {
+        /* Each render phase blocks the interactive gameplay owner until
+         * its workers finish. Give them the same scheduling class. */
+        (void)pthread_attr_set_qos_class_np(&attributes, QOS_CLASS_USER_INTERACTIVE, 0);
+        status = pthread_create(&thread->thread, &attributes, thread_main, thread);
+        pthread_attr_destroy(&attributes);
+    } else
+#endif
+        status = pthread_create(&thread->thread, NULL, thread_main, thread);
+    if (status) {
         free(thread);
         return NULL;
     }

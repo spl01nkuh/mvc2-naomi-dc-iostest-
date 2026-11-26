@@ -9,10 +9,15 @@ enum CRTFilter: Int, Codable, CaseIterable, Identifiable {
 }
 
 enum ScreenAspect: String, Codable, CaseIterable, Identifiable {
-    case fourThree, native, fill
+    case fourThree, sixteenNine, native, fill
     var id: String { rawValue }
     var title: String {
-        switch self { case .fourThree: return "4:3"; case .native: return "Native pixels"; case .fill: return "Fill" }
+        switch self {
+        case .fourThree: return "4:3"
+        case .sixteenNine: return "16:9"
+        case .native: return "Native pixels"
+        case .fill: return "Fill"
+        }
     }
 }
 
@@ -62,11 +67,29 @@ struct TouchControl: Codable, Identifiable, Equatable {
     }
 }
 
+struct ArcadeSettings: Codable, Equatable {
+    var difficulty = 1
+    var damage = 1
+    var timerSpeed = 1
+    var gameSpeed = 0
+    var freePlay = false
+    var demoSound = true
+    var continues = true
+
+    mutating func sanitize() {
+        difficulty = min(max(difficulty, 0), 7)
+        damage = min(max(damage, 0), 3)
+        timerSpeed = min(max(timerSpeed, 0), 3)
+        gameSpeed = min(max(gameSpeed, 0), 2)
+    }
+}
+
 struct AppSettings: Codable {
     var filter: CRTFilter = .off
     var filterStrength = 0.75
     var aspect: ScreenAspect = .fourThree
     var nativeWidescreen = false
+    var arcade = ArcadeSettings()
     var screenScale = 1.0
     var screenWidth = 1.0
     var screenHeight = 1.0
@@ -80,18 +103,18 @@ struct AppSettings: Codable {
     var transparentDirections = true
     var controls = TouchControl.defaults
 
-    /// Fit the actual last frame through a render-mode transition. In
-    /// particular, disabling widescreen while paused must not squeeze the
-    /// retained wide image before the first new 4:3 frame arrives.
+    /// Preserve the proportions of wide fight frames. For other scenes, fit
+    /// the complete original frame into a 16:9 viewport when widescreen is on.
     func presentationAspect(sourceWidth: Int, sourceHeight: Int) -> ScreenAspect {
         guard aspect == .fourThree else { return aspect }
         let hasWideFrame = sourceWidth > 0 && sourceHeight > 0 &&
             Double(sourceWidth) / Double(sourceHeight) > 4.0 / 3.0
-        return nativeWidescreen || hasWideFrame ? .native : .fourThree
+        if hasWideFrame { return .native }
+        return nativeWidescreen ? .sixteenNine : .fourThree
     }
 
     private enum CodingKeys: String, CodingKey {
-        case filter, filterStrength, aspect, nativeWidescreen
+        case filter, filterStrength, aspect, nativeWidescreen, arcade
         case screenScale, screenWidth, screenHeight, screenOffsetX, screenOffsetY
         case touchEnabled, touchOpacity, stickSensitivity, stickDeadZone, directionStyle
         case transparentDirections, controls
@@ -108,6 +131,7 @@ struct AppSettings: Codable {
         filterStrength = try values.decodeIfPresent(Double.self, forKey: .filterStrength) ?? filterStrength
         aspect = try values.decodeIfPresent(ScreenAspect.self, forKey: .aspect) ?? aspect
         nativeWidescreen = try values.decodeIfPresent(Bool.self, forKey: .nativeWidescreen) ?? nativeWidescreen
+        arcade = try values.decodeIfPresent(ArcadeSettings.self, forKey: .arcade) ?? arcade
         screenScale = try values.decodeIfPresent(Double.self, forKey: .screenScale) ?? screenScale
         screenWidth = try values.decodeIfPresent(Double.self, forKey: .screenWidth) ?? screenWidth
         screenHeight = try values.decodeIfPresent(Double.self, forKey: .screenHeight) ?? screenHeight
@@ -123,6 +147,7 @@ struct AppSettings: Codable {
     }
 
     mutating func sanitize() {
+        arcade.sanitize()
         func clamped(_ v: Double, _ min: Double, _ max: Double, fallback: Double) -> Double {
             v.isFinite ? Swift.min(max, Swift.max(min, v)) : fallback
         }

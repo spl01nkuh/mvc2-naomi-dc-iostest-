@@ -9,7 +9,7 @@
 static void* wrong_thread(void* context) {
     (void)context;
     char error[256];
-    assert(!mvc2_gameplay_start("/missing-rom", "/tmp", error, sizeof error));
+    assert(!mvc2_gameplay_start("/missing-rom", "/tmp", NULL, error, sizeof error));
     assert(strstr(error, "owning thread"));
     assert(!mvc2_gameplay_frame());
     assert(!mvc2_gameplay_frame_width() && !mvc2_gameplay_frame_height());
@@ -24,9 +24,9 @@ int main(void) {
     assert(!mvc2_gameplay_frame());
     assert(!mvc2_gameplay_frame_width() && !mvc2_gameplay_frame_height());
     assert(!mvc2_gameplay_audio(&samples) && !samples);
-    assert(!mvc2_gameplay_start(NULL, NULL, error, sizeof error));
+    assert(!mvc2_gameplay_start(NULL, NULL, NULL, error, sizeof error));
     assert(error[0]);
-    assert(!mvc2_gameplay_start("/missing-rom", "/tmp", error, sizeof error));
+    assert(!mvc2_gameplay_start("/missing-rom", "/tmp", NULL, error, sizeof error));
     assert(error[0]);
     assert(!mvc2_gameplay_step(NULL, error, sizeof error));
     assert(strstr(error, "not been started"));

@@ -26,7 +26,7 @@ enum NativeGameplayEvent {
 /// Stop, restart and pause are commands handled only between native steps.
 final class NativeGameplaySession {
     private enum Command {
-        case start(rom: URL, saves: URL)
+        case start(rom: URL, saves: URL, arcade: ArcadeSettings)
         case stop(CheckedContinuation<Void, Never>)
     }
 
@@ -55,9 +55,9 @@ final class NativeGameplaySession {
         thread.start()
     }
 
-    func start(rom: URL, saves: URL) {
+    func start(rom: URL, saves: URL, arcade: ArcadeSettings) {
         condition.lock()
-        commands.append(.start(rom: rom, saves: saves))
+        commands.append(.start(rom: rom, saves: saves, arcade: arcade))
         condition.signal()
         condition.unlock()
     }
@@ -106,6 +106,8 @@ final class NativeGameplaySession {
         var lastScene = (task: Int32(-2), step: Int32(0), scene: Int32(0), routine: Int32(0))
         var nextCheckpoint = 0.0
         var nextFrame = ProcessInfo.processInfo.systemUptime
+        var error = [CChar](repeating: 0, count: 2048)
+        let errorCapacity = error.count
 
         // This thread intentionally survives stopped sessions: native coroutine
         // ownership must be preserved when the user starts another session.
@@ -121,7 +123,7 @@ final class NativeGameplaySession {
 
             if let command {
                 switch command {
-                case .start(let rom, let saves):
+                case .start(let rom, let saves, let arcade):
                     sound?.suspend()
                     if active { mvc2_gameplay_stop() }
                     active = false
@@ -135,11 +137,14 @@ final class NativeGameplaySession {
                     send(.audioWarning(nil))
                     send(.status(.starting))
                     recordCheckpoint("Starting native engine")
-                    var error = [CChar](repeating: 0, count: 2048)
-                    let capacity = error.count
+                    var nativeArcade = MVC2_ARCADE_SETTINGS(
+                        difficulty: Int32(arcade.difficulty), damage: Int32(arcade.damage),
+                        timer_speed: Int32(arcade.timerSpeed), game_speed: Int32(arcade.gameSpeed),
+                        free_play: arcade.freePlay ? 1 : 0, demo_sound: arcade.demoSound ? 1 : 0,
+                        continues: arcade.continues ? 1 : 0)
                     let result = rom.path.withCString { romPath in
                         saves.path.withCString { savePath in
-                            mvc2_gameplay_start(romPath, savePath, &error, capacity)
+                            mvc2_gameplay_start(romPath, savePath, &nativeArcade, &error, errorCapacity)
                         }
                     }
                     if result == 0 {
@@ -211,8 +216,6 @@ final class NativeGameplaySession {
                 controls.player = (UInt32(snapshot.buttons), 0)
                 controls.coin = snapshot.coin ? 1 : 0
                 controls.test = 0
-                var error = [CChar](repeating: 0, count: 2048)
-                let capacity = error.count
                 let progress = mvc2_gameplay_progress()
                 let scene = (progress.task, progress.step, progress.scene, progress.routine)
                 let time = ProcessInfo.processInfo.systemUptime
@@ -221,11 +224,11 @@ final class NativeGameplaySession {
                 if sceneChanged || time >= nextCheckpoint {
                     recordCheckpoint("Advancing game frame \(frameNumber)",
                                      progress: progress, widescreen: widescreen,
-                                     immediate: sceneChanged)
+                                     immediate: false, sceneChanged: sceneChanged)
                     lastScene = scene
                     nextCheckpoint = time + 1
                 }
-                if mvc2_gameplay_step(&controls, &error, capacity) == 0 {
+                if mvc2_gameplay_step(&controls, &error, errorCapacity) == 0 {
                     let message = Self.message(error, fallback: "The native engine stopped while advancing a game frame.")
                     let report = saveFailure("Advancing game frame \(frameNumber)", message: message,
                                              progress: progress, widescreen: widescreen)
@@ -285,12 +288,14 @@ final class NativeGameplaySession {
     }
 
     private func recordCheckpoint(_ action: String, progress: MVC2_GAMEPLAY_PROGRESS? = nil,
-                                  widescreen: Bool? = nil, immediate: Bool = true) {
+                                  widescreen: Bool? = nil, immediate: Bool = true,
+                                  sceneChanged: Bool = false) {
         guard let checkpoint else { return }
         let data = reportData(action, progress: progress, widescreen: widescreen)
         if immediate {
-            // Commit scene transitions before entering the new native code.
             checkpointQueue.sync { _ = try? data.write(to: checkpoint, options: .atomic) }
+        } else if sceneChanged {
+            checkpointQueue.async { _ = try? data.write(to: checkpoint, options: .atomic) }
         } else if periodicCheckpoint.wait(timeout: .now()) == .success {
             checkpointQueue.async { [periodicCheckpoint] in
                 defer { periodicCheckpoint.signal() }

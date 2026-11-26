@@ -79,6 +79,16 @@ void System_Init( void )
 	Sys->event_flag = conf_event_flag ;
 	Sys->no_challenge_flag = conf_no_challenge_flag ;
 	Sys->open_lv = conf_open_lv ;
+#ifdef HOST_NATIVE64
+	const MVC2_ARCADE_SETTINGS *arcade = mvc2_gameplay_arcade_settings() ;
+	if( arcade ){
+		if( ( unsigned )arcade->difficulty < 8 ) Sys->renda_level = arcade->difficulty ;
+		if( ( unsigned )arcade->damage < 4 ) Sys->damage_level = arcade->damage ;
+		if( ( unsigned )arcade->timer_speed < 4 ) Sys->time_speed = arcade->timer_speed ;
+		if( ( unsigned )arcade->game_speed < 3 ) Sys->speed_fix = arcade->game_speed ;
+		Sys->cont_enable = arcade->continues != 0 ;
+	}
+#endif
 	Sys->round_time_no = 2 ;
 	vib_init() ;
 	Sys->unk_2b = 0 ;

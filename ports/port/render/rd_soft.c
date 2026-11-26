@@ -1090,12 +1090,15 @@ void rd_end_frame(uint32_t* frame, int pitch) {
         ntotal += rd_frame->ntris[list];
     }
     if (ntotal > maxsetups) {
-        SETUP* p = realloc(setups, (size_t)ntotal * sizeof *p);
+        int capacity = maxsetups ? maxsetups : 1024;
+        while (capacity < ntotal) capacity *= 2;
+        if (capacity > RD_POOL_TRIS) capacity = RD_POOL_TRIS;
+        SETUP* p = realloc(setups, (size_t)capacity * sizeof *p);
         if (p == NULL) {
             return;
         }
         setups = p;
-        maxsetups = ntotal;
+        maxsetups = capacity;
     }
     out_frame = frame;
     out_pitch = pitch;

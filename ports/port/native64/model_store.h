@@ -28,6 +28,11 @@ const char* mvc2_model_store_last_error(void);
 MVC2HostObjectFile* mvc2_model_store_get_packed_texture(void* model_bytes,
                                                        const void* packed_bytes);
 void mvc2_model_store_reset(void);
+size_t mvc2_model_store_texture_bytes(const MVC2HostObjectFile* model, size_t texture);
+/* Decode a raw word-LZ stream from a registered file and return its byte count. */
+size_t mvc2_model_store_unpack_file(const void* file, size_t start, void* destination, size_t capacity);
+int mvc2_model_store_unpack_texture(const MVC2HostObjectFile* model, size_t texture,
+                                    const void* file);
 /* Decode one picture part into a mapped model texture using both registered bounds. */
 int mvc2_model_store_unpack_picture(const MVC2HostObjectFile* model, size_t texture,
                                     const void* picture, size_t part);

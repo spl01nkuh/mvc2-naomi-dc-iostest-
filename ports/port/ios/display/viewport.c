@@ -22,6 +22,8 @@ MVC2Viewport mvc2_viewport(double available_width, double available_height,
     double ratio = 4.0 / 3.0;
     if (aspect == MVC2_ASPECT_FILL) {
         ratio = available_width / available_height;
+    } else if (aspect == MVC2_ASPECT_SIXTEEN_NINE) {
+        ratio = 16.0 / 9.0;
     } else if (aspect == MVC2_ASPECT_SOURCE &&
                isfinite(source_width) && isfinite(source_height) &&
                source_width > 0 && source_height > 0) {

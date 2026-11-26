@@ -457,22 +457,37 @@ void tex_load_ranking( void )
 	dst = ( Uint16 * )Sys->tex_buff ;
 	lz_unpack16( src, dst ) ;
 #else
-	PLAYER_WORK *pl_w, *em_w ;
+	PLAYER_WORK *pl_w ;
 	int side ;
 	int i ;
 
+#ifdef HOST_NATIVE64
+	obj_dm06 = NULL ;
+	if( ( unsigned )Sys->rank_side >= 2 ) return ;
+#endif
 	file_load( FILE_TEX( FILE_DM06POL ), ( void * )TEX_RAW( DM06_TEX_ADRS ), 0 ) ;
 	side = Sys->rank_side ;
 	if( side ^ 1 ) Sys->tex_buff = ( Uint8 * )TEX_RAW( TEX_BUFF1 ) ;
 	else Sys->tex_buff = ( Uint8 * )TEX_RAW( TEX_BUFF0 ) ;
 	pl_w = vs_sys_work.team_w[side][0] ;
+#ifdef HOST_NATIVE64
+	if( !pl_w ) return ;
+#endif
 	Sys->rank_char = pl_w->load_type ;
 	for( i = 0 ; i < 3 ; i ++ ){
 		pl_w = vs_sys_work.team_w[side][i] ;
-		em_w = vs_sys_work.team_w[side ^ 1][i] ;
+#ifdef HOST_NATIVE64
+		if( !pl_w || ( unsigned )pl_w->load_type >= sizeof vs_file_tbl / sizeof vs_file_tbl[0] ) return ;
+#endif
 		file_load2( vs_file_tbl[pl_w->load_type], pl_data_adrs_tbl[i] + 0x130000, 1 ) ;
 	}
+#ifdef HOST_NATIVE64
+	if( mvc2_model_store_unpack_file( TEX_RAW( DM06_TEX_ADRS ), 0x36000, Sys->tex_buff, 0x40000 ) < 0x10000 ) return ;
+	obj_dm06 = mvc2_model_store_get_mapped( TEX_RAW( DM06_OBJ_ADRS ), DM06_TEX_ADRS ) ;
+	if( !obj_dm06 ) host_log( "Ranking model unavailable: %s", mvc2_model_store_last_error() ) ;
+#else
 	lz_unpack16( ( Sint16 * )TEX_RAW( ( DM06_TEX_ADRS + 0x36000 ) ), ( Uint16 * )Sys->tex_buff ) ;
+#endif
 #endif
 }
 
@@ -715,7 +730,16 @@ void tex_set_ranking( void )
 	static const Uint8 score_pos_tbl[16] = {	/* the score's cells, by digit */
 		0x05, 0x07, 0x0d, 0x0f, 0x04, 0x06, 0x0c, 0x0e, 0x01, 0x03, 0x09, 0x0b, 0x00, 0x02, 0x08, 0x0a
 	} ;
-	NLthd *src, *dst, *thd ;
+	NLthd *thd ;
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+	void *original_address ;
+	static const unsigned required_objects[] = {
+		0, 1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 28, 29, 30, 31
+	} ;
+#else
+	NLthd *src, *dst ;
+#endif
 	PLAYER_WORK *pl_w ;
 	int side ;
 	int i ;
@@ -723,12 +747,29 @@ void tex_set_ranking( void )
 	int no ;
 #endif
 
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+	if( !obj_dm06 ) return ;
+	for( size_t j = 0 ; j < sizeof required_objects / sizeof required_objects[0] ; ++j ){
+		unsigned slot = required_objects[j] ;
+		if( slot >= ( unsigned )obj_dm06->cnt || !obj_dm06->obj[slot] ) goto unavailable ;
+	}
+	thd = obj_dm06->thd ;
+	if( Sys->vs_flag ){
+		if( mvc2_model_store_texture_bytes( obj_dm06, 11 ) < 0x1800 ||
+		    mvc2_model_store_texture_bytes( obj_dm06, 12 ) < 0x800 ||
+		    mvc2_model_store_texture_bytes( obj_dm06, 14 ) < 0x800 ||
+		    ( ( uintptr_t )thd[11].address | ( uintptr_t )thd[12].address |
+		      ( uintptr_t )thd[14].address ) & 3 ) goto unavailable ;
+	} else if( mvc2_model_store_texture_bytes( obj_dm06, 16 ) < 0x2000 ||
+	           ( ( uintptr_t )thd[16].address & 3 ) ) goto unavailable ;
+#else
 	obj_dm06 = VS_OBJ ;
 	thd = ( NLthd * )( Sys->tex_buff + 0x14000 ) ;
 	src = VS_OBJ->thd ;
 	dst = thd ;
 	while( src->width ) *dst ++ = *src ++ ;
 	*dst = *src ;
+#endif
 	side = Sys->rank_side ;
 #ifdef TARGET_DC
 	/* each mode's model has the team's pictures and the score at its own textures */
@@ -750,8 +791,11 @@ void tex_set_ranking( void )
 	}
 #else
 	for( i = 0 ; i < 3 ; i ++ ){
-		pl_w = vs_sys_work.team_w[side][i] ;	/* unused: left from tex_load_ranking's loop */
+#ifdef HOST_NATIVE64
+		if( !mvc2_model_store_unpack_texture( obj_dm06, i + 17, pl_data_adrs_tbl[i] + 0x130000 ) ) goto unavailable ;
+#else
 		obj_tex_unpack( i + 17, ( Sint16 * )( pl_data_adrs_tbl[i] + 0x130000 ), obj_dm06 ) ;
+#endif
 	}
 	pl_w = &pl_work[side] ;
 	if( Sys->vs_flag ){
@@ -760,12 +804,24 @@ void tex_set_ranking( void )
 		score_tex_set( pl_w->old_score_hi, pl_w->old_score, thd[16].address, score_pos_tbl ) ;
 		memset( ( Uint8 * )thd[16].address + 0x1600, 0, 0x200 ) ;
 	}
+#ifdef HOST_NATIVE64
+	if( !mvc2_model_store_texture_bytes( obj_dm06, 5 ) ||
+	    mvc2_model_store_texture_bytes( obj_dm06, 5 ) > 0x30000 ) goto unavailable ;
+	original_address = thd[5].address ;
+#endif
 	if( !Sys->vs_flag ) thd[5].address = Sys->tex_buff + 0x10000 ;
 #endif
 	nlSetCommonTextureOffset( 0x810 ) ;
 	for( i = 0 ; i < obj_dm06->cnt ; i ++ ){
 		nlObjPutLoadTexture( obj_dm06->obj[i], thd ) ;
 	}
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+	thd[5].address = original_address ;
+	return ;
+unavailable:
+	host_log( "Ranking has incomplete native meshes or textures." ) ;
+	obj_dm06 = NULL ;
+#endif
 }
 
 /****************************************************************/

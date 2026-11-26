@@ -12,12 +12,14 @@ struct DevelopmentContentView: View {
 
     private enum HostSheet: Identifiable {
         case settings
+        case arcade
         case controls
         case control(UUID)
 
         var id: String {
             switch self {
             case .settings: return "settings"
+            case .arcade: return "arcade"
             case .controls: return "controls"
             case .control(let id): return id.uuidString
             }
@@ -110,6 +112,7 @@ struct DevelopmentContentView: View {
                     }
                     Button("Import ZIP") { showImporter = true }.disabled(!store.canImport)
                     Button("Touch Layout") { editingControls = true }.disabled(store.isImporting)
+                    Button("Arcade Settings") { sheet = .arcade }
                     Button("Settings") { sheet = .settings }
                     Button("Cancel", role: .cancel) {}
                 }
@@ -207,8 +210,35 @@ struct DevelopmentContentView: View {
     private func sheetContent(_ route: HostSheet) -> some View {
         switch route {
         case .settings: DevelopmentSettingsView(store: store)
+        case .arcade: arcadeSettings
         case .controls: ControlsList(settings: $store.settings)
         case .control(let id): ControlDetail(settings: $store.settings, id: id)
         }
+    }
+
+    private var arcadeSettings: some View {
+        Form {
+            Section {
+                Toggle("Free Play", isOn: $store.settings.arcade.freePlay)
+                Toggle("Demo Sound", isOn: $store.settings.arcade.demoSound)
+                Toggle("Continues", isOn: $store.settings.arcade.continues)
+            }
+            Section {
+                Stepper("Difficulty Level \(store.settings.arcade.difficulty + 1)",
+                        value: $store.settings.arcade.difficulty, in: 0...7)
+                Stepper("Damage Level \(store.settings.arcade.damage + 1)",
+                        value: $store.settings.arcade.damage, in: 0...3)
+                Stepper("Timer Speed \(store.settings.arcade.timerSpeed + 1)",
+                        value: $store.settings.arcade.timerSpeed, in: 0...3)
+                Picker("Game Speed", selection: $store.settings.arcade.gameSpeed) {
+                    Text("Free Select").tag(0)
+                    Text("Normal").tag(1)
+                    Text("Turbo").tag(2)
+                }
+            } footer: {
+                Text("Changes apply the next time the game starts.")
+            }
+        }
+        .navigationTitle("Arcade Settings")
     }
 }

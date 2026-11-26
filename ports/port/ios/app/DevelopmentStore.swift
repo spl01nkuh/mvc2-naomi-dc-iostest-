@@ -200,7 +200,7 @@ final class DevelopmentStore: ObservableObject {
         sessionHasFrame = false
         gameStatus = .starting
         synchronizeSuspension()
-        runtime.start(rom: rom, saves: saves)
+        runtime.start(rom: rom, saves: saves, arcade: settings.arcade)
     }
 
     func stopGame() async {

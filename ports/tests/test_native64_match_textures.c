@@ -13,22 +13,35 @@
 
 extern void tex_load_gauge(void);
 extern void tex_set_st_demo(void);
+extern void tex_load_ranking(void);
+extern void tex_set_ranking(void);
 static char frame_error[512];
 static int fight_loads, intro_effects, draw_requests;
+static int rank_effects, loaded_portraits;
+static int broken_ranking_portrait;
 
 /* Run the real transition with generated portrait data. The remaining
  * callbacks count scene activity without starting the board or mixer. */
 static void load_fixture_textures(int scene);
 #define TexLoad load_fixture_textures
 #include "../../src/start_demo.c"
+#include "../../src/ranking.c"
 #undef TexLoad
 
-static void load_fixture_textures(int scene) { assert(scene == 6); tex_set_st_demo(); }
+static void load_fixture_textures(int scene) {
+    if (scene == 6) tex_set_st_demo();
+    else {
+        assert(scene == 10);
+        tex_load_ranking();
+        tex_set_ranking();
+    }
+}
 void fight_load_start(int only) { assert(!only); ++fight_loads; }
 void st_demo_ef0_set(void) { ++intro_effects; }
 void st_demo_ef1_set(int no) { assert(no >= 0 && no < 6); ++intro_effects; }
 void st_demo_ef2_set(int no, int side) { assert(no >= 0 && no < 6 && (side == 0 || side == 1)); ++intro_effects; }
-void SysTransSet(void (*draw)(void)) { assert(draw == disp_front_stage); ++draw_requests; }
+void disp_front_stage2(void) {}
+void SysTransSet(void (*draw)(void)) { assert(draw == disp_front_stage || draw == disp_front_stage2); ++draw_requests; }
 void Sound_Heart(void) {}
 void disp_front_stage(void) {}
 void work_init(void) {}
@@ -48,6 +61,16 @@ void back_color_set(Uint32 color) { (void)color; }
 void se_vol_down(Uint16 pack, Uint8 speed) { (void)pack; (void)speed; }
 void sound_all_off(void) {}
 void se_all_off(void) {}
+void se_vol_up(Uint16 pack, Uint8 speed) { (void)pack; (void)speed; }
+void stream_stop(void) {}
+void fade_out_set(Uint16 pack, Uint8 speed) { (void)pack; (void)speed; }
+void light_dir_set(VEC3* direction) { (void)direction; }
+void light_amb_set(Float ambient) { (void)ambient; }
+void scr_move(void) {}
+void rank_bg_set(int no) { (void)no; ++rank_effects; }
+void rank_frame_set(int no) { (void)no; ++rank_effects; }
+void rank_page_set(int no, int page) { (void)no; (void)page; ++rank_effects; }
+void rank_mark_set(int no, int line) { (void)no; (void)line; ++rank_effects; }
 
 void mvc2_gameplay_fail_frame(const char* message)
 {
@@ -149,6 +172,74 @@ static void team_introduction(const uint8_t* gauge)
     assert(fight_loads == 2 && draw_requests == 1 && intro_effects == 19);
 }
 
+int file_load(int no, void* address, int purge)
+{
+    assert(no == FILE_TEX(FILE_DM06POL) && !purge);
+    assert(address == host_native64_ram_pointer(DM06_TEX_ADRS, 1));
+    loaded_portraits = 0;
+    return 0x37000;
+}
+
+Uint32 file_load2(Sint32 no, void* address, Sint32 purge)
+{
+    assert(no == vs_file_tbl[vs_sys_work.team_w[Sys->rank_side][loaded_portraits]->load_type]);
+    assert(purge && address == pl_data_adrs_tbl[loaded_portraits] + 0x130000);
+    const Uint16 data[] = {0x6000, 0x3110 + loaded_portraits, 1, 4095, 0, 0};
+    size_t bytes = broken_ranking_portrait && loaded_portraits == 2 ? 4 : sizeof data;
+    memcpy(address, data, bytes);
+    assert(mvc2_model_store_written(address, bytes));
+    ++loaded_portraits;
+    return (Uint32)bytes;
+}
+
+/* The ranking scene points to mutable score pages outside the loaded bank. */
+static void post_match_ranking(const uint8_t* gauge)
+{
+    uint8_t* scene = host_native64_ram_pointer(DM06_OBJ_ADRS, MODEL_SIZE);
+    uint8_t* bank = host_native64_ram_pointer(DM06_TEX_ADRS, 0x37000);
+    assert(scene && bank);
+    memcpy(scene, gauge, MODEL_SIZE);
+    word(scene, DM06_OBJ_ADRS + 16);
+    word(scene + 4, OBJECT_COUNT);
+    word(scene + 8, DM06_OBJ_ADRS + HEADERS);
+    for (unsigned i = 0; i < OBJECT_COUNT; ++i)
+        word(scene + 16 + i * 4, DM06_OBJ_ADRS + OBJECTS + (i % TEXTURES) * OBJECT_BYTES);
+    for (unsigned i = 0; i < TEXTURES; ++i) {
+        uint8_t* header = scene + HEADERS + i * 16;
+        word(header, 64u | 64u << 16);
+        word(header + 8, i == 8 ? TEX_BUFF0 + 0x20000 : DM06_TEX_ADRS + i * 8192);
+    }
+    const Uint16 atlas[] = {0xc000, 0, 0x8000, 0, 0};
+    memcpy(bank + 0x36000, atlas, sizeof atlas);
+    assert(mvc2_model_store_written(scene, MODEL_SIZE));
+    assert(mvc2_model_store_written(bank, 0x37000));
+    assert(!mvc2_model_store_get(scene));
+
+    for (unsigned i = 0; i < 3; ++i) vs_sys_work.team_w[0][i] = &pl_work[i * 2];
+    Sys->scene_no = 2;
+    Sys->routine_0 = 4;
+    Sys->routine_1 = 0;
+    Sys->rank_side = 0;
+    Sys->play_side = 1;
+    RankingMain();
+    assert(obj_dm06 && Sys->routine_0 == 4 && Sys->routine_1 == 1);
+    assert(rank_effects >= 10 && loaded_portraits == 3);
+    for (unsigned i = 0; i < 3; ++i) {
+        const Uint16* pixels = obj_dm06->thd[i + 17].address;
+        assert(pixels[0] == 0x3110 + i && pixels[4095] == pixels[0]);
+        assert(nl_tex[0x810 + i + 17].loaded);
+    }
+
+    broken_ranking_portrait = 1;
+    Sys->routine_1 = 0;
+    RankingMain();
+    assert(!obj_dm06 && Sys->scene_no == 2 && !Sys->routine_0 && !Sys->routine_1);
+    Sys->routine_0 = 4;
+    Sys->play_side = 0;
+    RankingMain();
+    assert(!obj_dm06 && Sys->scene_no == 3 && !Sys->routine_0 && !Sys->routine_1);
+}
+
 int main(void)
 {
     static const unsigned portrait_slots[6] = {0, 3, 1, 4, 2, 5};
@@ -190,6 +281,7 @@ int main(void)
     tex_load_gauge();
     assert(!obj_dm00 && strstr(frame_error, "122 required objects"));
     team_introduction(bytes);
+    post_match_ranking(bytes);
     nl_tex_free_all();
     mvc2_model_store_reset();
     puts("Native match textures: team introduction, match fallback and gauge portraits passed.");

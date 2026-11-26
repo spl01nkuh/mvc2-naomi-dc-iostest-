@@ -13,8 +13,13 @@ extern "C" {
  * Start and step return 1 on success, 0 with a terminated error on failure.
  * ROM files are imported assets; execution always uses the linked native C.
  * The save directory must already exist. */
+typedef struct {
+    int difficulty, damage, timer_speed, game_speed;
+    int free_play, demo_sound, continues;
+} MVC2_ARCADE_SETTINGS;
 int mvc2_gameplay_start(const char* rom_directory, const char* save_directory,
-                        char* error, size_t capacity);
+                        const MVC2_ARCADE_SETTINGS* settings, char* error, size_t capacity);
+const MVC2_ARCADE_SETTINGS* mvc2_gameplay_arcade_settings(void);
 int mvc2_gameplay_step(const HOST_INPUT* input, char* error, size_t capacity);
 /* Called by the native game coroutine when an asset needed by this frame
  * cannot be installed. The message must have static lifetime. */
