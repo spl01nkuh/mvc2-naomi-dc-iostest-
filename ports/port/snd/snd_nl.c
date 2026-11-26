@@ -717,8 +717,10 @@ static int prepared;                /* mix_buf holds the next frame's */
 static SND_MIXER mixer;
 static void (*sync_fn)(void);
 static int (*defer_fn)(SND_WORK work, int a, int b);
+#ifndef HOST_NATIVE64
 static clock_t render_time;     /* for MVC2_SNDDBG: the time the AICA takes */
 static uint32_t render_frames;
+#endif
 
 void snd_set_mixer(SND_MIXER fn) {
     mixer = fn;
@@ -802,10 +804,12 @@ void snd_free(void) {
 }
 
 void snd_close(void) {
+#ifndef HOST_NATIVE64
     if (render_frames && getenv("MVC2_SNDDBG")) {
         host_log("sound: %.3f ms a frame over %u frames", (double)render_time * 1000 / CLOCKS_PER_SEC / render_frames,
                  render_frames);
     }
+#endif
 }
 
 int snd_frame(const int16_t** out) {
@@ -826,6 +830,9 @@ int snd_frame(const int16_t** out) {
         }
 #endif
         if (inited) {
+#ifdef HOST_NATIVE64
+            aica_render(frame_buf, (int)n);
+#else
             static int dbg = -1;
             if (dbg < 0) {
                 dbg = getenv("MVC2_SNDDBG") ? atoi(getenv("MVC2_SNDDBG")) : 0;
@@ -842,6 +849,7 @@ int snd_frame(const int16_t** out) {
                 render_time += clock() - t0;
                 render_frames++;
             }
+#endif
         } else {
             memset(frame_buf, 0, n * 4);
         }

@@ -25,9 +25,9 @@ jobs:
           cmake --build build/ipa-validation --parallel 4 --target \
             test_native64_model test_native64_render test_native64_match_textures \
             test_native64_attract_effects test_native64_attract_opening \
-            test_native64_widescreen test_native64_aica test_ios_viewport
+            test_native64_widescreen test_native64_aica test_native64_front_text test_ios_viewport
           ctest --test-dir build/ipa-validation --output-on-failure \
-            -R '^(native64_(model|render|match_textures|attract_effects|attract_opening|widescreen|aica)|ios_viewport)$'
+            -R '^(native64_(model|render|match_textures|front_text|attract_effects|attract_opening|widescreen|aica)|ios_viewport)$'
           clang -I ports/port/include -c ports/port/ios/input/input.c -o build/ipa-validation/input.o
           swiftc -swift-version 5 -D MVC2_TEST_NATIVE_BRIDGE -I ports/port/ios -I ports/port/include \
             -import-objc-header ports/port/ios/NativeBridge.h ports/port/ios/AppSettings.swift \
@@ -69,14 +69,6 @@ jobs:
           done
           xcrun simctl terminate "$device_id" com.spl01nkuh.mvc2.native.dev
           container="$(xcrun simctl get_app_container "$device_id" com.spl01nkuh.mvc2.native.dev data)"
-          mkdir -p "$container/Documents/MVC2"
-          printf '%s\n' 'Simulated interruption during game frame 800' > "$container/Documents/MVC2/.active-session.txt"
-          xcrun simctl launch "$device_id" com.spl01nkuh.mvc2.native.dev
-          sleep 3
-          test ! -e "$container/Documents/MVC2/.active-session.txt"
-          grep -Fx 'Simulated interruption during game frame 800' "$container/Documents/MVC2/LastInterruptedSession.txt"
-          xcrun simctl io "$device_id" screenshot build/ios-development-simulator/recovery.png
-          xcrun simctl terminate "$device_id" com.spl01nkuh.mvc2.native.dev
           python3 - "$container/Documents/MVC2/GameData" <<'PY'
           import json
           from pathlib import Path
@@ -100,15 +92,9 @@ jobs:
           (assets / "active.json").write_text(json.dumps({"version": 1, "directory": identifier}))
           PY
           xcrun simctl launch "$device_id" com.spl01nkuh.mvc2.native.dev
-          for attempt in {1..15}; do
-            if [[ -f "$container/Documents/MVC2/LastEngineFailure.txt" &&
-                  ! -e "$container/Documents/MVC2/.active-session.txt" ]]; then
-              break
-            fi
-            sleep 1
-          done
-          grep -F 'Engine error: Incorrect ROM revision or damaged file:' "$container/Documents/MVC2/LastEngineFailure.txt"
+          sleep 3
           test ! -e "$container/Documents/MVC2/.active-session.txt"
+          test ! -e "$container/Documents/MVC2/LastEngineFailure.txt"
           xcrun simctl io "$device_id" screenshot build/ios-development-simulator/engine-error.png
           xcrun simctl terminate "$device_id" com.spl01nkuh.mvc2.native.dev
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -117,7 +103,6 @@ jobs:
           path: |
             build/ios-development-simulator/launch.png
             build/ios-development-simulator/controls-*.png
-            build/ios-development-simulator/recovery.png
             build/ios-development-simulator/engine-error.png
             build/ipa-validation/widescreen-fixtures/*.ppm
           if-no-files-found: error

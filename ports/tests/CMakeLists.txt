@@ -192,6 +192,9 @@ mvc2_core_test(native64_match_textures LEGACY_WARNINGS test_native64_match_textu
 target_include_directories(test_native64_match_textures PRIVATE "${PORT}/nl" "${PORT}/sys" "${PORT}/snd")
 target_compile_definitions(test_native64_match_textures PRIVATE _DEFAULT_SOURCE=1 _DARWIN_C_SOURCE=1)
 target_link_libraries(test_native64_match_textures PRIVATE mvc2_native_model_store mvc2_native_renderer mvc2_native_host_alloc)
+mvc2_core_test(native64_front_text LEGACY_WARNINGS test_native64_front_text.c
+    "${GAME}/src/ef12.c" "${GAME}/src/vs_msg.c" "${GAME}/src/vs_result.c"
+    "${GAME}/src/vs_bonus.c" "${GAME}/src/hit_work.c" "${GAME}/src/work.c")
 mvc2_core_test(native64_sprite LEGACY_WARNINGS test_native64_sprite.c
     "${GAME}/src/sprite.c" "${GAME}/src/pl_char.c" "${GAME}/src/pl_data_tbl.c"
     "${GAME}/src/spr_pos_tbl.c" "${GAME}/src/work.c" "${GAME}/src/lib/libnaomi/nlmath.c"

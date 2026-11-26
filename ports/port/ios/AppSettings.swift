@@ -103,14 +103,13 @@ struct AppSettings: Codable {
     var transparentDirections = true
     var controls = TouchControl.defaults
 
-    /// Preserve the proportions of wide fight frames. For other scenes, fit
-    /// the complete original frame into a 16:9 viewport when widescreen is on.
     func presentationAspect(sourceWidth: Int, sourceHeight: Int) -> ScreenAspect {
+        if nativeWidescreen && aspect != .fill { return .sixteenNine }
         guard aspect == .fourThree else { return aspect }
         let hasWideFrame = sourceWidth > 0 && sourceHeight > 0 &&
             Double(sourceWidth) / Double(sourceHeight) > 4.0 / 3.0
         if hasWideFrame { return .native }
-        return nativeWidescreen ? .sixteenNine : .fourThree
+        return .fourThree
     }
 
     private enum CodingKeys: String, CodingKey {

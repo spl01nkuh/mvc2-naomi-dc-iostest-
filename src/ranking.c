@@ -254,7 +254,7 @@ static void ranking_init( void )
 #else
 	#ifdef HOST_NATIVE64
 	if( !rank_disp_set() ){
-		ranking_end() ;
+		Sys->timer0 = 150 ;
 		return ;
 	}
 	#else
@@ -275,6 +275,17 @@ static void ranking_move( void )
 	int sw ;
 	int rank ;
 	int no ;
+
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+	if( !obj_dm06 ){
+		PLAYER_WORK *player = &pl_work[Sys->rank_side & 1] ;
+		if( Sys->vs_flag ) STrPrint( 62, 56, 11, "WINS %d", player->win_max ) ;
+		else STrPrint( 50, 56, 11, "SCORE %x%08x", ( Uint32 )player->old_score_hi, ( Uint32 )player->old_score ) ;
+		sw = Sys->entry_side & 2 ? sw_work[1].on : sw_work[0].on ;
+		if( !--Sys->timer0 || ( sw & ( SKIP_SW | KEY_START ) ) ) Sys->routine_1 ++ ;
+		return ;
+	}
+#endif
 
 	Sys->entry_stop = Sys->play_side ? 0 : 1 ;
 	sw = Sys->play_side ;

@@ -15,6 +15,9 @@ extern int sprintf( char *s, const char *fmt, ... ) ;
 
 /* one object of a word, in the 2D camera: colour (0 keeps the object's own), the number place it
    shows (or -1 for the fixed object), the scale to draw at, the fixed object, and the x it moves on by */
+#ifdef HOST_NATIVE64
+typedef MVC2_FRONT_GLYPH EF12_CHR;
+#else
 typedef struct EF12_CHR {
 	Sint8	col ;
 	Sint8	slot ;
@@ -22,6 +25,7 @@ typedef struct EF12_CHR {
 	Sint8	obj ;
 	Float	x ;
 } EF12_CHR ;
+#endif
 
 /* the work's own fields are PLAYER_WORK's spare ones; the digits, from atck_flag, are bytes of a
    number for each place (hits: three, bonus: eight), negative for a blank */
@@ -801,6 +805,9 @@ void ef12_disp( PLAYER_WORK *ew )
 	Sint8 i ;
 
 	if( !ew->disp_flag ) return ;
+#ifdef HOST_NATIVE64
+	if( !obj_dm00 ) return ;
+#endif
 	chr = EF12_CHR0( ew ) ;
 	if( !chr ) return ;
 	nlPushMatrix( 0 ) ;
@@ -817,7 +824,11 @@ void ef12_disp( PLAYER_WORK *ew )
 			if( !chr ) break ;
 			nlTranslate( ew->spd.z, -6.0f, 0.0f ) ;
 		}
+#ifdef HOST_NATIVE64
+		digit = ew->ef_no == 8 ? ew->native_bonus.buf : EF12_NUM( ew )->num.bonus ;
+#else
 		digit = EF12_NUM( ew )->num.bonus ;
+#endif
 		for( ; chr->col >= 0 ; chr ++ ){
 			nlTranslate( chr->x, 0.0f, 0.0f ) ;
 			if( chr->scl ){
@@ -825,6 +836,15 @@ void ef12_disp( PLAYER_WORK *ew )
 				nlSetScaleFactor( obj_scale_max( ef12_scale_p[chr->scl & 7] ) ) ;
 			}
 			nlObjPutSetFadeColor( 1.0f, 1.0f, 1.0f ) ;
+#ifdef HOST_NATIVE64
+			{
+				int index = chr->slot >= 0 ? *digit++ : chr->obj ;
+				if( chr->slot >= 0 && index > 9 ) continue ;
+				if( index < 0 || index >= obj_dm00->cnt || !obj_dm00->obj[index] ) continue ;
+				if( chr->col > 0 ) obj_col_set( obj_dm00->obj[index], chr->col - 1 ) ;
+				nlObjPut( obj_dm00->obj[index] ) ;
+			}
+#else
 			if( chr->slot >= 0 ){
 				if( *digit >= 0 ){
 					if( chr->col > 0 ) obj_col_set( obj_dm00->obj[*digit], chr->col - 1 ) ;
@@ -835,6 +855,7 @@ void ef12_disp( PLAYER_WORK *ew )
 				if( chr->col > 0 ) obj_col_set( obj_dm00->obj[chr->obj], chr->col - 1 ) ;
 				nlObjPut( obj_dm00->obj[chr->obj] ) ;
 			}
+#endif
 		}
 	}
 	nlPopMatrix( 1 ) ;

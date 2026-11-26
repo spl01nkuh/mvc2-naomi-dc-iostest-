@@ -154,8 +154,8 @@ struct IOSSettingsTests {
         try check(restored.nativeWidescreen && restored.controls == settings.controls,
                   "Native widescreen and the custom layout must survive relaunch")
         try check(restored.arcade == settings.arcade, "Arcade settings must survive relaunch")
-        try check(restored.presentationAspect(sourceWidth: 854, sourceHeight: 480) == .native,
-                  "The original default fit must preserve a widescreen source's proportions")
+        try check(restored.presentationAspect(sourceWidth: 854, sourceHeight: 480) == .sixteenNine,
+                  "The widescreen setting must apply a consistent 16:9 viewport")
 
         var legacy = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
         legacy.removeValue(forKey: "nativeWidescreen")
@@ -183,8 +183,11 @@ struct IOSSettingsTests {
         try check(settings.presentationAspect(sourceWidth: 854, sourceHeight: 480) == .fill,
                   "Native widescreen must retain an explicitly selected fill adjustment")
         settings.aspect = .native
+        try check(settings.presentationAspect(sourceWidth: 640, sourceHeight: 480) == .sixteenNine,
+                  "A saved source-fit preference must not cancel widescreen")
+        settings.nativeWidescreen = false
         try check(settings.presentationAspect(sourceWidth: 640, sourceHeight: 480) == .native,
-                  "Source aspect must remain available in both native render modes")
+                  "Disabling widescreen must restore source fit")
     }
 
     static func concurrentSources() throws {

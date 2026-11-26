@@ -37,8 +37,8 @@ struct DevelopmentSettingsView: View {
             }
 
             Section("Screen") {
-                Toggle("Native widescreen (16:9)", isOn: $store.settings.nativeWidescreen)
-                Text("Widens the camera in supported fights. The intro, title, and character select stretch to 16:9.")
+                Toggle("Widescreen (16:9)", isOn: $store.settings.nativeWidescreen)
+                Text("Stretches the complete game image to 16:9. Fill uses the entire display.")
                     .font(.caption).foregroundStyle(.secondary)
                 Picker("Aspect ratio", selection: $store.settings.aspect) {
                     ForEach(ScreenAspect.allCases) { aspect in

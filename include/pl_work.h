@@ -35,6 +35,18 @@ typedef union {
 	Float	f;
 } CPU_PRM;
 
+#ifdef HOST_NATIVE64
+typedef struct {
+	Sint8 col, slot, scl, obj;
+	Float x;
+} MVC2_FRONT_GLYPH;
+
+typedef struct {
+	Sint8 buf[10];
+	Uint32 hi, lo;
+} MVC2_BONUS_SCORE;
+#endif
+
 typedef struct PLAYER_WORK {
 	Uint8	be_flag;		/* 000: set while the work is in the fight */
 	Uint8	pl_type;	/* 001: the character's number, the same as its module's */
@@ -496,6 +508,7 @@ typedef struct PLAYER_WORK {
 	/* Some effects used spare 32-bit words for pointers. Keep their integer
 	   overlays intact and store those native references beyond the game record. */
 	void	*native_work_ptr[3];
+	MVC2_BONUS_SCORE native_bonus;
 #endif
 } PLAYER_WORK;
 

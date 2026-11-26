@@ -1075,7 +1075,9 @@ static void report_time(double ms) {
 }
 
 void rd_end_frame(uint32_t* frame, int pitch) {
+#ifndef HOST_NATIVE64
     double start = now_ms();
+#endif
     int list, i;
     if (frame == NULL || pitch < rd_width()) return;
     if (nworkers == 0) {
@@ -1083,8 +1085,10 @@ void rd_end_frame(uint32_t* frame, int pitch) {
         start_workers();
     }
     take_quality();
+#ifndef HOST_NATIVE64
     log_frame();
     save_frame();
+#endif
     ntotal = 0;
     for (list = 0; list < RD_LISTS; list++) {
         ntotal += rd_frame->ntris[list];
@@ -1117,11 +1121,13 @@ void rd_end_frame(uint32_t* frame, int pitch) {
     }
     run_phase(0);
     run_phase(1);
+#ifndef HOST_NATIVE64
     if (dbg_log != NULL) {
         fclose(dbg_log);
         dbg_log = NULL;
     }
     report_time(now_ms() - start);
+#endif
 }
 
 void rd_soft_shutdown(void) {

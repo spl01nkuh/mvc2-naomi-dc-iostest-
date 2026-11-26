@@ -457,13 +457,15 @@ void tex_load_ranking( void )
 	dst = ( Uint16 * )Sys->tex_buff ;
 	lz_unpack16( src, dst ) ;
 #else
-	#ifdef HOST_NATIVE64
+#ifdef HOST_NATIVE64
 	PLAYER_WORK *pl_w ;
-	#else
+#else
 	PLAYER_WORK *pl_w, *em_w ;
-	#endif
+#endif
 	int side ;
+#ifndef HOST_NATIVE64
 	int i ;
+#endif
 
 #ifdef HOST_NATIVE64
 	obj_dm06 = NULL ;
@@ -478,15 +480,13 @@ void tex_load_ranking( void )
 	if( !pl_w ) return ;
 #endif
 	Sys->rank_char = pl_w->load_type ;
+#ifndef HOST_NATIVE64
 	for( i = 0 ; i < 3 ; i ++ ){
 		pl_w = vs_sys_work.team_w[side][i] ;
-#ifdef HOST_NATIVE64
-		if( !pl_w || ( unsigned )pl_w->load_type >= sizeof vs_file_tbl / sizeof vs_file_tbl[0] ) return ;
-#else
 		em_w = vs_sys_work.team_w[side ^ 1][i] ;
-#endif
 		file_load2( vs_file_tbl[pl_w->load_type], pl_data_adrs_tbl[i] + 0x130000, 1 ) ;
 	}
+#endif
 #ifdef HOST_NATIVE64
 	if( mvc2_model_store_unpack_file( TEX_RAW( DM06_TEX_ADRS ), 0x36000, Sys->tex_buff, 0x40000 ) < 0x10000 ) return ;
 	obj_dm06 = mvc2_model_store_get_mapped( TEX_RAW( DM06_OBJ_ADRS ), DM06_TEX_ADRS ) ;
@@ -798,7 +798,17 @@ void tex_set_ranking( void )
 #else
 	for( i = 0 ; i < 3 ; i ++ ){
 #ifdef HOST_NATIVE64
-		if( !mvc2_model_store_unpack_texture( obj_dm06, i + 17, pl_data_adrs_tbl[i] + 0x130000 ) ) goto unavailable ;
+		/* Ranking pictures must not overwrite the fighters' unpacked animations. */
+		Uint8 *portrait = Sys->tex_buff + 0x40000 ;
+		size_t bytes = mvc2_model_store_texture_bytes( obj_dm06, i + 17 ) ;
+		pl_w = vs_sys_work.team_w[side][i] ;
+		if( !bytes ) continue ;
+		if( pl_w && ( unsigned )pl_w->load_type < sizeof vs_file_tbl / sizeof vs_file_tbl[0] &&
+		    vs_file_tbl[pl_w->load_type] ){
+			file_load2( vs_file_tbl[pl_w->load_type], portrait, 1 ) ;
+			if( mvc2_model_store_unpack_texture( obj_dm06, i + 17, portrait ) ) continue ;
+		}
+		memset( thd[i + 17].address, 0, bytes ) ;
 #else
 		pl_w = vs_sys_work.team_w[side][i] ;	/* unused: left from tex_load_ranking's loop */
 		obj_tex_unpack( i + 17, ( Sint16 * )( pl_data_adrs_tbl[i] + 0x130000 ), obj_dm06 ) ;

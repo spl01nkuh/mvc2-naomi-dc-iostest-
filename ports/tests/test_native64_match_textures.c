@@ -19,6 +19,7 @@ static char frame_error[512];
 static int fight_loads, intro_effects, draw_requests;
 static int rank_effects, loaded_portraits;
 static int broken_ranking_portrait;
+static int score_fallbacks;
 
 /* Run the real transition with generated portrait data. The remaining
  * callbacks count scene activity without starting the board or mixer. */
@@ -71,6 +72,10 @@ void rank_bg_set(int no) { (void)no; ++rank_effects; }
 void rank_frame_set(int no) { (void)no; ++rank_effects; }
 void rank_page_set(int no, int page) { (void)no; (void)page; ++rank_effects; }
 void rank_mark_set(int no, int line) { (void)no; (void)line; ++rank_effects; }
+void STrPrint(Uint8 x, Uint8 y, Uint8 color, const char* text, ...) {
+    assert(x == 50 && y == 56 && color == 11 && !strcmp(text, "SCORE %x%08x"));
+    ++score_fallbacks;
+}
 
 void mvc2_gameplay_fail_frame(const char* message)
 {
@@ -183,7 +188,7 @@ int file_load(int no, void* address, int purge)
 Uint32 file_load2(Sint32 no, void* address, Sint32 purge)
 {
     assert(no == vs_file_tbl[vs_sys_work.team_w[Sys->rank_side][loaded_portraits]->load_type]);
-    assert(purge && address == pl_data_adrs_tbl[loaded_portraits] + 0x130000);
+    assert(purge && address == Sys->tex_buff + 0x40000);
     const Uint16 data[] = {0x6000, 0x3110 + loaded_portraits, 1, 4095, 0, 0};
     size_t bytes = broken_ranking_portrait && loaded_portraits == 2 ? 4 : sizeof data;
     memcpy(address, data, bytes);
@@ -233,9 +238,24 @@ static void post_match_ranking(const uint8_t* gauge)
     broken_ranking_portrait = 1;
     Sys->routine_1 = 0;
     RankingMain();
+    assert(obj_dm06 && Sys->routine_0 == 4 && Sys->routine_1 == 1);
+    assert(((const Uint16*)obj_dm06->thd[19].address)[0] == 0);
+
+    word(scene + 16, 0); /* A required rank mesh is absent. */
+    assert(mvc2_model_store_written(scene, MODEL_SIZE));
+    Sys->routine_1 = 0;
+    RankingMain();
+    assert(!obj_dm06 && Sys->routine_1 == 1);
+    Sys->timer0 = 1;
+    RankingMain();
+    assert(score_fallbacks == 1 && Sys->routine_1 == 2);
+    RankingMain();
     assert(!obj_dm06 && Sys->scene_no == 2 && !Sys->routine_0 && !Sys->routine_1);
     Sys->routine_0 = 4;
     Sys->play_side = 0;
+    RankingMain();
+    Sys->timer0 = 1;
+    RankingMain();
     RankingMain();
     assert(!obj_dm06 && Sys->scene_no == 3 && !Sys->routine_0 && !Sys->routine_1);
 }
@@ -284,6 +304,6 @@ int main(void)
     post_match_ranking(bytes);
     nl_tex_free_all();
     mvc2_model_store_reset();
-    puts("Native match textures: team introduction, match fallback and gauge portraits passed.");
+    puts("Native match textures: team introduction, ranking, match fallback and gauge portraits passed.");
     return 0;
 }
