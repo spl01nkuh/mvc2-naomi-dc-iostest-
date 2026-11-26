@@ -672,16 +672,36 @@ void tex_set_staff( void )
 /****************************************************************/
 void tex_set_st_demo( void )
 {
+#if !defined( HOST_NATIVE64 ) || defined( TARGET_DC )
 	PLAYER_WORK *pl_w ;
 	void *pic ;
+#endif
 	int i ;
 
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+	obj_dm02 = mvc2_model_store_get_mapped( TEX_RAW( DM02_OBJ_ADRS ), DM02_TEX_ADRS ) ;
+	if( !obj_dm02 || obj_dm02->cnt < 20 ){
+		const char *detail = obj_dm02 ? "The model is missing team introduction objects." :
+			mvc2_model_store_last_error() ;
+		host_log( "Team introduction model unavailable. %s", detail ) ;
+		obj_dm02 = NULL ;
+		return ;
+	}
+	for( i = 0 ; i < 6 ; i ++ ){
+		if( !mvc2_model_store_unpack_picture( obj_dm02, pl_pic_no[i] + 2, pl_work[i].pic_adrs, 2 ) ){
+			host_log( "Team introduction portrait %d could not be decoded.", i ) ;
+			obj_dm02 = NULL ;
+			return ;
+		}
+	}
+#else
 	obj_dm02 = OBJ_AT( DM02_OBJ_ADRS ) ;
 	for( i = 0 ; i < 6 ; i ++ ){
 		pl_w = &pl_work[i] ;
 		pic = FILE_PART( pl_w->pic_adrs, 2 ) ;
 		obj_tex_unpack( pl_pic_no[i] + 2, pic, obj_dm02 ) ;
 	}
+#endif
 	nlSetCommonTextureOffset( 0x810 ) ;
 	for( i = 0 ; i < obj_dm02->cnt ; i ++ ){
 		nlObjPutLoadTexture( obj_dm02->obj[i], obj_dm02->thd ) ;

@@ -12,7 +12,42 @@
 #include "nl_port.h"
 
 extern void tex_load_gauge(void);
+extern void tex_set_st_demo(void);
 static char frame_error[512];
+static int fight_loads, intro_effects, draw_requests;
+
+/* Run the real transition with generated portrait data. The remaining
+ * callbacks count scene activity without starting the board or mixer. */
+static void load_fixture_textures(int scene);
+#define TexLoad load_fixture_textures
+#include "../../src/start_demo.c"
+#undef TexLoad
+
+static void load_fixture_textures(int scene) { assert(scene == 6); tex_set_st_demo(); }
+void fight_load_start(int only) { assert(!only); ++fight_loads; }
+void st_demo_ef0_set(void) { ++intro_effects; }
+void st_demo_ef1_set(int no) { assert(no >= 0 && no < 6); ++intro_effects; }
+void st_demo_ef2_set(int no, int side) { assert(no >= 0 && no < 6 && (side == 0 || side == 1)); ++intro_effects; }
+void SysTransSet(void (*draw)(void)) { assert(draw == disp_front_stage); ++draw_requests; }
+void Sound_Heart(void) {}
+void disp_front_stage(void) {}
+void work_init(void) {}
+void work_list_move(Uint8 list) { (void)list; }
+void light_init(void) {}
+void light_dummy(void) {}
+void bright_init(void) {}
+void Palette_Init(void) {}
+void Texture_Init(void) {}
+void song_req(Uint8 no) { (void)no; }
+void na_req(Uint8 no) { (void)no; }
+void scr_work_init(void) {}
+void fade_set(int color, int time, int direction) { (void)color; (void)time; (void)direction; }
+void fog_init(void) {}
+void fog_set(void) {}
+void back_color_set(Uint32 color) { (void)color; }
+void se_vol_down(Uint16 pack, Uint8 speed) { (void)pack; (void)speed; }
+void sound_all_off(void) {}
+void se_all_off(void) {}
 
 void mvc2_gameplay_fail_frame(const char* message)
 {
@@ -71,10 +106,47 @@ static void pictures(void)
         stream[2] = 1;
         stream[3] = 4095;
         stream[4] = stream[5] = 0;
+        assert(mvc2_model_store_written(parts, 64));
         pl_work[i].pic_adrs = parts;
         pl_work[i].load_type = (Uint8)characters[i];
         pl_work[i].pl_personal = (Uint8)(i % 3);
     }
+}
+
+static void team_introduction(const uint8_t* gauge)
+{
+    static const unsigned slots[] = {0, 3, 1, 4, 2, 5};
+    uint8_t* scene = host_native64_ram_pointer(DM02_OBJ_ADRS, MODEL_SIZE);
+    uint8_t* bank = host_native64_ram_pointer(DM02_TEX_ADRS, TEXTURES * 8192);
+    assert(scene && bank);
+    memcpy(scene, gauge, MODEL_SIZE);
+    word(scene, DM02_OBJ_ADRS + 16);
+    word(scene + 4, OBJECT_COUNT);
+    word(scene + 8, DM02_OBJ_ADRS + HEADERS);
+    for (unsigned i = 0; i < OBJECT_COUNT; ++i)
+        word(scene + 16 + i * 4, DM02_OBJ_ADRS + OBJECTS + (i % TEXTURES) * OBJECT_BYTES);
+    for (unsigned i = 0; i < TEXTURES; ++i) {
+        uint8_t* header = scene + HEADERS + i * 16;
+        word(header, 64u | 64u << 16);
+        word(header + 8, i == 9 ? 0x0ce60000u : DM02_TEX_ADRS + i * 8192);
+    }
+    assert(mvc2_model_store_written(scene, MODEL_SIZE));
+    assert(mvc2_model_store_written(bank, TEXTURES * 8192));
+    assert(!mvc2_model_store_get(scene));
+    Sys->routine_0 = 2;
+    Sys->routine_1 = 0;
+    StartDemoMain();
+    assert(obj_dm02 && Sys->routine_0 == 2 && Sys->routine_1 == 1);
+    assert(fight_loads == 1 && draw_requests == 1 && intro_effects == 19);
+    for (unsigned i = 0; i < 6; ++i) {
+        const Uint16* pixels = obj_dm02->thd[slots[i] + 2].address;
+        assert(pixels[0] == 0x6000 + i && pixels[4095] == pixels[0]);
+    }
+    pl_work[0].pic_adrs[2] = 64; /* part points beyond the registered picture */
+    Sys->routine_1 = 0;
+    StartDemoMain();
+    assert(!obj_dm02 && Sys->routine_0 == 3 && !Sys->routine_1);
+    assert(fight_loads == 2 && draw_requests == 1 && intro_effects == 19);
 }
 
 int main(void)
@@ -117,8 +189,9 @@ int main(void)
     frame_error[0] = '\0';
     tex_load_gauge();
     assert(!obj_dm00 && strstr(frame_error, "122 required objects"));
+    team_introduction(bytes);
     nl_tex_free_all();
     mvc2_model_store_reset();
-    puts("Native match gauge: ROM/live textures, six portraits, real LZ/upload, and controlled invalid-asset failure passed.");
+    puts("Native match textures: team introduction, match fallback and gauge portraits passed.");
     return 0;
 }

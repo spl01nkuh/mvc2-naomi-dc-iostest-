@@ -28,4 +28,7 @@ const char* mvc2_model_store_last_error(void);
 MVC2HostObjectFile* mvc2_model_store_get_packed_texture(void* model_bytes,
                                                        const void* packed_bytes);
 void mvc2_model_store_reset(void);
+/* Decode one picture part into a mapped model texture using both registered bounds. */
+int mvc2_model_store_unpack_picture(const MVC2HostObjectFile* model, size_t texture,
+                                    const void* picture, size_t part);
 #endif

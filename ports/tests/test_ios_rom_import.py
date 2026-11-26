@@ -89,6 +89,15 @@ class ROMImportTests(unittest.TestCase):
         self.write_zip(compression=zipfile.ZIP_STORED)
         self.invoke()
 
+    def test_classic_zip_over_old_size_limit(self):
+        # Sparse prefix keeps the fixture small while testing large ZIP offsets.
+        with self.archive.open("wb") as stream:
+            stream.seek(161 * 1024 * 1024)
+            with zipfile.ZipFile(stream, "w", zipfile.ZIP_STORED) as archive:
+                for name, data in self.assets.items():
+                    archive.writestr(name, data)
+        self.invoke()
+
     def test_unknown_safe_files_are_ignored(self):
         self.write_zip()
         with zipfile.ZipFile(self.archive, "a") as archive:
@@ -98,6 +107,11 @@ class ROMImportTests(unittest.TestCase):
     def test_missing_chip(self):
         self.write_zip({"b.ic2": "other.ic2"})
         self.assertIn("Missing ROM chip", self.invoke(False))
+
+    def test_disc_image_explains_platform_requirement(self):
+        with zipfile.ZipFile(self.archive, "w") as archive:
+            archive.writestr("disc.GDI", b"test descriptor")
+        self.assertIn("Dreamcast disc images require a Dreamcast build", self.invoke(False))
 
     def test_wrong_chip_revision(self):
         self.write_zip()

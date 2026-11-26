@@ -76,6 +76,7 @@ int mvc2_gameplay_start(const char* rom, const char* saves, char* error, size_t 
     /* The cartridge reader can retain the entire 136 MiB image on desktop.
      * Keep a bounded working set on iOS as stage and character loads overlap. */
     naomi_rom_cache_bytes = 32u << 20;
+    host_unlock = 1;
     rd_begin_frame();
     rd_background(UINT32_C(0xff000000));
     if (!naomi_init(&arc_program, rom)) {

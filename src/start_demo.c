@@ -32,6 +32,9 @@ void StartDemoMain( void )
 	else {
 		Sys->st_demo_flag = 1 ;
 		st_demo_jmp[Sys->routine_1]() ;
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+		if( !obj_dm02 ) return ;
+#endif
 		work_list_move( W_SET ) ;
 		work_list_move( W_SYS ) ;
 	}
@@ -65,6 +68,13 @@ static void st_demo_init( void )
 	Palette_Init() ;
 	Texture_Init() ;
 	TexLoad( 6 ) ;
+#if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
+	if( !obj_dm02 ){
+		fight_load_start( 0 ) ;
+		st_demo_end() ;
+		return ;
+	}
+#endif
 	song_req( 2 ) ;
 	na_req( 68 ) ;
 #ifdef TARGET_DC	/* the fight's files are read from the disc while the scene runs */
