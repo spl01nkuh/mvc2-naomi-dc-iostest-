@@ -755,8 +755,8 @@ void tex_set_ranking( void )
 
 #if defined( HOST_NATIVE64 ) && !defined( TARGET_DC )
 	if( !obj_dm06 ) return ;
-	for( size_t j = 0 ; j < sizeof required_objects / sizeof required_objects[0] ; ++j ){
-		unsigned slot = required_objects[j] ;
+	for( i = 0 ; i < ( int )( sizeof required_objects / sizeof required_objects[0] ) ; i ++ ){
+		unsigned slot = required_objects[i] ;
 		if( slot >= ( unsigned )obj_dm06->cnt || !obj_dm06->obj[slot] ) goto unavailable ;
 	}
 	thd = obj_dm06->thd ;
