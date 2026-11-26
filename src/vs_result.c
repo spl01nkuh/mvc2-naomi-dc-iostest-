@@ -2,6 +2,9 @@
    7) come in, stay and go; PERFECT hands on to the bonus lines (vs_bonus.c). */
 #include "player.h"
 
+#ifdef HOST_NATIVE64
+typedef MVC2_FRONT_GLYPH VS_RES_STEP;
+#else
 /* one step of a message's script (its reader is elsewhere) */
 typedef struct VS_RES_STEP {
 	Uint8	unk_0, unk_1, unk_2, unk_3 ;
@@ -15,6 +18,7 @@ typedef struct VS_RES_SPR_W {
 	Sint32	no ;		/* 00c */
 } VS_RES_SPR_W;
 #define VS_RES_SW( w )	( ( VS_RES_SPR_W * )&( w )->obj_flag )
+#endif
 
 /* scales that nothing reads */
 static VEC3 vs_res_scale_tbl[] = {
@@ -127,7 +131,11 @@ static Uint8 vs_res_se_tbl[16] = { 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e } ;
 
 static void vs_res_main( PLAYER_WORK *ew );
 static void vs_res_end( PLAYER_WORK *ew );
+#ifdef HOST_NATIVE64
+extern void bonus_screen_set( int two_p );
+#else
 void vs_res_bonus_set( int two_p );
+#endif
 
 /****************************************************************/
 void vs_res_set( int no )
@@ -171,8 +179,12 @@ static void vs_res_init( PLAYER_WORK *ew )
 	ew->pos.x = -vs_res_x_tbl[ew->type] / 2.0f ;
 	ew->pos.y = -6.25f ;
 	ew->pos.z = 0.0f ;
+#ifdef HOST_NATIVE64
+	ew->native_work_ptr[1] = vs_res_spr_tbl[ew->type] ;
+#else
 	VS_RES_SW( ew )->step = vs_res_spr_tbl[ew->type] ;
 	VS_RES_SW( ew )->no = 0 ;
+#endif
 	se = vs_res_se_tbl[ew->type] ;
 	if( se ) na_req( se ) ;
 	vs_res_run( ew ) ;

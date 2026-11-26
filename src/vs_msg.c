@@ -6,7 +6,9 @@
 extern void vs_res_set( int no ) ;
 
 /* the object of each word */
+#ifndef HOST_NATIVE64
 static Sint32 vs_msg_obj_tbl[] = { 0x2f, 0x30, 0x31 } ;
+#endif
 /* the three points of each word's way */
 static VEC3 vs_msg_pos_tbl[] = {
 	{ -32.06f, 0.0f, -21.99f }, { -1.33f, 0.0f, -8.75f }, { 10.98f, 0.0f, -3.0f },
@@ -29,7 +31,9 @@ void vs_msg_set( int no )
 	if( ( ew = work_get( 0, W_SYS, LIST_END ) ) ){
 		ew->disp_flag = 0 ;
 		ew->work_func = vs_msg_main ;
+#ifndef HOST_NATIVE64
 		ew->obj = obj_dm00->obj[vs_msg_obj_tbl[no]] ;
+#endif
 		ew->obj_flag = OBJ_POS | OBJ_ROT_Y ;
 		ew->pos = vs_msg_pos_tbl[no * 3] ;
 		ew->rot[1] = vs_msg_rot_tbl[no] ;
@@ -54,8 +58,10 @@ static void vs_msg_se( int no )
 	}
 }
 
+#ifndef HOST_NATIVE64
 static void vs_msg_ghost_set( PLAYER_WORK *mw );
 static void vs_msg_ghost_main( PLAYER_WORK *ew );
+#endif
 
 /*==============================================================*/
 static void vs_msg_main( PLAYER_WORK *ew )
@@ -78,12 +84,14 @@ static void vs_msg_main( PLAYER_WORK *ew )
 			else na_req( 40 ) ;
 		}
 	case 1:
+#ifndef HOST_NATIVE64
 		{
 			int no = ew->type ;
 			if( no == 0 || no == 1 ){
 				vs_msg_ghost_set( ew ) ;
 			}
 		}
+#endif
 		ew->pos.x = p->x + ( q->x - p->x ) / 15.0f * ew->timer0 ;
 		ew->pos.z = p->z + ( q->z - p->z ) / 15.0f * ew->timer0 ;
 		if( ++ ew->timer0 >= 15 ){
@@ -106,12 +114,14 @@ static void vs_msg_main( PLAYER_WORK *ew )
 		}
 		break ;
 	case 3:
+#ifndef HOST_NATIVE64
 		{
 			int no = ew->type ;
 			if( no == 0 || no == 1 ){
 				vs_msg_ghost_set( ew ) ;
 			}
 		}
+#endif
 		ew->pos.x = p->x + ( q->x - p->x ) / 15.0f * ew->timer0 ;
 		ew->pos.z = p->z + ( q->z - p->z ) / 15.0f * ew->timer0 ;
 		if( ++ ew->timer0 >= 15 ){
@@ -119,11 +129,19 @@ static void vs_msg_main( PLAYER_WORK *ew )
 		}
 		break ;
 	}
+#ifdef HOST_NATIVE64
+	if( ew->disp_flag ){
+		static const char *words[] = { "READY", "FIGHT", "K.O." } ;
+		/* Font 10 uses the game's 32-pixel glyphs. */
+		STrPrint( ew->type == 2 ? 8 : 8 + ( int )( ew->pos.x / 8 ), 7, 10, "%s", words[ew->type] ) ;
+	}
+#endif
 }
 
 /*==============================================================*/
 /*			A copy that stays where the word was and fades		*/
 /*==============================================================*/
+#ifndef HOST_NATIVE64
 static void vs_msg_ghost_set( PLAYER_WORK *mw )
 {
 	PLAYER_WORK *ew ;
@@ -146,6 +164,7 @@ static void vs_msg_ghost_main( PLAYER_WORK *ew )
 	if( ew->fade.trnsl > 0.0f ) return ;
 	work_free( ew ) ;
 }
+#endif
 
 /*==============================================================*/
 /*	End of File.												*/

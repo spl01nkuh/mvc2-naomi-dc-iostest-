@@ -5,6 +5,10 @@
 
 extern int sprintf( char *s, const char *fmt, ... ) ;
 
+#ifdef HOST_NATIVE64
+typedef MVC2_FRONT_GLYPH BONUS_STEP;
+#define BONUS_LW( w )	( &( w )->native_bonus )
+#else
 /* one step of a line's script (its reader is elsewhere) */
 typedef struct BONUS_STEP {
 	Uint8	unk_0, unk_1, unk_2, unk_3 ;
@@ -25,6 +29,7 @@ typedef struct BONUS_SPR_W {
 } BONUS_SPR_W;
 #define BONUS_SW( w )	( ( BONUS_SPR_W * )&( w )->obj_flag )
 #define BONUS_LW( w )	( ( BONUS_LOCAL_W * )&( w )->atck_flag )
+#endif
 
 /* scales that nothing reads */
 static VEC3 bonus_scale_tbl[] = {
@@ -260,8 +265,12 @@ static void bonus_line_init( PLAYER_WORK *ew )
 	ew->routine_0 ++ ;
 	ew->pos.x = 0.0f ;
 	ew->pos.z = -40.0f ;
+#ifdef HOST_NATIVE64
+	ew->native_work_ptr[1] = bonus_line_tbl[ew->type] ;
+#else
 	BONUS_SW( ew )->step = bonus_line_tbl[ew->type] ;
 	BONUS_SW( ew )->no = 0 ;
+#endif
 	bonus_line_run( ew ) ;
 }
 
