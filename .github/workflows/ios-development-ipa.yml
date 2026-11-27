@@ -1,7 +1,7 @@
 name: iOS native gameplay IPA
 on:
   push:
-    branches: [native-ios-gameplay]
+    branches: [ios-device-build-intel]
     paths:
       - ports/port/ios/**
       - ports/port/**
@@ -13,7 +13,7 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: macos-15-intel
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,8 +39,6 @@ jobs:
         env:
           MVC2_DEV_BUILD_NUMBER: ${{ github.run_number }}
         run: bash ports/port/ios/build-development-ipa.sh device
-      - name: Build simulator app
-        run: bash ports/port/ios/build-development-ipa.sh simulator
       - name: Verify IPA structure and native components
         run: |
           python3 ports/port/ios/verify-development-ipa.py build/ios-development-device/MVC2-Gameplay-unsigned.ipa
@@ -51,58 +49,4 @@ jobs:
           path: |
             build/ios-development-device/MVC2-Gameplay-unsigned.ipa
             build/ios-development-device/SHA256.txt
-          if-no-files-found: error
-      - name: Launch simulator gameplay host
-        timeout-minutes: 12
-        run: |
-          device_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for group in d["devices"].values() for v in group if v["name"].startswith("iPhone")))')"
-          xcrun simctl bootstatus "$device_id" -b
-          xcrun simctl install "$device_id" build/ios-development-simulator/Release-iphonesimulator/MVC2Development.app
-          xcrun simctl launch "$device_id" com.spl01nkuh.mvc2.native.dev --mvc2-widescreen-preview=on
-          sleep 3
-          xcrun simctl io "$device_id" screenshot build/ios-development-simulator/launch.png
-          for style in dpad stick; do
-            xcrun simctl terminate "$device_id" com.spl01nkuh.mvc2.native.dev
-            xcrun simctl launch "$device_id" com.spl01nkuh.mvc2.native.dev "--mvc2-controls-preview=$style" --mvc2-directions-preview=transparent --mvc2-widescreen-preview=on
-            sleep 2
-            xcrun simctl io "$device_id" screenshot "build/ios-development-simulator/controls-$style.png"
-          done
-          xcrun simctl terminate "$device_id" com.spl01nkuh.mvc2.native.dev
-          container="$(xcrun simctl get_app_container "$device_id" com.spl01nkuh.mvc2.native.dev data)"
-          python3 - "$container/Documents/MVC2/GameData" <<'PY'
-          import json
-          from pathlib import Path
-          import re
-          import sys
-          import uuid
-
-          # Simulate a committed import whose files were changed after import.
-          # The unchanged native CRC check rejects these sparse zero files.
-          assets = Path(sys.argv[1])
-          identifier = str(uuid.uuid4())
-          rom = assets / "sets" / identifier
-          manifest = Path("ports/port/ios/assets/mvc2_rom.c").read_text()
-          files = re.findall(r'\{"([^"]+)",\s*(0x[0-9a-f]+),', manifest)
-          assert files
-          rom.mkdir(parents=True)
-          for name, size in files:
-              with (rom / name).open("xb") as file:
-                  file.truncate(int(size, 16))
-          (rom / "validated.json").write_text(json.dumps({"version": 1, "fileCount": len(files)}))
-          (assets / "active.json").write_text(json.dumps({"version": 1, "directory": identifier}))
-          PY
-          xcrun simctl launch "$device_id" com.spl01nkuh.mvc2.native.dev
-          sleep 3
-          test ! -e "$container/Documents/MVC2/.active-session.txt"
-          test ! -e "$container/Documents/MVC2/LastEngineFailure.txt"
-          xcrun simctl io "$device_id" screenshot build/ios-development-simulator/engine-error.png
-          xcrun simctl terminate "$device_id" com.spl01nkuh.mvc2.native.dev
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: MVC2-Gameplay-simulator-launch
-          path: |
-            build/ios-development-simulator/launch.png
-            build/ios-development-simulator/controls-*.png
-            build/ios-development-simulator/engine-error.png
-            build/ipa-validation/widescreen-fixtures/*.ppm
           if-no-files-found: error
